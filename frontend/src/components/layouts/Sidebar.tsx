@@ -116,7 +116,7 @@ export function Sidebar({ routes, currentPath, isMobileMenuOpen, onMobileMenuClo
             onClick={handleLogout}
             disabled={isPending}
             title={isCollapsed ? "Logout" : undefined}
-            className={`flex items-center w-full rounded-lg text-muted-foreground hover:bg-[rgba(220,38,38,0.1)] hover:text-destructive transition-colors group relative disabled:opacity-50 ${
+            className={`flex items-center w-full rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors group relative disabled:opacity-50 ${
               isCollapsed ? 'justify-center px-2 py-3' : 'px-4 py-3'
             }`}
           >
@@ -129,7 +129,7 @@ export function Sidebar({ routes, currentPath, isMobileMenuOpen, onMobileMenuClo
             )}
             {!isCollapsed && <span>Logout</span>}
             {isCollapsed && (
-              <div className="absolute left-full ml-2 px-2 py-1 bg-destructive text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 whitespace-nowrap shadow-lg">
+              <div className="absolute left-full ml-2 px-2 py-1 bg-foreground text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 whitespace-nowrap shadow-lg">
                 Logout
               </div>
             )}
@@ -176,7 +176,7 @@ export function Sidebar({ routes, currentPath, isMobileMenuOpen, onMobileMenuClo
           <button 
             onClick={handleLogout}
             disabled={isPending}
-            className="flex items-center w-full px-4 py-3 text-muted-foreground hover:bg-[rgba(220,38,38,0.1)] hover:text-destructive rounded-lg mt-4 border-t border-border pt-4 disabled:opacity-50"
+            className="flex items-center w-full px-4 py-3 text-muted-foreground hover:bg-muted hover:text-foreground rounded-lg mt-4 border-t border-border pt-4 disabled:opacity-50"
           >
             {isPending ? (
               <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin mr-3" />
