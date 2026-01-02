@@ -4,6 +4,14 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { CommonModule } from './common/common.module';
+import { WarehousesModule } from './warehouses/warehouses.module';
+import { StoresModule } from './stores/stores.module';
+import { IntegrationsModule } from './integrations/integrations.module';
+import { IntegrationStoresModule } from './integration-stores/integration-stores.module';
+import { ProductsModule } from './products/products.module';
+import { ProductStoresModule } from './product-stores/product-stores.module';
+import { ProductIntegrationsModule } from './product-integrations/product-integrations.module';
+import { ShippingProvidersModule } from './shipping-providers/shipping-providers.module';
 
 @Module({
   imports: [
@@ -29,6 +37,14 @@ import { CommonModule } from './common/common.module';
     CommonModule,
     AuthModule,
     UsersModule,
+    WarehousesModule,
+    StoresModule,
+    IntegrationsModule,
+    IntegrationStoresModule,
+    ProductsModule,
+    ProductStoresModule,
+    ProductIntegrationsModule,
+    ShippingProvidersModule,
   ],
 })
 export class AppModule {}

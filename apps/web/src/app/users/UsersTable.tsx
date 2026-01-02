@@ -40,6 +40,16 @@ export function UsersTable() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
 
+  // Stable callbacks for modal to prevent focus loss
+  const handleModalClose = useCallback(() => {
+    setIsModalOpen(false);
+  }, []);
+
+  const handleDeleteModalClose = useCallback(() => {
+    setDeleteConfirmOpen(false);
+    setUserToDelete(null);
+  }, []);
+
   const fetchUsers = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -71,14 +81,14 @@ export function UsersTable() {
     }));
   };
 
-  const openCreateModal = () => {
+  const openCreateModal = useCallback(() => {
     setEditingUser(null);
     setFormData(initialFormData);
     setFormError('');
     setIsModalOpen(true);
-  };
+  }, []);
 
-  const openEditModal = (user: User) => {
+  const openEditModal = useCallback((user: User) => {
     setEditingUser(user);
     setFormData({
       firstName: user.firstName,
@@ -90,7 +100,7 @@ export function UsersTable() {
     });
     setFormError('');
     setIsModalOpen(true);
-  };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,10 +130,10 @@ export function UsersTable() {
     }
   };
 
-  const openDeleteConfirm = (user: User) => {
+  const openDeleteConfirm = useCallback((user: User) => {
     setUserToDelete(user);
     setDeleteConfirmOpen(true);
-  };
+  }, []);
 
   const handleDeleteConfirm = async () => {
     if (!userToDelete) return;
@@ -139,10 +149,10 @@ export function UsersTable() {
     }
   };
 
-  const closeDeleteConfirm = () => {
+  const closeDeleteConfirm = useCallback(() => {
     setDeleteConfirmOpen(false);
     setUserToDelete(null);
-  };
+  }, []);
 
   const filteredUsers = users.filter((user) => {
     if (!searchTerm) return true;
@@ -283,7 +293,7 @@ export function UsersTable() {
 
       <Modal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={handleModalClose}
         title={editingUser ? 'Edit User' : 'Add New User'}
         size="md"
         footer={
@@ -291,7 +301,7 @@ export function UsersTable() {
             <Button
               type="button"
               variant="ghost"
-              onClick={() => setIsModalOpen(false)}
+              onClick={handleModalClose}
             >
               Cancel
             </Button>
@@ -366,7 +376,7 @@ export function UsersTable() {
 
       <ConfirmModal
         isOpen={deleteConfirmOpen}
-        onClose={closeDeleteConfirm}
+        onClose={handleDeleteModalClose}
         onConfirm={handleDeleteConfirm}
         title="Delete User"
         message={userToDelete ? `Are you sure you want to delete ${userToDelete.firstName} ${userToDelete.lastName}? This action cannot be undone.` : ''}

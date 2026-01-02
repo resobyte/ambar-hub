@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { User } from '../users/entities/user.entity';
+import { ShippingProvider, ShippingType } from '../shipping-providers/entities/shipping-provider.entity';
 import { Role } from '@repo/types';
 
 @Injectable()
@@ -13,6 +14,8 @@ export class SeedService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(ShippingProvider)
+    private readonly shippingProviderRepository: Repository<ShippingProvider>,
     private readonly configService: ConfigService,
   ) {}
 
@@ -56,5 +59,24 @@ export class SeedService {
     await this.userRepository.save(user);
 
     this.logger.log(`Seed completed: Created PLATFORM_OWNER user with email: ${email}`);
+
+    // Create ARAS shipping provider
+    const existingShippingProvider = await this.shippingProviderRepository.findOne({
+      where: { type: ShippingType.ARAS },
+    });
+
+    if (!existingShippingProvider) {
+      const shippingProvider = this.shippingProviderRepository.create({
+        name: 'Aras Kargo',
+        type: ShippingType.ARAS,
+        isActive: true,
+      });
+
+      await this.shippingProviderRepository.save(shippingProvider);
+
+      this.logger.log('Seed completed: Created ARAS shipping provider');
+    } else {
+      this.logger.warn('ARAS shipping provider already exists. Skipping seed.');
+    }
   }
 }

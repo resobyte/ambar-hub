@@ -41,10 +41,9 @@ A production-ready Admin Panel with Next.js frontend and NestJS backend, structu
 ### Prerequisites
 - Node.js 20+
 - pnpm 8+
-- Docker & Docker Compose
-- MySQL 8.0 (or use Docker)
+- MySQL 8.0 (local installation)
 
-### Development Setup
+### Local Development Setup (Without Docker)
 
 1. Clone the repository
 
@@ -58,13 +57,34 @@ pnpm install
 pnpm build --filter=@repo/types --filter=@repo/auth-config
 ```
 
-4. Setup environment files:
+4. Create local MySQL database:
+```bash
+mysql -u root -p
+CREATE DATABASE ambarhub;
+EXIT;
+```
+
+5. Setup environment files:
 ```bash
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env.local
 ```
 
-5. Start development servers:
+6. Update `apps/api/.env` with your local MySQL credentials:
+```
+DB_HOST=localhost
+DB_PORT=3306
+DB_USERNAME=root
+DB_PASSWORD=your_mysql_password
+DB_NAME=ambarhub
+```
+
+7. Run database seed:
+```bash
+pnpm seed
+```
+
+8. Start development servers:
 ```bash
 # Start all apps
 pnpm dev
@@ -74,19 +94,23 @@ pnpm dev:api
 pnpm dev:web
 ```
 
-### Docker Setup
+### Docker Setup (Optional - for containerized deployment)
 
 ```bash
-# Start all services
+# Start all services (MySQL, API, Web)
 docker-compose up -d
 
 # View logs
 docker-compose logs -f
+
+# Note: When using Docker, update DB_PORT to 3307 in .env
 ```
 
 ### Environment Variables
 
 #### Backend (`apps/api/.env`)
+
+**For Local MySQL:**
 ```
 NODE_ENV=development
 PORT=3001
@@ -94,8 +118,18 @@ PORT=3001
 DB_HOST=localhost
 DB_PORT=3306
 DB_USERNAME=root
+DB_PASSWORD=your_mysql_password
+DB_NAME=ambarhub
+```
+
+**For Docker MySQL:**
+```
+DB_HOST=localhost
+DB_PORT=3307
+DB_USERNAME=root
 DB_PASSWORD=password
 DB_NAME=ambarhub
+```
 
 JWT_ACCESS_SECRET=your-access-secret-key-min-32-chars
 JWT_REFRESH_SECRET=your-refresh-secret-key-min-32-chars

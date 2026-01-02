@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '../users/entities/user.entity';
+import { ShippingProvider } from '../shipping-providers/entities/shipping-provider.entity';
 import { SeedService } from './seed.service';
 
 @Module({
@@ -20,13 +21,13 @@ import { SeedService } from './seed.service';
         username: configService.get('DB_USERNAME'),
         password: configService.get('DB_PASSWORD'),
         database: configService.get('DB_NAME'),
-        entities: [User],
+        entities: [User, ShippingProvider],
         synchronize: false,
         logging: true,
       }),
       inject: [ConfigService],
     }),
-    TypeOrmModule.forFeature([User]),
+    TypeOrmModule.forFeature([User, ShippingProvider]),
   ],
   providers: [SeedService],
 })

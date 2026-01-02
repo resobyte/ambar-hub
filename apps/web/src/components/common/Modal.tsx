@@ -37,6 +37,7 @@ export function Modal({
 }: ModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
+  const wasOpen = useRef(false);
 
   const handleEscape = useCallback(
     (e: KeyboardEvent) => {
@@ -52,6 +53,7 @@ export function Modal({
       previousActiveElement.current = document.activeElement as HTMLElement;
       document.addEventListener('keydown', handleEscape);
       document.body.style.overflow = 'hidden';
+      wasOpen.current = true;
 
       // Focus the modal for accessibility
       setTimeout(() => {
@@ -63,9 +65,13 @@ export function Modal({
       document.removeEventListener('keydown', handleEscape);
       document.body.style.overflow = 'unset';
 
-      // Restore focus to previous element
-      if (previousActiveElement.current) {
-        previousActiveElement.current.focus();
+      // Only restore focus if the modal was actually open and is now closing
+      // This prevents focus loss when the effect re-runs due to dependency changes
+      if (wasOpen.current && !isOpen) {
+        if (previousActiveElement.current) {
+          previousActiveElement.current.focus();
+        }
+        wasOpen.current = false;
       }
     };
   }, [isOpen, handleEscape]);
@@ -75,14 +81,15 @@ export function Modal({
     if (!isOpen || !modalRef.current) return;
 
     const modal = modalRef.current;
-    const focusableElements = modal.querySelectorAll<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-    );
-    const firstElement = focusableElements[0];
-    const lastElement = focusableElements[focusableElements.length - 1];
-
+    
     const handleTabKey = (e: KeyboardEvent) => {
       if (e.key !== 'Tab') return;
+
+      const focusableElements = modal.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
 
       if (e.shiftKey) {
         if (document.activeElement === firstElement) {
