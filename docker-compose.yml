@@ -1,15 +1,15 @@
 services:
   mysql:
     image: mysql:8.0
-    container_name: cw-panel-mysql
+    container_name: ambarhub-mysql
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-password}
-      MYSQL_DATABASE: ${DB_NAME:-cw_panel}
+      MYSQL_DATABASE: ${DB_NAME:-ambarhub}
     ports:
-      - "${DB_PORT:-3306}:3306"
+      - "${DB_PORT:-3307}:3306"
     volumes:
-      - mysql_data:/var/lib/mysql
+      - ambarhub_mysql_data:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
@@ -18,9 +18,9 @@ services:
 
   api:
     build:
-      context: ./backend
+      context: ./apps/api
       dockerfile: Dockerfile
-    container_name: cw-panel-api
+    container_name: ambarhub-api
     restart: unless-stopped
     ports:
       - "${PORT:-3001}:3001"
@@ -28,24 +28,25 @@ services:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: 3001
       DB_HOST: mysql
-      DB_PORT: 3306
+      DB_PORT: 3307
       DB_USERNAME: root
       DB_PASSWORD: ${DB_PASSWORD:-password}
-      DB_NAME: ${DB_NAME:-cw_panel}
+      DB_NAME: ${DB_NAME:-ambarhub}
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-your-access-secret-key-change-in-production-min-32-chars}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-your-refresh-secret-key-change-in-production-min-32-chars}
       JWT_ACCESS_EXPIRATION: ${JWT_ACCESS_EXPIRATION:-15m}
       JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-7d}
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
     depends_on:
       mysql:
         condition: service_healthy
 
-  frontend:
+  web:
     build:
-      context: ./frontend
+      context: ./apps/web
       dockerfile: Dockerfile
-    container_name: cw-panel-frontend
+    container_name: ambarhub-web
     restart: unless-stopped
     ports:
       - "3000:3000"
@@ -55,4 +56,4 @@ services:
       - api
 
 volumes:
-  mysql_data:
+  ambarhub_mysql_data:

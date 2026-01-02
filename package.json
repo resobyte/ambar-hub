@@ -1,0 +1,21 @@
+{
+  "name": "ambarhub",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@8.15.0",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "start": "turbo run start",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "dev:web": "turbo run dev --filter=@repo/web",
+    "dev:api": "turbo run dev --filter=@repo/api",
+    "build:web": "turbo run build --filter=@repo/web",
+    "build:api": "turbo run build --filter=@repo/api",
+    "seed": "pnpm --filter=@repo/api seed"
+  },
+  "devDependencies": {
+    "turbo": "^1.11.0"
+  }
+}

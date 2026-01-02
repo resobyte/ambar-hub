@@ -1,28 +1,35 @@
-# Admin Panel Boilerplate
+# AmbarHub
 
-A production-ready Admin Panel with Next.js frontend and NestJS backend.
+A production-ready Admin Panel with Next.js frontend and NestJS backend, structured as a pnpm + Turborepo monorepo.
 
 ## Technology Stack
 
-### Frontend
+### Frontend (`apps/web`)
 - Next.js 14 (App Router)
 - TypeScript
 - Tailwind CSS
 - Server Components by default
 
-### Backend
+### Backend (`apps/api`)
 - NestJS
 - TypeScript
 - MySQL
 - TypeORM
 - JWT Authentication
 
+### Shared Packages
+- `@repo/types` - Shared TypeScript types and enums
+- `@repo/auth-config` - Cookie configuration, permissions, and auth constants
+
 ## Features
 
 - JWT Authentication with HttpOnly cookies
-- Refresh token support with revocation
+- Refresh token support with revocation and rotation
 - Role-based access control (PLATFORM_OWNER, OPERATION)
 - Server-side authorization
+- CSRF protection for state-changing routes
+- Multi-origin CORS support
+- Environment-driven cookie configuration
 - Responsive layout (Desktop / Tablet / Mobile)
 - Theming with CSS variables
 - Soft delete support
@@ -33,6 +40,7 @@ A production-ready Admin Panel with Next.js frontend and NestJS backend.
 
 ### Prerequisites
 - Node.js 20+
+- pnpm 8+
 - Docker & Docker Compose
 - MySQL 8.0 (or use Docker)
 
@@ -40,19 +48,30 @@ A production-ready Admin Panel with Next.js frontend and NestJS backend.
 
 1. Clone the repository
 
-2. Backend setup:
+2. Install dependencies:
 ```bash
-cd backend
-cp .env.example .env
-npm install
-npm run start:dev
+pnpm install
 ```
 
-3. Frontend setup:
+3. Build shared packages:
 ```bash
-cd frontend
-npm install
-npm run dev
+pnpm build --filter=@repo/types --filter=@repo/auth-config
+```
+
+4. Setup environment files:
+```bash
+cp apps/api/.env.example apps/api/.env
+cp apps/web/.env.example apps/web/.env.local
+```
+
+5. Start development servers:
+```bash
+# Start all apps
+pnpm dev
+
+# Or start individually
+pnpm dev:api
+pnpm dev:web
 ```
 
 ### Docker Setup
@@ -67,7 +86,7 @@ docker-compose logs -f
 
 ### Environment Variables
 
-#### Backend (.env)
+#### Backend (`apps/api/.env`)
 ```
 NODE_ENV=development
 PORT=3001
@@ -76,17 +95,21 @@ DB_HOST=localhost
 DB_PORT=3306
 DB_USERNAME=root
 DB_PASSWORD=password
-DB_NAME=cw_panel
+DB_NAME=ambarhub
 
 JWT_ACCESS_SECRET=your-access-secret-key-min-32-chars
 JWT_REFRESH_SECRET=your-refresh-secret-key-min-32-chars
 JWT_ACCESS_EXPIRATION=15m
 JWT_REFRESH_EXPIRATION=7d
 
-CORS_ORIGIN=http://localhost:3000
+# Comma-separated for multiple origins
+CORS_ORIGINS=http://localhost:3000
+
+# Optional: for subdomain deployments
+# COOKIE_DOMAIN=.example.com
 ```
 
-#### Frontend
+#### Frontend (`apps/web/.env.local`)
 ```
 NEXT_PUBLIC_API_URL=http://localhost:3001/api
 ```
@@ -100,23 +123,44 @@ After running the seed, use these credentials:
 ## Project Structure
 
 ```
-├── backend/
-│   ├── src/
-│   │   ├── auth/           # Authentication module
-│   │   ├── users/          # Users module
-│   │   ├── common/         # Shared utilities
-│   │   └── database/       # Database configuration
-│   ├── Dockerfile
-│   └── package.json
-├── frontend/
-│   ├── src/
-│   │   ├── app/            # Next.js App Router pages
-│   │   ├── components/     # React components
-│   │   ├── lib/            # Utilities and helpers
-│   │   ├── types/          # TypeScript types
-│   │   └── config/         # Configuration
-│   ├── Dockerfile
-│   └── package.json
+├── apps/
+│   ├── api/                    # NestJS backend
+│   │   ├── src/
+│   │   │   ├── auth/           # Authentication module
+│   │   │   ├── users/          # Users module
+│   │   │   ├── common/         # Shared utilities
+│   │   │   └── database/       # Database configuration
+│   │   ├── Dockerfile
+│   │   └── package.json
+│   │
+│   └── web/                    # Next.js frontend
+│       ├── src/
+│       │   ├── app/            # Next.js App Router pages
+│       │   ├── components/     # React components
+│       │   ├── lib/            # Utilities and helpers
+│       │   ├── types/          # Re-exports from @repo/types
+│       │   └── config/         # Re-exports from @repo/auth-config
+│       ├── Dockerfile
+│       └── package.json
+│
+├── packages/
+│   ├── types/                  # Shared TypeScript types
+│   │   └── src/
+│   │       ├── role.ts         # Role enum
+│   │       ├── user.ts         # User, AuthUser interfaces
+│   │       ├── auth.ts         # JwtPayload, TokenPair
+│   │       ├── api.ts          # ApiResponse, Pagination types
+│   │       └── routes.ts       # RouteConfig interface
+│   │
+│   └── auth-config/            # Shared auth configuration
+│       └── src/
+│           ├── constants.ts    # Cookie names, TTLs
+│           ├── cookies.ts      # Cookie config helpers
+│           └── permissions.ts  # Role-based permissions
+│
+├── package.json                # Root workspace config
+├── pnpm-workspace.yaml         # pnpm workspaces
+├── turbo.json                  # Turborepo config
 ├── docker-compose.yml
 └── README.md
 ```
