@@ -204,7 +204,9 @@ export class PurchasesService {
 
         // Remove stock from shelves
         for (const item of gr.items) {
-            await this.shelvesService.removeStock(item.shelfId, item.productId, item.quantity);
+            if (item.shelfId) {
+                await this.shelvesService.removeStock(item.shelfId, item.productId, item.quantity);
+            }
 
             // Update PO item received quantity
             const poItem = await this.poItemRepository.findOne({

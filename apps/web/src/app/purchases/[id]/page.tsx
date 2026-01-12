@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import { Select } from '@/components/common/Select';
@@ -68,8 +68,8 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
     CANCELLED: { label: 'İptal', color: 'bg-red-100 text-red-800' },
 };
 
-export default function PurchaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
-    const { id } = use(params);
+export default function PurchaseDetailPage({ params }: { params: { id: string } }) {
+    const { id } = params;
     const [purchase, setPurchase] = useState<PurchaseOrder | null>(null);
     const [receivingShelves, setReceivingShelves] = useState<Shelf[]>([]);
     const [loading, setLoading] = useState(true);
@@ -82,8 +82,10 @@ export default function PurchaseDetailPage({ params }: { params: Promise<{ id: s
         setLoading(true);
         try {
             const res = await fetch(`${API_URL}/purchases/${id}`, { credentials: 'include' });
-            const data = await res.json();
-            setPurchase(data);
+            const json = await res.json();
+            if (json.success) {
+                setPurchase(json.data);
+            }
         } catch (err) {
             error('Sipariş yüklenemedi');
         } finally {
@@ -95,8 +97,10 @@ export default function PurchaseDetailPage({ params }: { params: Promise<{ id: s
         try {
             // Get all shelves with type RECEIVING (we'll need a warehouse id, but for now get all)
             const res = await fetch(`${API_URL}/shelves?type=RECEIVING`, { credentials: 'include' });
-            const data = await res.json();
-            setReceivingShelves(Array.isArray(data) ? data : []);
+            const json = await res.json();
+            if (json.success && Array.isArray(json.data)) {
+                setReceivingShelves(json.data);
+            }
         } catch (err) {
             console.error('Failed to load shelves');
         }
@@ -110,7 +114,7 @@ export default function PurchaseDetailPage({ params }: { params: Promise<{ id: s
     const openReceiveModal = () => {
         if (!purchase) return;
         // Initialize receive items with remaining quantities
-        const items = purchase.items
+        const items = (purchase.items || [])
             .filter(item => item.orderedQuantity > item.receivedQuantity)
             .map(item => ({
                 productId: item.productId,
@@ -171,7 +175,7 @@ export default function PurchaseDetailPage({ params }: { params: Promise<{ id: s
     }
 
     const status = STATUS_MAP[purchase.status] || { label: purchase.status, color: 'bg-gray-100' };
-    const hasRemainingItems = purchase.items.some(item => item.orderedQuantity > item.receivedQuantity);
+    const hasRemainingItems = (purchase.items || []).some(item => item.orderedQuantity > item.receivedQuantity);
 
     return (
         <div className="p-6">
@@ -222,7 +226,7 @@ export default function PurchaseDetailPage({ params }: { params: Promise<{ id: s
                         </tr>
                     </thead>
                     <tbody>
-                        {purchase.items.map(item => (
+                        {(purchase.items || []).map(item => (
                             <tr key={item.id} className="border-b border-border last:border-0">
                                 <td className="p-3">
                                     <div className="font-medium">{item.product?.name}</div>
@@ -260,8 +264,8 @@ export default function PurchaseDetailPage({ params }: { params: Promise<{ id: s
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <span className={`px-2 py-0.5 rounded text-xs ${receipt.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
-                                                receipt.status === 'REVERSED' ? 'bg-red-100 text-red-800' :
-                                                    'bg-gray-100 text-gray-800'
+                                            receipt.status === 'REVERSED' ? 'bg-red-100 text-red-800' :
+                                                'bg-gray-100 text-gray-800'
                                             }`}>
                                             {receipt.status === 'COMPLETED' ? 'Tamamlandı' : receipt.status === 'REVERSED' ? 'Geri Alındı' : receipt.status}
                                         </span>

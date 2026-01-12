@@ -3,6 +3,7 @@ import { BaseEntity } from '../../common/entities/base.entity';
 import { PurchaseOrder } from './purchase-order.entity';
 import { User } from '../../users/entities/user.entity';
 import { GoodsReceiptStatus } from '../enums/goods-receipt-status.enum';
+import { GoodsReceiptItem } from './goods-receipt-item.entity';
 
 @Entity('goods_receipts')
 export class GoodsReceipt extends BaseEntity {
@@ -39,6 +40,6 @@ export class GoodsReceipt extends BaseEntity {
     @Column({ type: 'text', nullable: true })
     notes: string;
 
-    @OneToMany('GoodsReceiptItem', 'goodsReceipt', { cascade: true })
-    items: any[];
+    @OneToMany(() => GoodsReceiptItem, (item) => item.goodsReceipt, { cascade: true })
+    items: GoodsReceiptItem[];
 }

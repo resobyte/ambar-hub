@@ -38,40 +38,53 @@ export function Modal({
   const modalRef = useRef<HTMLDivElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
   const wasOpen = useRef(false);
+  const hasInitialFocus = useRef(false);
+
+  // Use a ref for onClose to avoid re-running effects when the callback changes
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   const handleEscape = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape' && closeOnEscape) {
-        onClose();
+        onCloseRef.current();
       }
     },
-    [onClose, closeOnEscape]
+    [closeOnEscape]
   );
 
   useEffect(() => {
     if (isOpen) {
-      previousActiveElement.current = document.activeElement as HTMLElement;
+      // Only capture previous element and set initial focus once when modal first opens
+      if (!wasOpen.current) {
+        previousActiveElement.current = document.activeElement as HTMLElement;
+        hasInitialFocus.current = false;
+      }
+
       document.addEventListener('keydown', handleEscape);
       document.body.style.overflow = 'hidden';
       wasOpen.current = true;
 
-      // Focus the modal for accessibility
-      setTimeout(() => {
-        modalRef.current?.focus();
-      }, 0);
+      // Focus the modal for accessibility - only on initial open
+      if (!hasInitialFocus.current) {
+        hasInitialFocus.current = true;
+        setTimeout(() => {
+          modalRef.current?.focus();
+        }, 0);
+      }
     }
 
     return () => {
       document.removeEventListener('keydown', handleEscape);
-      document.body.style.overflow = 'unset';
 
-      // Only restore focus if the modal was actually open and is now closing
-      // This prevents focus loss when the effect re-runs due to dependency changes
+      // Only restore body overflow and focus when modal is actually closing
       if (wasOpen.current && !isOpen) {
+        document.body.style.overflow = 'unset';
         if (previousActiveElement.current) {
           previousActiveElement.current.focus();
         }
         wasOpen.current = false;
+        hasInitialFocus.current = false;
       }
     };
   }, [isOpen, handleEscape]);
@@ -81,7 +94,7 @@ export function Modal({
     if (!isOpen || !modalRef.current) return;
 
     const modal = modalRef.current;
-    
+
     const handleTabKey = (e: KeyboardEvent) => {
       if (e.key !== 'Tab') return;
 

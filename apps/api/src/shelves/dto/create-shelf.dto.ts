@@ -7,8 +7,8 @@ export class CreateShelfDto {
     name: string;
 
     @IsString()
-    @IsNotEmpty()
-    barcode: string;
+    @IsOptional()
+    barcode?: string;
 
     @IsEnum(ShelfType)
     @IsOptional()

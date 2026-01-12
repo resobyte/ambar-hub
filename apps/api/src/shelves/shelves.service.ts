@@ -27,34 +27,53 @@ export class ShelvesService {
             if (isReservable === undefined) isReservable = rules.isReservable;
         }
 
-        // Build path
+        // Build path and get parent entity for tree structure
         let path = `/${dto.name.toLowerCase().replace(/\s+/g, '-')}`;
+        let parent: Shelf | null = null;
+        // Barcode is always auto-generated from hierarchy (e.g. "A1 > B2 > C3")
+        let barcode = dto.name;
+
         if (dto.parentId) {
-            const parent = await this.shelfRepository.findOne({ where: { id: dto.parentId } });
+            parent = await this.shelfRepository.findOne({ where: { id: dto.parentId } });
             if (parent) {
                 path = `${parent.path}${path}`;
+                // Build barcode from parent barcode + current name
+                barcode = `${parent.barcode} > ${dto.name}`;
             }
         }
 
-        const shelf = this.shelfRepository.create({
-            ...dto,
+        // Create shelf entity with explicit parent assignment for MaterializedPath tree
+        const shelfData: Partial<Shelf> = {
+            name: dto.name,
+            barcode,
+            type: dto.type,
+            warehouseId: dto.warehouseId,
             path,
+            globalSlot: dto.globalSlot ?? null,
             isSellable: isSellable ?? true,
             isReservable: isReservable ?? true,
-        });
+            // Explicitly set parent to null for root shelves - required by TypeORM MaterializedPath
+            parent: parent,
+            parentId: parent ? dto.parentId : null,
+        };
+
+        const shelf = this.shelfRepository.create(shelfData as Shelf);
 
         return this.shelfRepository.save(shelf);
     }
 
-    async findAll(warehouseId?: string): Promise<Shelf[]> {
+    async findAll(warehouseId?: string, type?: string): Promise<Shelf[]> {
         const where: any = {};
         if (warehouseId) {
             where.warehouseId = warehouseId;
         }
+        if (type) {
+            where.type = type;
+        }
 
         return this.shelfRepository.find({
             where,
-            relations: ['warehouse', 'parent'],
+            relations: ['warehouse', 'parent', 'stocks'],
             order: { sortOrder: 'ASC', name: 'ASC' },
         });
     }
@@ -70,6 +89,46 @@ export class ShelvesService {
         const trees = await Promise.all(
             roots.map(root => this.shelfRepository.findDescendantsTree(root))
         );
+
+        // Get all shelf IDs in the tree
+        const getAllIds = (shelves: Shelf[]): string[] => {
+            let ids: string[] = [];
+            for (const shelf of shelves) {
+                ids.push(shelf.id);
+                if (shelf.children?.length) {
+                    ids = ids.concat(getAllIds(shelf.children));
+                }
+            }
+            return ids;
+        };
+
+        const allIds = getAllIds(trees);
+
+        if (allIds.length > 0) {
+            // Get stock sums for all shelves
+            const stockSums = await this.shelfStockRepository
+                .createQueryBuilder('stock')
+                .select('stock.shelfId', 'shelfId')
+                .addSelect('SUM(stock.quantity)', 'totalQuantity')
+                .where('stock.shelfId IN (:...ids)', { ids: allIds })
+                .groupBy('stock.shelfId')
+                .getRawMany();
+
+            const stockMap = new Map<string, number>();
+            stockSums.forEach(s => stockMap.set(s.shelfId, parseFloat(s.totalQuantity) || 0));
+
+            // Attach stock info to tree
+            const attachStocks = (shelves: Shelf[]) => {
+                for (const shelf of shelves) {
+                    (shelf as any).stocks = [{ quantity: stockMap.get(shelf.id) || 0 }];
+                    if (shelf.children?.length) {
+                        attachStocks(shelf.children);
+                    }
+                }
+            };
+
+            attachStocks(trees);
+        }
 
         return trees;
     }

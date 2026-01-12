@@ -13,8 +13,8 @@ export class ShelvesController {
     }
 
     @Get()
-    findAll(@Query('warehouseId') warehouseId?: string) {
-        return this.shelvesService.findAll(warehouseId);
+    findAll(@Query('warehouseId') warehouseId?: string, @Query('type') type?: string) {
+        return this.shelvesService.findAll(warehouseId, type);
     }
 
     @Get('tree/:warehouseId')

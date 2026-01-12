@@ -33,21 +33,19 @@ export class Shelf extends BaseEntity {
     parentId: string | null;
 
     @TreeParent()
-    @ManyToOne(() => Shelf, (shelf) => shelf.children, { nullable: true, onDelete: 'CASCADE' })
     @JoinColumn({ name: 'parent_id' })
     parent: Shelf | null;
 
     @TreeChildren()
-    @OneToMany(() => Shelf, (shelf) => shelf.parent)
     children: Shelf[];
 
     // Hierarchical path: /warehouse/zone/aisle/shelf
     @Column({ length: 1000, nullable: true })
     path: string;
 
-    // Global slot number for the shelf
-    @Column({ name: 'global_slot', type: 'int', default: 0 })
-    globalSlot: number;
+    // Global slot number for the shelf (should be unique, set manually)
+    @Column({ name: 'global_slot', type: 'int', nullable: true })
+    globalSlot: number | null;
 
     // Whether products on this shelf can be sold
     @Column({ name: 'is_sellable', default: true })

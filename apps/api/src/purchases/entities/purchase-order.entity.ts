@@ -2,6 +2,8 @@ import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, OneToMany, JoinColum
 import { BaseEntity } from '../../common/entities/base.entity';
 import { Supplier } from '../../suppliers/entities/supplier.entity';
 import { PurchaseOrderStatus } from '../enums/purchase-order-status.enum';
+import { PurchaseOrderItem } from './purchase-order-item.entity';
+import { GoodsReceipt } from './goods-receipt.entity';
 
 @Entity('purchase_orders')
 export class PurchaseOrder extends BaseEntity {
@@ -37,9 +39,9 @@ export class PurchaseOrder extends BaseEntity {
     @Column({ type: 'text', nullable: true })
     notes: string;
 
-    @OneToMany('PurchaseOrderItem', 'purchaseOrder', { cascade: true })
-    items: any[];
+    @OneToMany(() => PurchaseOrderItem, (item) => item.purchaseOrder, { cascade: true })
+    items: PurchaseOrderItem[];
 
-    @OneToMany('GoodsReceipt', 'purchaseOrder')
-    goodsReceipts: any[];
+    @OneToMany(() => GoodsReceipt, (receipt) => receipt.purchaseOrder)
+    goodsReceipts: GoodsReceipt[];
 }
