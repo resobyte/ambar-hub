@@ -162,7 +162,7 @@ export function Sidebar({ routes, currentPath, isMobileMenuOpen, onMobileMenuClo
           <button
             onClick={handleLogout}
             disabled={isPending}
-            title={isCollapsed ? "Logout" : undefined}
+            title={isCollapsed ? "Çıkış Yap" : undefined}
             className={`flex items-center w-full rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors group relative disabled:opacity-50 ${isCollapsed ? 'justify-center px-2 py-3' : 'px-4 py-3'
               }`}
           >
@@ -173,10 +173,10 @@ export function Sidebar({ routes, currentPath, isMobileMenuOpen, onMobileMenuClo
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
               </svg>
             )}
-            {!isCollapsed && <span>Logout</span>}
+            {!isCollapsed && <span>Çıkış Yap</span>}
             {isCollapsed && (
               <div className="absolute left-full ml-2 px-2 py-1 bg-foreground text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 whitespace-nowrap shadow-lg">
-                Logout
+                Çıkış Yap
               </div>
             )}
           </button>
@@ -231,7 +231,7 @@ export function Sidebar({ routes, currentPath, isMobileMenuOpen, onMobileMenuClo
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
               </svg>
             )}
-            Logout
+            Çıkış Yap
           </button>
         </div>
       </aside>

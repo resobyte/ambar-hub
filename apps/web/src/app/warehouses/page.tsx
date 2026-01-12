@@ -14,7 +14,7 @@ export default async function WarehousesPage() {
 
   return (
     <AppLayout user={user} currentPath="/warehouses">
-      <Suspense fallback={<div>Loading...</div>}>
+      <Suspense fallback={<div>Yükleniyor...</div>}>
         <WarehousesTable />
       </Suspense>
     </AppLayout>

@@ -26,8 +26,8 @@ export function ConfirmModal({
   title,
   message,
   children,
-  confirmText = 'Confirm',
-  cancelText = 'Cancel',
+  confirmText = 'Onayla',
+  cancelText = 'İptal',
   variant = 'default',
   size = 'sm',
 }: ConfirmModalProps) {

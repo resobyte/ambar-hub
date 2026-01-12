@@ -24,14 +24,14 @@ export function AccountForm({ user }: AccountFormProps) {
   const [profileConfirmOpen, setProfileConfirmOpen] = useState(false);
   const [passwordConfirmOpen, setPasswordConfirmOpen] = useState(false);
 
-  const isProfileChanged = 
-    firstName !== user.firstName || 
-    lastName !== user.lastName || 
+  const isProfileChanged =
+    firstName !== user.firstName ||
+    lastName !== user.lastName ||
     email !== user.email;
 
-  const isPasswordValid = 
-    currentPassword.length > 0 && 
-    newPassword.length >= 8 && 
+  const isPasswordValid =
+    currentPassword.length > 0 &&
+    newPassword.length >= 8 &&
     confirmPassword.length > 0 &&
     newPassword === confirmPassword;
 
@@ -48,10 +48,10 @@ export function AccountForm({ user }: AccountFormProps) {
           lastName,
           email,
         });
-        toast.success('Profile updated successfully');
+        toast.success('Profil başarıyla güncellendi');
         router.refresh();
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : 'Failed to update profile');
+        toast.error(error instanceof Error ? error.message : 'Profil güncellenemedi');
         throw error;
       }
     });
@@ -61,12 +61,12 @@ export function AccountForm({ user }: AccountFormProps) {
     e.preventDefault();
 
     if (newPassword !== confirmPassword) {
-      toast.error('Passwords do not match');
+      toast.error('Şifreler eşleşmiyor');
       return;
     }
 
     if (newPassword.length < 8) {
-      toast.error('Password must be at least 8 characters');
+      toast.error('Şifre en az 8 karakter olmalıdır');
       return;
     }
 
@@ -79,12 +79,12 @@ export function AccountForm({ user }: AccountFormProps) {
         await apiPatch(`/users/${user.id}`, {
           password: newPassword,
         });
-        toast.success('Password updated successfully');
+        toast.success('Şifre başarıyla güncellendi');
         setCurrentPassword('');
         setNewPassword('');
         setConfirmPassword('');
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : 'Failed to update password');
+        toast.error(error instanceof Error ? error.message : 'Şifre güncellenemedi');
         throw error;
       }
     });
@@ -93,11 +93,11 @@ export function AccountForm({ user }: AccountFormProps) {
   return (
     <div className="space-y-6">
       <div className="bg-card rounded-xl border border-border shadow-sm p-6">
-        <h3 className="text-lg font-bold text-foreground mb-4">Profile Information</h3>
+        <h3 className="text-lg font-bold text-foreground mb-4">Profil Bilgileri</h3>
         <form onSubmit={handleProfileSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1">First Name</label>
+              <label className="block text-sm font-medium text-foreground mb-1">Ad</label>
               <input
                 type="text"
                 value={firstName}
@@ -107,7 +107,7 @@ export function AccountForm({ user }: AccountFormProps) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1">Last Name</label>
+              <label className="block text-sm font-medium text-foreground mb-1">Soyad</label>
               <input
                 type="text"
                 value={lastName}
@@ -136,7 +136,7 @@ export function AccountForm({ user }: AccountFormProps) {
               {isPending ? (
                 <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
-                'Update Profile'
+                'Profili Güncelle'
               )}
             </button>
           </div>
@@ -144,10 +144,10 @@ export function AccountForm({ user }: AccountFormProps) {
       </div>
 
       <div className="bg-card rounded-xl border border-border shadow-sm p-6">
-        <h3 className="text-lg font-bold text-foreground mb-4">Change Password</h3>
+        <h3 className="text-lg font-bold text-foreground mb-4">Şifre Değiştir</h3>
         <form onSubmit={handlePasswordSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1">Current Password</label>
+            <label className="block text-sm font-medium text-foreground mb-1">Mevcut Şifre</label>
             <input
               type="password"
               value={currentPassword}
@@ -156,17 +156,17 @@ export function AccountForm({ user }: AccountFormProps) {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1">New Password</label>
+            <label className="block text-sm font-medium text-foreground mb-1">Yeni Şifre</label>
             <input
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="Minimum 8 characters"
+              placeholder="En az 8 karakter"
               className="w-full px-3 py-2 border border-input rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none bg-muted/20"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1">Confirm New Password</label>
+            <label className="block text-sm font-medium text-foreground mb-1">Yeni Şifreyi Onayla</label>
             <input
               type="password"
               value={confirmPassword}
@@ -183,7 +183,7 @@ export function AccountForm({ user }: AccountFormProps) {
               {isPending ? (
                 <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
-                'Update Password'
+                'Şifreyi Güncelle'
               )}
             </button>
           </div>
@@ -194,20 +194,20 @@ export function AccountForm({ user }: AccountFormProps) {
         isOpen={profileConfirmOpen}
         onClose={() => setProfileConfirmOpen(false)}
         onConfirm={handleProfileConfirm}
-        title="Update Profile"
-        message="Are you sure you want to update your profile information?"
-        confirmText="Update"
-        cancelText="Cancel"
+        title="Profili Güncelle"
+        message="Profil bilgilerinizi güncellemek istediğinize emin misiniz?"
+        confirmText="Güncelle"
+        cancelText="İptal"
       />
 
       <ConfirmModal
         isOpen={passwordConfirmOpen}
         onClose={() => setPasswordConfirmOpen(false)}
         onConfirm={handlePasswordConfirm}
-        title="Change Password"
-        message="Are you sure you want to change your password? You will need to use the new password on your next login."
-        confirmText="Change Password"
-        cancelText="Cancel"
+        title="Şifre Değiştir"
+        message="Şifrenizi değiştirmek istediğinize emin misiniz? Bir sonraki girişinizde yeni şifreyi kullanmanız gerekecek."
+        confirmText="Şifre Değiştir"
+        cancelText="İptal"
       />
     </div>
   );

@@ -17,7 +17,7 @@ export function LoginForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (isPending) return;
 
     setIsPending(true);
@@ -33,21 +33,21 @@ export function LoginForm() {
       });
 
       const result = await response.json();
-      
+
       if (!result.success) {
-        toast.error(result.error || 'Login failed');
+        toast.error(result.error || 'Giriş başarısız');
         setIsPending(false);
         return;
       }
 
       if (result.user) {
-        toast.success('Login successful');
+        toast.success('Giriş başarılı');
         const redirectUrl = callbackUrl || getDefaultRouteByRole(result.user.role);
         window.location.href = redirectUrl;
       }
     } catch (err) {
       console.error('Login error:', err);
-      toast.error('An unexpected error occurred. Please try again.');
+      toast.error('Beklenmeyen bir hata oluştu. Lütfen tekrar deneyin.');
       setIsPending(false);
     }
   };
@@ -68,7 +68,7 @@ export function LoginForm() {
     <form onSubmit={handleSubmit} className="space-y-6">
       <Input
         type="email"
-        label="Email Address"
+        label="E-posta Adresi"
         required
         value={email}
         onChange={(e) => setEmail(e.target.value)}
@@ -79,7 +79,7 @@ export function LoginForm() {
 
       <Input
         type="password"
-        label="Password"
+        label="Şifre"
         required
         value={password}
         onChange={(e) => setPassword(e.target.value)}
@@ -91,9 +91,9 @@ export function LoginForm() {
       <div className="flex items-center justify-between text-sm">
         <label className="flex items-center text-muted-foreground cursor-pointer">
           <input type="checkbox" className="mr-2 rounded border-input text-primary focus:ring-primary" />
-          Remember me
+          Beni hatırla
         </label>
-        <a href="#" className="text-primary hover:text-primary-dark font-medium transition-colors">Forgot password?</a>
+        <a href="#" className="text-primary hover:text-primary-dark font-medium transition-colors">Şifremi unuttum?</a>
       </div>
 
       <Button
@@ -102,11 +102,11 @@ export function LoginForm() {
         isLoading={isPending}
         className="w-full py-3"
       >
-        Sign In
+        Giriş Yap
       </Button>
 
       <div className="text-center text-sm text-muted-foreground">
-        Don&apos;t have an account? <a href="#" className="text-primary font-medium hover:underline">Contact Support</a>
+        Hesabınız yok mu? <a href="#" className="text-primary font-medium hover:underline">Destek ile İletişime Geçin</a>
       </div>
     </form>
   );

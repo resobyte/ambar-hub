@@ -62,7 +62,7 @@ export function StoresTable() {
       setStores(response.data);
       setTotal(response.meta.total);
     } catch (err) {
-      error('Failed to fetch stores');
+      error('Mağazalar yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -73,7 +73,7 @@ export function StoresTable() {
       const response = await getWarehouses(1, 100);
       setWarehouses(response.data);
     } catch (err) {
-      error('Failed to fetch warehouses');
+      error('Depolar yüklenemedi');
     }
   }, [error]);
 
@@ -117,15 +117,15 @@ export function StoresTable() {
       const currentFormData = formDataRef.current;
       if (editingStore) {
         await updateStore(editingStore.id, currentFormData);
-        success('Store updated successfully');
+        success('Mağaza başarıyla güncellendi');
       } else {
         await createStore(currentFormData);
-        success('Store created successfully');
+        success('Mağaza başarıyla oluşturuldu');
       }
       setIsModalOpen(false);
       fetchStores();
     } catch (err: any) {
-      error(err.message || 'Operation failed');
+      error(err.message || 'İşlem başarısız');
     }
   }, [editingStore, fetchStores, success, error]);
 
@@ -133,11 +133,11 @@ export function StoresTable() {
     if (!deletingStoreId) return;
     try {
       await deleteStore(deletingStoreId);
-      success('Store deleted successfully');
+      success('Mağaza başarıyla silindi');
       setIsDeleteModalOpen(false);
       fetchStores();
     } catch (err: any) {
-      error(err.message || 'Delete failed');
+      error(err.message || 'Silme işlemi başarısız');
     }
   }, [deletingStoreId, fetchStores, success, error]);
 
@@ -165,39 +165,38 @@ export function StoresTable() {
   }, [isFormValid, isFormDirty, editingStore]);
 
   const modalTitle = useMemo(() =>
-    editingStore ? 'Edit Store' : 'Add Store',
+    editingStore ? 'Mağaza Düzenle' : 'Mağaza Ekle',
     [editingStore]
   );
 
   const submitButtonText = useMemo(() =>
-    editingStore ? 'Update' : 'Create',
+    editingStore ? 'Güncelle' : 'Oluştur',
     [editingStore]
   );
 
   const getWarehouseName = useCallback((warehouseId: string) => {
     const warehouse = warehouses.find((w) => w.id === warehouseId);
-    return warehouse?.name || 'Unknown';
+    return warehouse?.name || 'Bilinmiyor';
   }, [warehouses]);
 
   const columns = useMemo<Column<Store>[]>(() => [
-    { key: 'name', header: 'Name' },
+    { key: 'name', header: 'Ad' },
     {
       key: 'warehouseId',
-      header: 'Warehouse',
+      header: 'Depo',
       render: (row: Store) => (
         <span className="text-muted-foreground">{getWarehouseName(row.warehouseId)}</span>
       ),
     },
     {
       key: 'isActive',
-      header: 'Status',
+      header: 'Durum',
       render: (row: Store) => (
-        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${
-          row.isActive
+        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${row.isActive
             ? 'bg-success/10 text-success border-success/20'
             : 'bg-muted text-muted-foreground border-border'
-        }`}>
-          {row.isActive ? 'Active' : 'Passive'}
+          }`}>
+          {row.isActive ? 'Aktif' : 'Pasif'}
         </span>
       ),
     },
@@ -247,14 +246,14 @@ export function StoresTable() {
     <>
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h2 className="text-2xl font-semibold text-foreground">Stores</h2>
-          <p className="text-sm text-muted-foreground mt-1">Manage your sales channels and marketplaces</p>
+          <h2 className="text-2xl font-semibold text-foreground">Mağazalar</h2>
+          <p className="text-sm text-muted-foreground mt-1">Satış kanallarınızı ve pazaryerlerinizi yönetin</p>
         </div>
         <Button onClick={handleCreate}>
           <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          Add Store
+          Mağaza Ekle
         </Button>
       </div>
 
@@ -265,17 +264,17 @@ export function StoresTable() {
         isLoading={loading}
         pagination={pagination}
         onPageChange={setPage}
-        emptyMessage="No stores yet. Connect your first marketplace to get started."
+        emptyMessage="Henüz mağaza yok. Başlamak için ilk pazaryerinizi bağlayın."
       />
 
       <Modal isOpen={isModalOpen} onClose={handleModalClose} title={modalTitle} size="md">
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input
-            label="Name"
+            label="Ad"
             value={formData.name}
             onChange={(e) => updateFormField('name', e.target.value)}
             required
-            placeholder="Enter store name"
+            placeholder="Mağaza adı girin"
           />
           <Input
             label="Proxy URL"
@@ -286,24 +285,24 @@ export function StoresTable() {
             placeholder="https://example.com"
           />
           <Select
-            label="Warehouse"
+            label="Depo"
             value={formData.warehouseId}
             onChange={(e) => updateFormField('warehouseId', e.target.value)}
             options={warehouseOptions}
             required
           />
           <Select
-            label="Status"
+            label="Durum"
             value={formData.isActive ? 'Active' : 'Passive'}
             onChange={(e) => updateFormField('isActive', e.target.value === 'Active')}
             options={[
-              { value: 'Active', label: 'Active' },
-              { value: 'Passive', label: 'Passive' },
+              { value: 'Active', label: 'Aktif' },
+              { value: 'Passive', label: 'Pasif' },
             ]}
           />
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={handleModalClose}>
-              Cancel
+              İptal
             </Button>
             <Button type="submit" disabled={!canSubmit}>{submitButtonText}</Button>
           </div>
@@ -314,8 +313,8 @@ export function StoresTable() {
         isOpen={isDeleteModalOpen}
         onClose={handleDeleteModalClose}
         onConfirm={handleConfirmDelete}
-        title="Delete Store"
-        message="Are you sure you want to delete this store? This action cannot be undone."
+        title="Mağaza Sil"
+        message="Bu mağazayı silmek istediğinize emin misiniz? Bu işlem geri alınamaz."
       />
     </>
   );

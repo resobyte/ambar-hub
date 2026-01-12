@@ -7,13 +7,13 @@ export default function UnauthorizedPage() {
       <div className="text-center space-y-6">
         <div className="space-y-2">
           <h1 className="text-6xl font-bold text-primary">401</h1>
-          <h2 className="text-2xl font-semibold">Unauthorized</h2>
+          <h2 className="text-2xl font-semibold">Yetkisiz Giriş</h2>
           <p className="text-muted-foreground max-w-md">
-            You need to be logged in to access this page. Please sign in to continue.
+            Bu sayfaya erişmek için giriş yapmalısınız. Lütfen devam etmek için oturum açın.
           </p>
         </div>
         <Link href="/auth/login">
-          <Button>Sign In</Button>
+          <Button>Giriş Yap</Button>
         </Link>
       </div>
     </div>

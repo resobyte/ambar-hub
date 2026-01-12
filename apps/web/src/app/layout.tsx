@@ -11,8 +11,8 @@ const rubik = Rubik({
 });
 
 export const metadata: Metadata = {
-  title: 'Admin Panel',
-  description: 'Administration Panel',
+  title: 'Ambar Hub | Yönetim Paneli',
+  description: 'Depo ve Sipariş Yönetim Sistemi',
 };
 
 const themeInitScript = `
@@ -44,7 +44,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="tr" suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{ __html: themeInitScript }}

@@ -19,13 +19,13 @@ export default async function DashboardPage() {
     <AppLayout user={user} currentPath="/dashboard">
       <div className="space-y-6">
         <div>
-          <h2 className="text-3xl font-bold text-foreground font-rubik">Dashboard</h2>
-          <p className="text-muted-foreground mt-1">Overview of your system performance.</p>
+          <h2 className="text-3xl font-bold text-foreground font-rubik">Panel</h2>
+          <p className="text-muted-foreground mt-1">Sistem performans özeti.</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <InfoCard
-            title="Total Users"
+            title="Toplam Kullanıcı"
             value="1,234"
             icon={
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -35,7 +35,7 @@ export default async function DashboardPage() {
             trend={{ value: 12, isPositive: true }}
           />
           <InfoCard
-            title="Active Sessions"
+            title="Aktif Oturumlar"
             value="56"
             icon={
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -45,7 +45,7 @@ export default async function DashboardPage() {
             trend={{ value: 4.3, isPositive: true }}
           />
           <InfoCard
-            title="Pending Tasks"
+            title="Bekleyen Görevler"
             value="23"
             icon={
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -55,7 +55,7 @@ export default async function DashboardPage() {
             trend={{ value: 2.1, isPositive: false }}
           />
           <InfoCard
-            title="System Health"
+            title="Sistem Durumu"
             value="98%"
             icon={
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -67,22 +67,22 @@ export default async function DashboardPage() {
         </div>
 
         <div className="bg-card rounded-xl border border-border shadow-sm p-6">
-          <h3 className="text-lg font-bold mb-4 text-foreground">Recent Activity</h3>
+          <h3 className="text-lg font-bold mb-4 text-foreground">Son İşlemler</h3>
           <div className="space-y-4">
             {[1, 2, 3, 4, 5].map((i) => (
               <div key={i} className="flex items-center p-3 hover:bg-muted/50 rounded-lg transition-colors">
                 <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center text-muted-foreground mr-3 text-xs font-bold">
-                  U{i}
+                  K{i}
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-foreground">New user registered</p>
-                  <p className="text-xs text-muted-foreground">{i * 2} minutes ago</p>
+                  <p className="text-sm font-medium text-foreground">Yeni kullanıcı kaydı</p>
+                  <p className="text-xs text-muted-foreground">{i * 2} dakika önce</p>
                 </div>
               </div>
             ))}
           </div>
           <button className="w-full mt-4 py-2 text-sm text-primary font-medium hover:bg-primary/5 rounded-lg transition-colors">
-            View All Activity
+            Tüm Aktiviteleri Gör
           </button>
         </div>
       </div>

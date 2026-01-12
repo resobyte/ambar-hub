@@ -49,7 +49,7 @@ export function WarehousesTable() {
       setWarehouses(response.data);
       setTotal(response.meta.total);
     } catch (err) {
-      error('Failed to fetch warehouses');
+      error('Depolar yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -94,15 +94,15 @@ export function WarehousesTable() {
       const currentFormData = formDataRef.current;
       if (editingWarehouse) {
         await updateWarehouse(editingWarehouse.id, currentFormData);
-        success('Warehouse updated successfully');
+        success('Depo başarıyla güncellendi');
       } else {
         await createWarehouse(currentFormData);
-        success('Warehouse created successfully');
+        success('Depo başarıyla oluşturuldu');
       }
       setIsModalOpen(false);
       fetchWarehouses();
     } catch (err: any) {
-      error(err.message || 'Operation failed');
+      error(err.message || 'İşlem başarısız');
     }
   }, [editingWarehouse, fetchWarehouses, success, error]);
 
@@ -110,11 +110,11 @@ export function WarehousesTable() {
     if (!deletingWarehouseId) return;
     try {
       await deleteWarehouse(deletingWarehouseId);
-      success('Warehouse deleted successfully');
+      success('Depo başarıyla silindi');
       setIsDeleteModalOpen(false);
       fetchWarehouses();
     } catch (err: any) {
-      error(err.message || 'Delete failed');
+      error(err.message || 'Silme işlemi başarısız');
     }
   }, [deletingWarehouseId, fetchWarehouses, success, error]);
 
@@ -142,34 +142,33 @@ export function WarehousesTable() {
   }, [isFormValid, isFormDirty, editingWarehouse]);
 
   const modalTitle = useMemo(() =>
-    editingWarehouse ? 'Edit Warehouse' : 'Add Warehouse',
+    editingWarehouse ? 'Depo Düzenle' : 'Depo Ekle',
     [editingWarehouse]
   );
 
   const submitButtonText = useMemo(() =>
-    editingWarehouse ? 'Update' : 'Create',
+    editingWarehouse ? 'Güncelle' : 'Oluştur',
     [editingWarehouse]
   );
 
   const columns = useMemo<Column<Warehouse>[]>(() => [
-    { key: 'name', header: 'Name' },
+    { key: 'name', header: 'Ad' },
     {
       key: 'storeCount',
-      header: 'Stores',
+      header: 'Mağazalar',
       render: (row: Warehouse) => (
         <span className="text-muted-foreground">{row.storeCount}</span>
       ),
     },
     {
       key: 'isActive',
-      header: 'Status',
+      header: 'Durum',
       render: (row: Warehouse) => (
-        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${
-          row.isActive
+        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${row.isActive
             ? 'bg-success/10 text-success border-success/20'
             : 'bg-muted text-muted-foreground border-border'
-        }`}>
-          {row.isActive ? 'Active' : 'Passive'}
+          }`}>
+          {row.isActive ? 'Aktif' : 'Pasif'}
         </span>
       ),
     },
@@ -192,10 +191,9 @@ export function WarehousesTable() {
           <button
             onClick={() => handleDelete(row.id)}
             disabled={row.storeCount > 0}
-            title={row.storeCount > 0 ? 'Cannot delete: Has linked stores' : 'Delete'}
-            className={`p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors ${
-              row.storeCount > 0 ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
+            title={row.storeCount > 0 ? 'Silinemez: Bağlı mağazalar var' : 'Sil'}
+            className={`p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors ${row.storeCount > 0 ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -217,14 +215,14 @@ export function WarehousesTable() {
     <>
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h2 className="text-2xl font-semibold text-foreground">Warehouses</h2>
-          <p className="text-sm text-muted-foreground mt-1">Manage storage locations for your inventory</p>
+          <h2 className="text-2xl font-semibold text-foreground">Depolar</h2>
+          <p className="text-sm text-muted-foreground mt-1">Envanteriniz için depolama konumlarını yönetin</p>
         </div>
         <Button onClick={handleCreate}>
           <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          Add Warehouse
+          Depo Ekle
         </Button>
       </div>
 
@@ -235,36 +233,36 @@ export function WarehousesTable() {
         isLoading={loading}
         pagination={pagination}
         onPageChange={setPage}
-        emptyMessage="No warehouses yet. Create your first warehouse to get started."
+        emptyMessage="Henüz depo yok. Başlamak için ilk deponuzu oluşturun."
       />
 
       <Modal isOpen={isModalOpen} onClose={handleModalClose} title={modalTitle} size="md">
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input
-            label="Name"
+            label="Ad"
             value={formData.name}
             onChange={(e) => updateFormField('name', e.target.value)}
             required
-            placeholder="Enter warehouse name"
+            placeholder="Depo adı girin"
           />
           <Input
-            label="Address"
+            label="Adres"
             value={formData.address}
             onChange={(e) => updateFormField('address', e.target.value)}
-            placeholder="Enter warehouse address (optional)"
+            placeholder="Depo adresi girin (opsiyonel)"
           />
           <Select
-            label="Status"
+            label="Durum"
             value={formData.isActive ? 'Active' : 'Passive'}
             onChange={(e) => updateFormField('isActive', e.target.value === 'Active')}
             options={[
-              { value: 'Active', label: 'Active' },
-              { value: 'Passive', label: 'Passive' },
+              { value: 'Active', label: 'Aktif' },
+              { value: 'Passive', label: 'Pasif' },
             ]}
           />
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={handleModalClose}>
-              Cancel
+              İptal
             </Button>
             <Button type="submit" disabled={!canSubmit}>{submitButtonText}</Button>
           </div>
@@ -275,8 +273,8 @@ export function WarehousesTable() {
         isOpen={isDeleteModalOpen}
         onClose={handleDeleteModalClose}
         onConfirm={handleConfirmDelete}
-        title="Delete Warehouse"
-        message="Are you sure you want to delete this warehouse? This action cannot be undone."
+        title="Depo Sil"
+        message="Bu depoyu silmek istediğinize emin misiniz? Bu işlem geri alınamaz."
       />
     </>
   );

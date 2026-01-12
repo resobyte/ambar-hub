@@ -14,7 +14,7 @@ export default async function ShippingPage() {
 
   return (
     <AppLayout user={user} currentPath="/shippings">
-      <Suspense fallback={<div>Loading...</div>}>
+      <Suspense fallback={<div>Yükleniyor...</div>}>
         <ShippingTable />
       </Suspense>
     </AppLayout>

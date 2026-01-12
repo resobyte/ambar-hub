@@ -35,7 +35,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
         >
           {!props.value && (
             <option value="" disabled>
-              Select an option
+              Bir seçenek belirleyin
             </option>
           )}
           {options.map((option) => (

@@ -137,22 +137,22 @@ export function OrdersTable({
             {/* Main Table */}
             <div className="flex-1">
                 {isLoading ? (
-                    <div className="p-4 text-center">Loading...</div>
+                    <div className="p-4 text-center">Yükleniyor...</div>
                 ) : orders.length === 0 ? (
-                    <div className="p-4 text-center text-muted-foreground">No orders found.</div>
+                    <div className="p-4 text-center text-muted-foreground">Sipariş bulunamadı.</div>
                 ) : (
                     <>
                         <div className="rounded-md border">
                             <table className="w-full text-sm text-left">
                                 <thead className="bg-muted/50 text-muted-foreground uppercase text-xs">
                                     <tr>
-                                        <th className="px-4 py-3 font-medium">Order Number</th>
-                                        <th className="px-4 py-3 font-medium">Source</th>
-                                        <th className="px-4 py-3 font-medium">Customer</th>
-                                        <th className="px-4 py-3 font-medium">Date</th>
-                                        <th className="px-4 py-3 font-medium">Total</th>
-                                        <th className="px-4 py-3 font-medium">Status</th>
-                                        <th className="px-4 py-3 font-medium">Actions</th>
+                                        <th className="px-4 py-3 font-medium">Sipariş No</th>
+                                        <th className="px-4 py-3 font-medium">Kaynak</th>
+                                        <th className="px-4 py-3 font-medium">Müşteri</th>
+                                        <th className="px-4 py-3 font-medium">Tarih</th>
+                                        <th className="px-4 py-3 font-medium">Toplam</th>
+                                        <th className="px-4 py-3 font-medium">Durum</th>
+                                        <th className="px-4 py-3 font-medium">İşlemler</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-border">
@@ -169,7 +169,7 @@ export function OrdersTable({
                                                 </Badge>
                                             </td>
                                             <td className="px-4 py-3">
-                                                {order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : 'Guest'}
+                                                {order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : 'Misafir'}
                                             </td>
                                             <td className="px-4 py-3">
                                                 {new Date(order.orderDate).toLocaleDateString('tr-TR')}
@@ -199,7 +199,7 @@ export function OrdersTable({
                         {/* Pagination */}
                         <div className="flex items-center justify-between py-4">
                             <div className="flex items-center space-x-2">
-                                <span className="text-sm text-muted-foreground">Rows per page:</span>
+                                <span className="text-sm text-muted-foreground">Satır sayısı:</span>
                                 <Select
                                     className="h-8 w-[70px]"
                                     value={String(pageSize)}
@@ -213,7 +213,7 @@ export function OrdersTable({
                             </div>
 
                             <div className="flex items-center space-x-6">
-                                <span className="text-sm text-muted-foreground">Page {currentPage} of {totalPages}</span>
+                                <span className="text-sm text-muted-foreground">Sayfa {currentPage} / {totalPages}</span>
                                 <div className="space-x-2">
                                     <Button
                                         variant="outline"
@@ -221,7 +221,7 @@ export function OrdersTable({
                                         onClick={() => onPageChange(currentPage - 1)}
                                         disabled={currentPage <= 1}
                                     >
-                                        Previous
+                                        Önceki
                                     </Button>
                                     <Button
                                         variant="outline"
@@ -229,7 +229,7 @@ export function OrdersTable({
                                         onClick={() => onPageChange(currentPage + 1)}
                                         disabled={currentPage >= totalPages}
                                     >
-                                        Next
+                                        Sonraki
                                     </Button>
                                 </div>
                             </div>

@@ -211,7 +211,7 @@ export function ProductsTable() {
       setProducts(response.data);
       setTotal(response.meta.total);
     } catch (err) {
-      error('Failed to fetch products');
+      error('Ürünler yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -404,11 +404,11 @@ export function ProductsTable() {
       if (editingProduct) {
         const updated = await updateProduct(editingProduct.id, currentFormData);
         productId = updated.data.id;
-        success('Product updated successfully');
+        success('Ürün başarıyla güncellendi');
       } else {
         const created = await createProduct(currentFormData);
         productId = created.data.id;
-        success('Product created successfully');
+        success('Ürün başarıyla oluşturuldu');
       }
 
       // Save SET components if product type is SET
@@ -656,46 +656,46 @@ export function ProductsTable() {
     if (!deletingProductId) return;
     try {
       await deleteProduct(deletingProductId);
-      success('Product deleted successfully');
+      success('Ürün başarıyla silindi');
       setIsDeleteModalOpen(false);
       fetchProducts();
       fetchProductStores();
     } catch (err: any) {
-      error(err.message || 'Delete failed');
+      error(err.message || 'Silme başarısız');
     }
   }, [deletingProductId, fetchProducts, fetchProductStores, success, error]);
 
   const modalTitle = useMemo(() =>
-    editingProduct ? 'Edit Product' : 'Add Product',
+    editingProduct ? 'Ürün Düzenle' : 'Ürün Ekle',
     [editingProduct]
   );
 
   const submitButtonText = useMemo(() =>
-    editingProduct ? 'Update' : 'Create',
+    editingProduct ? 'Güncelle' : 'Oluştur',
     [editingProduct]
   );
 
   const columns = useMemo<Column<Product>[]>(() => [
-    { key: 'name', header: 'Name' },
-    { key: 'brand', header: 'Brand' },
-    { key: 'category', header: 'Category' },
+    { key: 'name', header: 'Ürün Adı' },
+    { key: 'brand', header: 'Marka' },
+    { key: 'category', header: 'Kategori' },
     { key: 'sku', header: 'SKU' },
     {
       key: 'storeCount',
-      header: 'Stores',
+      header: 'Mağazalar',
       render: (row: Product) => (
         <span className="text-muted-foreground">{row.storeCount}</span>
       ),
     },
     {
       key: 'isActive',
-      header: 'Status',
+      header: 'Durum',
       render: (row: Product) => (
         <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${row.isActive
           ? 'bg-success/10 text-success border-success/20'
           : 'bg-muted text-muted-foreground border-border'
           }`}>
-          {row.isActive ? 'Active' : 'Passive'}
+          {row.isActive ? 'Aktif' : 'Pasif'}
         </span>
       ),
     },
@@ -745,14 +745,14 @@ export function ProductsTable() {
     <>
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h2 className="text-2xl font-semibold text-foreground">Products</h2>
-          <p className="text-sm text-muted-foreground mt-1">Manage your product catalog and pricing</p>
+          <h2 className="text-2xl font-semibold text-foreground">Ürünler</h2>
+          <p className="text-sm text-muted-foreground mt-1">Ürün kataloğunuzu ve fiyatlandırmayı yönetin</p>
         </div>
         <Button onClick={handleCreate}>
           <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          Add Product
+          Ürün Ekle
         </Button>
       </div>
 
@@ -763,39 +763,39 @@ export function ProductsTable() {
         isLoading={loading}
         pagination={pagination}
         onPageChange={setPage}
-        emptyMessage="No products yet. Add your first product to get started."
+        emptyMessage="Henüz ürün yok. İlk ürününüzü ekleyin."
       />
 
       <Modal isOpen={isModalOpen} onClose={handleModalClose} title={modalTitle} size="full">
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Product Information */}
           <div>
-            <h3 className="text-sm font-semibold text-foreground mb-3">Product Information</h3>
+            <h3 className="text-sm font-semibold text-foreground mb-3">Ürün Bilgileri</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Input
-                label="Name"
+                label="Ürün Adı"
                 value={formData.name}
                 onChange={(e) => updateFormField('name', e.target.value)}
                 required
-                placeholder="Product name"
+                placeholder="Ürün adı"
               />
               <Input
-                label="Brand"
+                label="Marka"
                 value={formData.brand}
                 onChange={(e) => updateFormField('brand', e.target.value)}
-                placeholder="Brand"
+                placeholder="Marka"
               />
               <Input
-                label="Category"
+                label="Kategori"
                 value={formData.category}
                 onChange={(e) => updateFormField('category', e.target.value)}
-                placeholder="Category"
+                placeholder="Kategori"
               />
               <Input
-                label="Barcode"
+                label="Barkod"
                 value={formData.barcode}
                 onChange={(e) => updateFormField('barcode', e.target.value)}
-                placeholder="Barcode"
+                placeholder="Barkod"
               />
               <Input
                 label="SKU"
@@ -804,7 +804,7 @@ export function ProductsTable() {
                 placeholder="SKU"
               />
               <Select
-                label="VAT Rate"
+                label="KDV Oranı"
                 value={String(formData.vatRate)}
                 onChange={(e) => updateFormField('vatRate', parseFloat(e.target.value))}
                 options={VAT_RATES}
@@ -819,7 +819,7 @@ export function ProductsTable() {
                 placeholder="Weight/Volume"
               />
               <Input
-                label="Purchase Price"
+                label="Alış Fiyatı"
                 value={formData.purchasePrice}
                 onChange={(e) => updateFormField('purchasePrice', parseFloat(e.target.value) || 0)}
                 type="number"
@@ -828,7 +828,7 @@ export function ProductsTable() {
                 placeholder="0.00"
               />
               <Input
-                label="Sale Price"
+                label="Satış Fiyatı"
                 value={formData.salePrice}
                 onChange={(e) => updateFormField('salePrice', parseFloat(e.target.value) || 0)}
                 type="number"
@@ -837,7 +837,7 @@ export function ProductsTable() {
                 placeholder="0.00"
               />
               <Input
-                label="Last Sale Price"
+                label="Son Satış Fiyatı"
                 value={formData.lastSalePrice}
                 onChange={(e) => updateFormField('lastSalePrice', parseFloat(e.target.value) || 0)}
                 type="number"
@@ -864,12 +864,12 @@ export function ProductsTable() {
               )}
               <div className="md:col-span-3">
                 <Select
-                  label="Status"
-                  value={formData.isActive ? 'Active' : 'Passive'}
+                  label="Durum"
+                  value={formData.isActive ? 'Aktif' : 'Pasif'}
                   onChange={(e) => updateFormField('isActive', e.target.value === 'Active')}
                   options={[
-                    { value: 'Active', label: 'Active' },
-                    { value: 'Passive', label: 'Passive' },
+                    { value: 'Active', label: 'Aktif' },
+                    { value: 'Passive', label: 'Pasif' },
                   ]}
                 />
               </div>
@@ -970,7 +970,7 @@ export function ProductsTable() {
 
           <div className="flex justify-end gap-2 pt-2 border-t border-border">
             <Button type="button" variant="outline" onClick={handleModalClose}>
-              Cancel
+              İptal
             </Button>
             <Button type="submit" disabled={!canSubmit}>{submitButtonText}</Button>
           </div>
@@ -981,8 +981,8 @@ export function ProductsTable() {
         isOpen={isDeleteModalOpen}
         onClose={handleDeleteModalClose}
         onConfirm={handleConfirmDelete}
-        title="Delete Product"
-        message="Are you sure you want to delete this product? This action cannot be undone."
+        title="Ürün Sil"
+        message="Bu ürünü silmek istediğinize emin misiniz? Bu işlem geri alınamaz."
       />
     </>
   );

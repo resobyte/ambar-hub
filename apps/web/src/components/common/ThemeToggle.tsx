@@ -16,8 +16,8 @@ export function ThemeToggle() {
     <button
       onClick={cycleTheme}
       className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-      aria-label={`Current theme: ${theme}. Click to change.`}
-      title={`Theme: ${theme}`}
+      aria-label={`Mevcut tema: ${theme}. Değiştirmek için tıklayın.`}
+      title={`Tema: ${theme}`}
     >
       {resolvedTheme === 'dark' ? (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -7,13 +7,13 @@ export default function ForbiddenPage() {
       <div className="text-center space-y-6">
         <div className="space-y-2">
           <h1 className="text-6xl font-bold text-primary">403</h1>
-          <h2 className="text-2xl font-semibold">Access Denied</h2>
+          <h2 className="text-2xl font-semibold">Erişim Reddedildi</h2>
           <p className="text-muted-foreground max-w-md">
-            You don&apos;t have permission to access this page. Contact your administrator if you believe this is an error.
+            Bu sayfaya erişim izniniz yok. Bunun bir hata olduğunu düşünüyorsanız yöneticinizle iletişime geçin.
           </p>
         </div>
         <Link href="/">
-          <Button>Go to Home</Button>
+          <Button>Ana Sayfaya Dön</Button>
         </Link>
       </div>
     </div>

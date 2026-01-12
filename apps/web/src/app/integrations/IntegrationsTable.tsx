@@ -137,7 +137,7 @@ export function IntegrationsTable() {
       setIntegrations(response.data);
       setTotal(response.meta.total);
     } catch (err) {
-      error('Failed to fetch integrations');
+      error('Entegrasyonlar yüklenemedi');
     } finally {
       setLoading(false);
     }
@@ -148,7 +148,7 @@ export function IntegrationsTable() {
       const response = await getStores(1, 100);
       setStores(response.data);
     } catch (err) {
-      error('Failed to fetch stores');
+      error('Mağazalar yüklenemedi');
     }
   }, [error]);
 
@@ -157,7 +157,7 @@ export function IntegrationsTable() {
       const data = await getIntegrationStores();
       setIntegrationStores(data);
     } catch (err) {
-      error('Failed to fetch integration stores');
+      error('Entegrasyon mağazaları yüklenemedi');
     }
   }, [error]);
 
@@ -166,7 +166,7 @@ export function IntegrationsTable() {
       const data = await getActiveShippingProviders();
       setShippingProviders(data);
     } catch (err) {
-      error('Failed to fetch shipping providers');
+      error('Kargo firmaları yüklenemedi');
     }
   }, [error]);
 
@@ -253,11 +253,11 @@ export function IntegrationsTable() {
       if (editingIntegration) {
         const updated = await updateIntegration(editingIntegration.id, currentFormData);
         integrationId = updated.data.id;
-        success('Integration updated successfully');
+        success('Entegrasyon başarıyla güncellendi');
       } else {
         const created = await createIntegration(currentFormData);
         integrationId = created.data.id;
-        success('Integration created successfully');
+        success('Entegrasyon başarıyla oluşturuldu');
       }
 
       const existingConfigs = integrationStores.filter(is => is && is.integrationId === (editingIntegration?.id || integrationId));
@@ -310,7 +310,7 @@ export function IntegrationsTable() {
       fetchIntegrations();
       fetchIntegrationStores();
     } catch (err: any) {
-      error(err.message || 'Operation failed');
+      error(err.message || 'İşlem başarısız');
     }
   }, [editingIntegration, selectedStoreIds, storeConfigs, integrationStores, fetchIntegrations, fetchIntegrationStores, success, error]);
 
@@ -447,12 +447,12 @@ export function IntegrationsTable() {
     if (!deletingIntegrationId) return;
     try {
       await deleteIntegration(deletingIntegrationId);
-      success('Integration deleted successfully');
+      success('Entegrasyon başarıyla silindi');
       setIsDeleteModalOpen(false);
       fetchIntegrations();
       fetchIntegrationStores();
     } catch (err: any) {
-      error(err.message || 'Delete failed');
+      error(err.message || 'Silme işlemi başarısız');
     }
   }, [deletingIntegrationId, fetchIntegrations, fetchIntegrationStores, success, error]);
 
@@ -461,20 +461,20 @@ export function IntegrationsTable() {
   }, []);
 
   const modalTitle = useMemo(() =>
-    editingIntegration ? 'Edit Integration' : 'Add Integration',
+    editingIntegration ? 'Entegrasyon Düzenle' : 'Entegrasyon Ekle',
     [editingIntegration]
   );
 
   const submitButtonText = useMemo(() =>
-    editingIntegration ? 'Update' : 'Create',
+    editingIntegration ? 'Güncelle' : 'Oluştur',
     [editingIntegration]
   );
 
   const columns = useMemo<Column<Integration>[]>(() => [
-    { key: 'name', header: 'Name' },
+    { key: 'name', header: 'Ad' },
     {
       key: 'type',
-      header: 'Type',
+      header: 'Tip',
       render: (row: Integration) => (
         <span className="px-2.5 py-0.5 rounded-full text-xs font-medium border bg-primary/10 text-primary border-primary/20">
           {getTypeLabel(row.type)}
@@ -483,20 +483,20 @@ export function IntegrationsTable() {
     },
     {
       key: 'storeCount',
-      header: 'Stores',
+      header: 'Mağazalar',
       render: (row: Integration) => (
         <span className="text-muted-foreground">{row.storeCount}</span>
       ),
     },
     {
       key: 'isActive',
-      header: 'Status',
+      header: 'Durum',
       render: (row: Integration) => (
         <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${row.isActive
           ? 'bg-success/10 text-success border-success/20'
           : 'bg-muted text-muted-foreground border-border'
           }`}>
-          {row.isActive ? 'Active' : 'Passive'}
+          {row.isActive ? 'Aktif' : 'Pasif'}
         </span>
       ),
     },
@@ -551,14 +551,14 @@ export function IntegrationsTable() {
     <>
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h2 className="text-2xl font-semibold text-foreground">Integrations</h2>
-          <p className="text-sm text-muted-foreground mt-1">Manage marketplace connections and sync settings</p>
+          <h2 className="text-2xl font-semibold text-foreground">Entegrasyonlar</h2>
+          <p className="text-sm text-muted-foreground mt-1">Pazaryeri bağlantılarını ve eşitleme ayarlarını yönetin</p>
         </div>
         <Button onClick={handleCreate}>
           <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          Add Integration
+          Entegrasyon Ekle
         </Button>
       </div>
 
@@ -569,24 +569,24 @@ export function IntegrationsTable() {
         isLoading={loading}
         pagination={pagination}
         onPageChange={setPage}
-        emptyMessage="No integrations yet. Connect your first marketplace to get started."
+        emptyMessage="Henüz entegrasyon yok. Başlamak için ilk pazaryerinizi bağlayın."
       />
 
       <Modal isOpen={isModalOpen} onClose={handleModalClose} title={modalTitle} size="full">
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Integration Information */}
           <div>
-            <h3 className="text-sm font-semibold text-foreground mb-3">Integration Details</h3>
+            <h3 className="text-sm font-semibold text-foreground mb-3">Entegrasyon Detayları</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input
-                label="Name"
+                label="Ad"
                 value={formData.name}
                 onChange={(e) => updateFormField('name', e.target.value)}
                 required
-                placeholder="Integration name"
+                placeholder="Entegrasyon adı"
               />
               <Select
-                label="Type"
+                label="Tip"
                 value={formData.type}
                 onChange={(e) => updateFormField('type', e.target.value as IntegrationFormData['type'])}
                 options={INTEGRATION_TYPES}
@@ -601,12 +601,12 @@ export function IntegrationsTable() {
                 placeholder="https://api.example.com"
               />
               <Select
-                label="Status"
+                label="Durum"
                 value={formData.isActive ? 'Active' : 'Passive'}
                 onChange={(e) => updateFormField('isActive', e.target.value === 'Active')}
                 options={[
-                  { value: 'Active', label: 'Active' },
-                  { value: 'Passive', label: 'Passive' },
+                  { value: 'Active', label: 'Aktif' },
+                  { value: 'Passive', label: 'Pasif' },
                 ]}
               />
             </div>
@@ -629,7 +629,7 @@ export function IntegrationsTable() {
 
           <div className="flex justify-end gap-2 pt-2 border-t border-border">
             <Button type="button" variant="outline" onClick={handleModalClose}>
-              Cancel
+              İptal
             </Button>
             <Button type="submit" disabled={!canSubmit}>{submitButtonText}</Button>
           </div>
@@ -640,8 +640,8 @@ export function IntegrationsTable() {
         isOpen={isDeleteModalOpen}
         onClose={handleDeleteModalClose}
         onConfirm={handleConfirmDelete}
-        title="Delete Integration"
-        message="Are you sure you want to delete this integration? This action cannot be undone."
+        title="Entegrasyon Sil"
+        message="Bu entegrasyonu silmek istediğinize emin misiniz? Bu işlem geri alınamaz."
       />
     </>
   );

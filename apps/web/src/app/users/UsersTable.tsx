@@ -155,15 +155,15 @@ export function UsersTable() {
           delete updateData.password;
         }
         await apiPatch(`/users/${editingUser.id}`, updateData);
-        toast.success('User updated successfully');
+        toast.success('Kullanıcı başarıyla güncellendi');
       } else {
         await apiPost('/users', currentFormData);
-        toast.success('User created successfully');
+        toast.success('Kullanıcı başarıyla oluşturuldu');
       }
       setIsModalOpen(false);
       fetchUsers();
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'An error occurred';
+      const errorMessage = error instanceof Error ? error.message : 'Bir hata oluştu';
       setFormError(errorMessage);
       toast.error(errorMessage);
     } finally {
@@ -175,11 +175,11 @@ export function UsersTable() {
     if (!deletingUser) return;
     try {
       await apiDelete(`/users/${deletingUser.id}`);
-      toast.success('User deleted successfully');
+      toast.success('Kullanıcı başarıyla silindi');
       setIsDeleteModalOpen(false);
       fetchUsers();
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to delete user';
+      const errorMessage = error instanceof Error ? error.message : 'Silme işlemi başarısız';
       toast.error(errorMessage);
     }
   };
@@ -197,9 +197,9 @@ export function UsersTable() {
 
   const isFormValid = useMemo(() => {
     return formData.firstName.trim().length > 0 &&
-           formData.lastName.trim().length > 0 &&
-           formData.email.trim().length > 0 &&
-           (editingUser || formData.password.trim().length > 0);
+      formData.lastName.trim().length > 0 &&
+      formData.email.trim().length > 0 &&
+      (editingUser || formData.password.trim().length > 0);
   }, [formData.firstName, formData.lastName, formData.email, formData.password, editingUser]);
 
   const isFormDirty = useMemo(() => {
@@ -224,7 +224,7 @@ export function UsersTable() {
   const columns: Column<User>[] = [
     {
       key: 'firstName',
-      header: 'User',
+      header: 'Kullanıcı',
       sortable: true,
       render: (user) => (
         <div className="flex items-center">
@@ -240,7 +240,7 @@ export function UsersTable() {
     },
     {
       key: 'role',
-      header: 'Role',
+      header: 'Rol',
       sortable: true,
       render: (user) => (
         <span className="text-muted-foreground">{getRoleLabel(user.role)}</span>
@@ -248,15 +248,14 @@ export function UsersTable() {
     },
     {
       key: 'isActive',
-      header: 'Status',
+      header: 'Durum',
       sortable: true,
       render: (user) => (
-        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${
-          user.isActive
-            ? 'bg-success/10 text-success border-success/20'
-            : 'bg-muted text-muted-foreground border-border'
-        }`}>
-          {user.isActive ? 'Active' : 'Inactive'}
+        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${user.isActive
+          ? 'bg-success/10 text-success border-success/20'
+          : 'bg-muted text-muted-foreground border-border'
+          }`}>
+          {user.isActive ? 'Aktif' : 'Pasif'}
         </span>
       ),
     },
@@ -290,21 +289,21 @@ export function UsersTable() {
     },
   ];
 
-  const modalTitle = editingUser ? 'Edit User' : 'Add User';
-  const submitButtonText = editingUser ? 'Update' : 'Create';
+  const modalTitle = editingUser ? 'Kullanıcı Düzenle' : 'Kullanıcı Ekle';
+  const submitButtonText = editingUser ? 'Güncelle' : 'Oluştur';
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-semibold text-foreground">Users</h2>
-          <p className="text-sm text-muted-foreground mt-1">Manage team access and permissions</p>
+          <h2 className="text-2xl font-semibold text-foreground">Kullanıcılar</h2>
+          <p className="text-sm text-muted-foreground mt-1">Ekip erişimini ve izinlerini yönetin</p>
         </div>
         <Button onClick={openCreateModal}>
           <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          Add User
+          Kullanıcı Ekle
         </Button>
       </div>
 
@@ -317,7 +316,7 @@ export function UsersTable() {
           </div>
           <input
             type="text"
-            placeholder="Search users..."
+            placeholder="Kullanıcı ara..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="block w-full pl-10 pr-3 py-2 border border-input rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition-all outline-none bg-muted/20 text-sm"
@@ -334,7 +333,7 @@ export function UsersTable() {
         onSort={handleSort}
         onPageChange={setCurrentPage}
         isLoading={isLoading}
-        emptyMessage="No users found. Add your first team member to get started."
+        emptyMessage="Kullanıcı bulunamadı. Başlamak için ilk ekip üyenizi ekleyin."
       />
 
       <Modal
@@ -346,18 +345,18 @@ export function UsersTable() {
         <form id="user-form" onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <Input
-              label="First Name"
+              label="Ad"
               value={formData.firstName}
               onChange={(e) => updateFormField('firstName', e.target.value)}
               required
-              placeholder="John"
+              placeholder="Ad"
             />
             <Input
-              label="Last Name"
+              label="Soyad"
               value={formData.lastName}
               onChange={(e) => updateFormField('lastName', e.target.value)}
               required
-              placeholder="Doe"
+              placeholder="Soyad"
             />
           </div>
           <Input
@@ -369,7 +368,7 @@ export function UsersTable() {
             placeholder="john@example.com"
           />
           <Input
-            label={editingUser ? 'Password (leave empty to keep current)' : 'Password'}
+            label={editingUser ? 'Şifre (mevcut şifreyi korumak için boş bırakın)' : 'Şifre'}
             type="password"
             required={!editingUser}
             value={formData.password}
@@ -378,18 +377,18 @@ export function UsersTable() {
           />
           <div className="grid grid-cols-2 gap-4">
             <Select
-              label="Role"
+              label="Rol"
               value={formData.role}
               onChange={(e) => updateFormField('role', e.target.value as Role)}
               options={ROLE_OPTIONS}
             />
             <Select
-              label="Status"
+              label="Durum"
               value={formData.isActive ? 'Active' : 'Inactive'}
               onChange={(e) => updateFormField('isActive', e.target.value === 'Active')}
               options={[
-                { value: 'Active', label: 'Active' },
-                { value: 'Inactive', label: 'Inactive' },
+                { value: 'Active', label: 'Aktif' },
+                { value: 'Inactive', label: 'Pasif' },
               ]}
             />
           </div>
@@ -400,10 +399,10 @@ export function UsersTable() {
           )}
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={handleModalClose}>
-              Cancel
+              İptal
             </Button>
             <Button type="submit" disabled={!canSubmit || isSubmitting}>
-              {isSubmitting ? 'Saving...' : submitButtonText}
+              {isSubmitting ? 'Kaydediliyor...' : submitButtonText}
             </Button>
           </div>
         </form>
@@ -413,10 +412,10 @@ export function UsersTable() {
         isOpen={isDeleteModalOpen}
         onClose={handleDeleteModalClose}
         onConfirm={handleConfirmDelete}
-        title="Delete User"
-        message={deletingUser ? `Are you sure you want to delete ${deletingUser.firstName} ${deletingUser.lastName}? This action cannot be undone.` : ''}
-        confirmText="Delete"
-        cancelText="Cancel"
+        title="Kullanıcıyı Sil"
+        message={deletingUser ? `${deletingUser.firstName} ${deletingUser.lastName} kullanıcısını silmek istediğinize emin misiniz? Bu işlem geri alınamaz.` : ''}
+        confirmText="Sil"
+        cancelText="İptal"
       />
     </div>
   );

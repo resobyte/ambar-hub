@@ -34,7 +34,7 @@ export function Table<T extends object>({
   onSort,
   onPageChange,
   isLoading = false,
-  emptyMessage = 'No data available',
+  emptyMessage = 'Veri bulunamadı',
 }: TableProps<T>) {
   const handleSort = (columnKey: string) => {
     if (onSort) {
@@ -71,9 +71,8 @@ export function Table<T extends object>({
                 return (
                   <th
                     key={String(column.key)}
-                    className={`px-4 sm:px-6 py-3 ${alignClass} ${widthClass} ${shrinkClass} ${
-                      column.sortable ? 'cursor-pointer hover:bg-muted/50 transition-colors' : ''
-                    }`}
+                    className={`px-4 sm:px-6 py-3 ${alignClass} ${widthClass} ${shrinkClass} ${column.sortable ? 'cursor-pointer hover:bg-muted/50 transition-colors' : ''
+                      }`}
                     onClick={() => column.sortable && handleSort(String(column.key))}
                   >
                     <div className={`flex items-center space-x-1 ${column.align === 'right' ? 'justify-end' : column.align === 'center' ? 'justify-center' : ''}`}>
@@ -124,9 +123,7 @@ export function Table<T extends object>({
       {pagination && pagination.totalPages > 1 && (
         <div className="flex items-center justify-between px-6 py-4 border-t border-border bg-muted/10">
           <div className="text-sm text-muted-foreground">
-            Showing {((pagination.page - 1) * pagination.limit) + 1} to{' '}
-            {Math.min(pagination.page * pagination.limit, pagination.total)} of{' '}
-            {pagination.total} results
+            Toplam {pagination.total} sonuçtan {((pagination.page - 1) * pagination.limit) + 1} - {Math.min(pagination.page * pagination.limit, pagination.total)} arası gösteriliyor
           </div>
           <div className="flex gap-2">
             <button
@@ -134,14 +131,14 @@ export function Table<T extends object>({
               disabled={pagination.page <= 1}
               className="px-4 py-2 text-sm font-medium border border-input rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              Previous
+              Önceki
             </button>
             <button
               onClick={() => onPageChange?.(pagination.page + 1)}
               disabled={pagination.page >= pagination.totalPages}
               className="px-4 py-2 text-sm font-medium border border-input rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              Next
+              Sonraki
             </button>
           </div>
         </div>
