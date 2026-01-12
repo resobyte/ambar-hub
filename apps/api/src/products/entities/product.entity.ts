@@ -6,6 +6,7 @@ import {
 } from 'typeorm';
 import { BaseEntity } from '../../common/entities/base.entity';
 import { ProductStore } from '../../product-stores/entities/product-store.entity';
+import { ProductType } from '../enums/product-type.enum';
 
 @Entity('products')
 export class Product extends BaseEntity {
@@ -27,6 +28,15 @@ export class Product extends BaseEntity {
   @Column({ type: 'varchar', length: 255, name: 'sku' })
   sku: string;
 
+  // Product type: SIMPLE or SET
+  @Column({
+    type: 'enum',
+    enum: ProductType,
+    default: ProductType.SIMPLE,
+    name: 'product_type',
+  })
+  productType: ProductType;
+
   @Column({ type: 'int', name: 'vat_rate', default: 20 })
   vatRate: number;
 
@@ -39,6 +49,10 @@ export class Product extends BaseEntity {
   @Column({ type: 'decimal', precision: 10, scale: 2, name: 'sale_price', default: 0 })
   salePrice: number;
 
+  // Set price (only used for SET type products)
+  @Column({ type: 'decimal', precision: 10, scale: 2, name: 'set_price', nullable: true })
+  setPrice: number;
+
   @Column({ type: 'decimal', precision: 10, scale: 2, name: 'last_sale_price', nullable: true })
   lastSalePrice: number;
 
@@ -48,3 +62,4 @@ export class Product extends BaseEntity {
   @OneToMany(() => ProductStore, (ps) => ps.product, { cascade: true })
   productStores: ProductStore[];
 }
+

@@ -98,7 +98,7 @@ export function StoresTable() {
     setIsDeleteModalOpen(false);
   }, []);
 
-  const handleEdit = useCallback(async (store: Store) => {
+  const handleEdit = useCallback((store: Store) => {
     setEditingStore(store);
     const newData = { name: store.name, proxyUrl: store.proxyUrl, warehouseId: store.warehouseId, isActive: store.isActive };
     setFormData(newData);
@@ -115,7 +115,6 @@ export function StoresTable() {
     e.preventDefault();
     try {
       const currentFormData = formDataRef.current;
-
       if (editingStore) {
         await updateStore(editingStore.id, currentFormData);
         success('Store updated successfully');
@@ -123,7 +122,6 @@ export function StoresTable() {
         await createStore(currentFormData);
         success('Store created successfully');
       }
-
       setIsModalOpen(false);
       fetchStores();
     } catch (err: any) {
@@ -131,37 +129,24 @@ export function StoresTable() {
     }
   }, [editingStore, fetchStores, success, error]);
 
-  const handleNameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const newValue = e.target.value;
-    setFormData(prev => {
-      const newData = { ...prev, name: newValue };
-      formDataRef.current = newData;
-      return newData;
-    });
-  }, []);
+  const handleConfirmDelete = useCallback(async () => {
+    if (!deletingStoreId) return;
+    try {
+      await deleteStore(deletingStoreId);
+      success('Store deleted successfully');
+      setIsDeleteModalOpen(false);
+      fetchStores();
+    } catch (err: any) {
+      error(err.message || 'Delete failed');
+    }
+  }, [deletingStoreId, fetchStores, success, error]);
 
-  const handleProxyUrlChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const newValue = e.target.value;
+  const updateFormField = useCallback(<K extends keyof StoreFormData>(
+    field: K,
+    value: StoreFormData[K]
+  ) => {
     setFormData(prev => {
-      const newData = { ...prev, proxyUrl: newValue };
-      formDataRef.current = newData;
-      return newData;
-    });
-  }, []);
-
-  const handleWarehouseChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newValue = e.target.value;
-    setFormData(prev => {
-      const newData = { ...prev, warehouseId: newValue };
-      formDataRef.current = newData;
-      return newData;
-    });
-  }, []);
-
-  const handleIsActiveChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newValue = e.target.value === 'Active';
-    setFormData(prev => {
-      const newData = { ...prev, isActive: newValue };
+      const newData = { ...prev, [field]: value };
       formDataRef.current = newData;
       return newData;
     });
@@ -179,23 +164,6 @@ export function StoresTable() {
     return isFormValid && (isFormDirty || !editingStore);
   }, [isFormValid, isFormDirty, editingStore]);
 
-  const handleConfirmDelete = useCallback(async () => {
-    if (!deletingStoreId) return;
-    try {
-      await deleteStore(deletingStoreId);
-      success('Store deleted successfully');
-      setIsDeleteModalOpen(false);
-      fetchStores();
-    } catch (err: any) {
-      error(err.message || 'Delete failed');
-    }
-  }, [deletingStoreId, fetchStores, success, error]);
-
-  const getWarehouseName = useCallback((warehouseId: string) => {
-    const warehouse = warehouses.find((w) => w.id === warehouseId);
-    return warehouse?.name || 'Unknown';
-  }, [warehouses]);
-
   const modalTitle = useMemo(() =>
     editingStore ? 'Edit Store' : 'Add Store',
     [editingStore]
@@ -206,13 +174,19 @@ export function StoresTable() {
     [editingStore]
   );
 
+  const getWarehouseName = useCallback((warehouseId: string) => {
+    const warehouse = warehouses.find((w) => w.id === warehouseId);
+    return warehouse?.name || 'Unknown';
+  }, [warehouses]);
+
   const columns = useMemo<Column<Store>[]>(() => [
     { key: 'name', header: 'Name' },
-    { key: 'proxyUrl', header: 'Proxy URL' },
     {
       key: 'warehouseId',
       header: 'Warehouse',
-      render: (row: Store) => <span>{getWarehouseName(row.warehouseId)}</span>,
+      render: (row: Store) => (
+        <span className="text-muted-foreground">{getWarehouseName(row.warehouseId)}</span>
+      ),
     },
     {
       key: 'isActive',
@@ -229,14 +203,15 @@ export function StoresTable() {
     },
     {
       key: 'actions',
-      header: 'Actions',
+      header: '',
       align: 'right',
       shrink: true,
       render: (row: Store) => (
-        <div className="flex items-center justify-end space-x-1 sm:space-x-2">
+        <div className="flex items-center justify-end space-x-1">
           <button
             onClick={() => handleEdit(row)}
             className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
+            title="Edit"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -245,6 +220,7 @@ export function StoresTable() {
           <button
             onClick={() => handleDelete(row.id)}
             className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+            title="Delete"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -269,9 +245,13 @@ export function StoresTable() {
 
   return (
     <>
-      <div className="mb-4 flex justify-end">
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h2 className="text-2xl font-semibold text-foreground">Stores</h2>
+          <p className="text-sm text-muted-foreground mt-1">Manage your sales channels and marketplaces</p>
+        </div>
         <Button onClick={handleCreate}>
-          <svg className="w-[18px] h-[18px] mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
           Add Store
@@ -285,43 +265,43 @@ export function StoresTable() {
         isLoading={loading}
         pagination={pagination}
         onPageChange={setPage}
+        emptyMessage="No stores yet. Connect your first marketplace to get started."
       />
 
-      <Modal isOpen={isModalOpen} onClose={handleModalClose} title={modalTitle} size="xl">
+      <Modal isOpen={isModalOpen} onClose={handleModalClose} title={modalTitle} size="md">
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Input
-              label="Name"
-              value={formData.name}
-              onChange={handleNameChange}
-              required
-            />
-            <Input
-              label="Proxy URL"
-              value={formData.proxyUrl}
-              onChange={handleProxyUrlChange}
-              type="url"
-              required
-            />
-            <Select
-              label="Warehouse"
-              value={formData.warehouseId}
-              onChange={handleWarehouseChange}
-              options={warehouseOptions}
-              required
-            />
-            <Select
-              label="Status"
-              value={formData.isActive ? 'Active' : 'Passive'}
-              onChange={handleIsActiveChange}
-              options={[
-                { value: 'Active', label: 'Active' },
-                { value: 'Passive', label: 'Passive' },
-              ]}
-            />
-          </div>
-
-          <div className="flex justify-end gap-2">
+          <Input
+            label="Name"
+            value={formData.name}
+            onChange={(e) => updateFormField('name', e.target.value)}
+            required
+            placeholder="Enter store name"
+          />
+          <Input
+            label="Proxy URL"
+            value={formData.proxyUrl}
+            onChange={(e) => updateFormField('proxyUrl', e.target.value)}
+            type="url"
+            required
+            placeholder="https://example.com"
+          />
+          <Select
+            label="Warehouse"
+            value={formData.warehouseId}
+            onChange={(e) => updateFormField('warehouseId', e.target.value)}
+            options={warehouseOptions}
+            required
+          />
+          <Select
+            label="Status"
+            value={formData.isActive ? 'Active' : 'Passive'}
+            onChange={(e) => updateFormField('isActive', e.target.value === 'Active')}
+            options={[
+              { value: 'Active', label: 'Active' },
+              { value: 'Passive', label: 'Passive' },
+            ]}
+          />
+          <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={handleModalClose}>
               Cancel
             </Button>

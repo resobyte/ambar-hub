@@ -6,6 +6,7 @@ import {
   Patch,
   Param,
   Delete,
+  Put,
   Query,
   UseGuards,
   ParseIntPipe,
@@ -23,7 +24,7 @@ import { Role } from '../common/interfaces/role.enum';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.PLATFORM_OWNER)
 export class ProductsController {
-  constructor(private readonly productsService: ProductsService) {}
+  constructor(private readonly productsService: ProductsService) { }
 
   @Post()
   create(@Body() createProductDto: CreateProductDto) {
@@ -52,4 +53,45 @@ export class ProductsController {
   remove(@Param('id') id: string) {
     return this.productsService.remove(id);
   }
+
+  // ─────────────────────────────────────────────────────────────
+  // SET Item Endpoints
+  // ─────────────────────────────────────────────────────────────
+
+  @Get(':id/set-items')
+  getSetItems(@Param('id') id: string) {
+    return this.productsService.getSetItems(id);
+  }
+
+  @Put(':id/set-items')
+  updateSetItems(
+    @Param('id') id: string,
+    @Body() items: {
+      componentProductId: string;
+      quantity: number;
+      priceShare: number;
+      sortOrder: number;
+    }[],
+  ) {
+    return this.productsService.updateSetItems(id, items);
+  }
+
+  @Post(':id/set-items')
+  addSetItem(
+    @Param('id') setProductId: string,
+    @Body() data: {
+      componentProductId: string;
+      quantity?: number;
+      priceShare?: number;
+      sortOrder?: number;
+    },
+  ) {
+    return this.productsService.addSetItem({ setProductId, ...data });
+  }
+
+  @Delete('set-items/:itemId')
+  removeSetItem(@Param('itemId') itemId: string) {
+    return this.productsService.removeSetItem(itemId);
+  }
 }
+

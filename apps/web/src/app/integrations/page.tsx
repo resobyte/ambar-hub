@@ -14,16 +14,9 @@ export default async function IntegrationsPage() {
 
   return (
     <AppLayout user={user} currentPath="/integrations">
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-3xl font-bold text-foreground font-rubik">Integrations</h2>
-          <p className="text-muted-foreground mt-1">Manage your marketplace integrations</p>
-        </div>
-
-        <Suspense fallback={<div>Loading...</div>}>
-          <IntegrationsTable />
-        </Suspense>
-      </div>
+      <Suspense fallback={<div>Loading...</div>}>
+        <IntegrationsTable />
+      </Suspense>
     </AppLayout>
   );
 }

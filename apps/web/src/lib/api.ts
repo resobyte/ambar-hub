@@ -1,12 +1,12 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
-interface ApiResponse<T> {
+export interface ApiResponse<T> {
   success: boolean;
   data: T;
   message?: string;
 }
 
-interface PaginationResponse<T> {
+export interface PaginationResponse<T> {
   success: boolean;
   data: T[];
   meta: {
@@ -78,7 +78,7 @@ export async function apiDelete(endpoint: string): Promise<{ message: string }> 
   return res.json();
 }
 
-interface Warehouse {
+export interface Warehouse {
   id: string;
   name: string;
   address: string | null;
@@ -88,7 +88,7 @@ interface Warehouse {
   updatedAt: string;
 }
 
-interface Store {
+export interface Store {
   id: string;
   name: string;
   proxyUrl: string;
@@ -98,7 +98,7 @@ interface Store {
   updatedAt: string;
 }
 
-interface Integration {
+export interface Integration {
   id: string;
   name: string;
   type: 'TRENDYOL' | 'HEPSIBURADA' | 'IKAS';
@@ -109,7 +109,7 @@ interface Integration {
   updatedAt: string;
 }
 
-interface IntegrationStore {
+export interface IntegrationStore {
   id: string;
   integrationId: string;
   storeId: string;
@@ -127,7 +127,7 @@ interface IntegrationStore {
   updatedAt: string;
 }
 
-interface Product {
+export interface Product {
   id: string;
   name: string;
   brand: string | null;
@@ -145,11 +145,15 @@ interface Product {
   updatedAt: string;
 }
 
-interface ProductStore {
+export interface ProductStore {
   id: string;
   productId: string;
   storeId: string;
-  storeName?: string;
+  store: Store;
+  integrationId: string;
+  integration: Integration;
+  integrationStatus?: string;
+  items: OrderItem[];
   storeSku: string | null;
   storeSalePrice: number | null;
   stockQuantity: number;
@@ -158,7 +162,7 @@ interface ProductStore {
   updatedAt: string;
 }
 
-interface ProductIntegration {
+export interface ProductIntegration {
   id: string;
   productStoreId: string;
   integrationId: string;
@@ -170,7 +174,7 @@ interface ProductIntegration {
   updatedAt: string;
 }
 
-interface ShippingProvider {
+export interface ShippingProvider {
   id: string;
   name: string;
   type: 'ARAS';
@@ -423,6 +427,8 @@ export async function createProduct(data: {
   salePrice?: number;
   lastSalePrice?: number;
   isActive?: boolean;
+  productType?: 'SIMPLE' | 'SET';
+  setPrice?: number;
 }): Promise<ApiResponse<Product>> {
   const res = await fetch(`${API_URL}/products`, {
     method: 'POST',
@@ -445,6 +451,8 @@ export async function updateProduct(id: string, data: {
   salePrice?: number;
   lastSalePrice?: number;
   isActive?: boolean;
+  productType?: 'SIMPLE' | 'SET';
+  setPrice?: number;
 }): Promise<ApiResponse<Product>> {
   const res = await fetch(`${API_URL}/products/${id}`, {
     method: 'PATCH',
@@ -459,6 +467,40 @@ export async function deleteProduct(id: string): Promise<{ message: string }> {
   const res = await fetch(`${API_URL}/products/${id}`, {
     method: 'DELETE',
     credentials: 'include',
+  });
+  return res.json();
+}
+
+// ProductSetItem API
+export interface ProductSetItem {
+  id: string;
+  setProductId: string;
+  componentProductId: string;
+  componentProduct?: Product;
+  quantity: number;
+  priceShare: number;
+  sortOrder: number;
+}
+
+export async function getProductSetItems(productId: string): Promise<ProductSetItem[]> {
+  const res = await fetch(`${API_URL}/products/${productId}/set-items`, {
+    credentials: 'include',
+  });
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function updateProductSetItems(productId: string, items: {
+  componentProductId: string;
+  quantity: number;
+  priceShare: number;
+  sortOrder: number;
+}[]): Promise<ProductSetItem[]> {
+  const res = await fetch(`${API_URL}/products/${productId}/set-items`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(items),
   });
   return res.json();
 }
@@ -681,6 +723,185 @@ export async function deleteShippingProvider(id: string): Promise<{ message: str
   if (!res.ok) {
     const error = await res.json();
     throw new Error(error.message || 'Request failed');
+  }
+  return res.json();
+}
+
+
+// Order API
+
+export interface Customer {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string;
+  phone: string | null;
+  city: string | null;
+  district: string | null;
+  address: string | null;
+  tcIdentityNumber: string | null;
+  trendyolCustomerId: string | null;
+}
+
+export interface OrderItem {
+  id: string;
+  productName: string;
+  sku: string | null;
+  barcode: string | null;
+  quantity: number;
+  unitPrice: number;
+}
+
+export enum OrderStatus {
+  CREATED = 'CREATED',
+  PICKING = 'PICKING',
+  INVOICED = 'INVOICED',
+  SHIPPED = 'SHIPPED',
+  CANCELLED = 'CANCELLED',
+  DELIVERED = 'DELIVERED',
+  UNDELIVERED = 'UNDELIVERED',
+  RETURNED = 'RETURNED',
+  REPACK = 'REPACK',
+  UNSUPPLIED = 'UNSUPPLIED',
+  UNKNOWN = 'UNKNOWN',
+}
+
+export interface Order {
+  id: string;
+  orderNumber: string;
+  integrationId: string;
+  integration?: Integration;
+  customerId: string;
+  customer?: Customer;
+  storeId?: string;
+  store?: Store;
+  status: OrderStatus;
+  integrationStatus: string | null;
+  totalPrice: number;
+  orderDate: string;
+  items?: OrderItem[];
+}
+
+export async function getOrders(page = 1, limit = 10): Promise<PaginationResponse<Order>> {
+  const res = await fetch(`${API_URL}/orders?page=${page}&limit=${limit}`, {
+    cache: 'no-store',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    // If the endpoint doesn't exist yet, return empty for now to prevent crash
+    return { success: true, data: [], meta: { page, limit, total: 0, totalPages: 0 } };
+  }
+  return res.json();
+}
+
+export async function syncOrders(integrationId: string): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${API_URL}/orders/sync/${integrationId}`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Sync failed');
+  }
+  return res.json();
+}
+
+// Faulty Orders API
+export interface FaultyOrder {
+  id: string;
+  integrationId: string;
+  storeId: string | null;
+  packageId: string;
+  orderNumber: string;
+  rawData: object;
+  missingBarcodes: string[];
+  errorReason: string;
+  retryCount: number;
+  customerName: string;
+  totalPrice: number;
+  currencyCode: string;
+  createdAt: string;
+  integration?: { name: string };
+  store?: { name: string };
+}
+
+export async function getFaultyOrders(page = 1, limit = 10): Promise<PaginationResponse<FaultyOrder>> {
+  const res = await fetch(`${API_URL}/orders/faulty?page=${page}&limit=${limit}`, {
+    cache: 'no-store',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    return { success: true, data: [], meta: { page, limit, total: 0, totalPages: 0 } };
+  }
+  return res.json();
+}
+
+export async function deleteFaultyOrder(id: string): Promise<{ success: boolean }> {
+  const res = await fetch(`${API_URL}/orders/faulty/${id}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  return res.json();
+}
+
+// Invoice API
+
+export interface Invoice {
+  id: string;
+  orderId: string;
+  order?: Order;
+  storeId?: string;
+  invoiceNumber: string;
+  invoiceSerial?: string;
+  edocNo?: string;
+  ettn?: string;
+  status: 'PENDING' | 'SENT' | 'SUCCESS' | 'ERROR' | 'CANCELLED';
+  errorMessage?: string;
+  cardCode?: string;
+  branchCode?: string;
+  totalAmount: number;
+  currencyCode: string;
+  invoiceDate: string;
+  createdAt: string;
+}
+
+export async function createInvoiceFromOrder(orderId: string, options?: {
+  branchCode?: string;
+  docTraCode?: string;
+  costCenterCode?: string;
+  whouseCode?: string;
+  cardCode?: string;
+}): Promise<Invoice> {
+  const res = await fetch(`${API_URL}/invoices/create-from-order/${orderId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(options || {}),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Invoice creation failed');
+  }
+  return res.json();
+}
+
+export async function getInvoicePdf(invoiceId: string): Promise<{ html: string; pdfUrl?: string }> {
+  const res = await fetch(`${API_URL}/invoices/${invoiceId}/pdf`, {
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Failed to get invoice PDF');
+  }
+  return res.json();
+}
+
+export async function getInvoiceByOrderId(orderId: string): Promise<Invoice | null> {
+  const res = await fetch(`${API_URL}/invoices/by-order/${orderId}`, {
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    return null;
   }
   return res.json();
 }

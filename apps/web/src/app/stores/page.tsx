@@ -14,16 +14,9 @@ export default async function StoresPage() {
 
   return (
     <AppLayout user={user} currentPath="/stores">
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-3xl font-bold text-foreground font-rubik">Stores</h2>
-          <p className="text-muted-foreground mt-1">Manage your stores</p>
-        </div>
-
-        <Suspense fallback={<div>Loading...</div>}>
-          <StoresTable />
-        </Suspense>
-      </div>
+      <Suspense fallback={<div>Loading...</div>}>
+        <StoresTable />
+      </Suspense>
     </AppLayout>
   );
 }

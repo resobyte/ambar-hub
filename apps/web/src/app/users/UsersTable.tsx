@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Modal, Input, Select, Table, Column, Button, ConfirmModal } from '@/components/common';
 import { useToast } from '@/components/common/ToastContext';
 import { apiGetPaginated, apiPost, apiPatch, apiDelete } from '@/lib/api';
@@ -15,13 +15,15 @@ interface UserFormData {
   isActive: boolean;
 }
 
-const initialFormData: UserFormData = {
-  firstName: '',
-  lastName: '',
-  email: '',
-  password: '',
-  role: Role.OPERATION,
-  isActive: true,
+const ROLE_OPTIONS = [
+  { value: Role.PLATFORM_OWNER, label: 'Platform Owner' },
+  { value: Role.OPERATION, label: 'Operation' },
+  { value: Role.MANAGER, label: 'Manager' },
+  { value: Role.ACCOUNTING, label: 'Accounting' },
+];
+
+const getRoleLabel = (role: Role): string => {
+  return ROLE_OPTIONS.find(r => r.value === role)?.label || role;
 };
 
 export function UsersTable() {
@@ -32,13 +34,29 @@ export function UsersTable() {
   const [currentPage, setCurrentPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [formData, setFormData] = useState<UserFormData>(initialFormData);
+  const [deletingUser, setDeletingUser] = useState<User | null>(null);
+  const [formData, setFormData] = useState<UserFormData>({
+    firstName: '',
+    lastName: '',
+    email: '',
+    password: '',
+    role: Role.OPERATION,
+    isActive: true,
+  });
+  const [initialFormData, setInitialFormData] = useState<UserFormData>({
+    firstName: '',
+    lastName: '',
+    email: '',
+    password: '',
+    role: Role.OPERATION,
+    isActive: true,
+  });
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const formDataRef = useRef(formData);
 
   // Stable callbacks for modal to prevent focus loss
   const handleModalClose = useCallback(() => {
@@ -46,8 +64,8 @@ export function UsersTable() {
   }, []);
 
   const handleDeleteModalClose = useCallback(() => {
-    setDeleteConfirmOpen(false);
-    setUserToDelete(null);
+    setIsDeleteModalOpen(false);
+    setDeletingUser(null);
   }, []);
 
   const fetchUsers = useCallback(async () => {
@@ -83,23 +101,45 @@ export function UsersTable() {
 
   const openCreateModal = useCallback(() => {
     setEditingUser(null);
-    setFormData(initialFormData);
+    setFormData({
+      firstName: '',
+      lastName: '',
+      email: '',
+      password: '',
+      role: Role.OPERATION,
+      isActive: true,
+    });
+    setInitialFormData({
+      firstName: '',
+      lastName: '',
+      email: '',
+      password: '',
+      role: Role.OPERATION,
+      isActive: true,
+    });
     setFormError('');
     setIsModalOpen(true);
   }, []);
 
   const openEditModal = useCallback((user: User) => {
     setEditingUser(user);
-    setFormData({
+    const newData = {
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
       password: '',
       role: user.role,
       isActive: user.isActive,
-    });
+    };
+    setFormData(newData);
+    setInitialFormData(newData);
     setFormError('');
     setIsModalOpen(true);
+  }, []);
+
+  const openDeleteModal = useCallback((user: User) => {
+    setDeletingUser(user);
+    setIsDeleteModalOpen(true);
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -108,15 +148,16 @@ export function UsersTable() {
     setFormError('');
 
     try {
+      const currentFormData = formDataRef.current;
       if (editingUser) {
-        const updateData: Partial<UserFormData> = { ...formData };
+        const updateData: Partial<UserFormData> = { ...currentFormData };
         if (!updateData.password) {
           delete updateData.password;
         }
         await apiPatch(`/users/${editingUser.id}`, updateData);
         toast.success('User updated successfully');
       } else {
-        await apiPost('/users', formData);
+        await apiPost('/users', currentFormData);
         toast.success('User created successfully');
       }
       setIsModalOpen(false);
@@ -130,29 +171,44 @@ export function UsersTable() {
     }
   };
 
-  const openDeleteConfirm = useCallback((user: User) => {
-    setUserToDelete(user);
-    setDeleteConfirmOpen(true);
-  }, []);
-
-  const handleDeleteConfirm = async () => {
-    if (!userToDelete) return;
-
+  const handleConfirmDelete = async () => {
+    if (!deletingUser) return;
     try {
-      await apiDelete(`/users/${userToDelete.id}`);
+      await apiDelete(`/users/${deletingUser.id}`);
       toast.success('User deleted successfully');
+      setIsDeleteModalOpen(false);
       fetchUsers();
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to delete user';
       toast.error(errorMessage);
-      throw error;
     }
   };
 
-  const closeDeleteConfirm = useCallback(() => {
-    setDeleteConfirmOpen(false);
-    setUserToDelete(null);
+  const updateFormField = useCallback(<K extends keyof UserFormData>(
+    field: K,
+    value: UserFormData[K]
+  ) => {
+    setFormData(prev => {
+      const newData = { ...prev, [field]: value };
+      formDataRef.current = newData;
+      return newData;
+    });
   }, []);
+
+  const isFormValid = useMemo(() => {
+    return formData.firstName.trim().length > 0 &&
+           formData.lastName.trim().length > 0 &&
+           formData.email.trim().length > 0 &&
+           (editingUser || formData.password.trim().length > 0);
+  }, [formData.firstName, formData.lastName, formData.email, formData.password, editingUser]);
+
+  const isFormDirty = useMemo(() => {
+    return JSON.stringify(formData) !== JSON.stringify(initialFormData);
+  }, [formData, initialFormData]);
+
+  const canSubmit = useMemo(() => {
+    return isFormValid && (isFormDirty || !editingUser);
+  }, [isFormValid, isFormDirty, editingUser]);
 
   const filteredUsers = users.filter((user) => {
     if (!searchTerm) return true;
@@ -187,7 +243,7 @@ export function UsersTable() {
       header: 'Role',
       sortable: true,
       render: (user) => (
-        <span className="text-muted-foreground">{user.role}</span>
+        <span className="text-muted-foreground">{getRoleLabel(user.role)}</span>
       ),
     },
     {
@@ -205,33 +261,25 @@ export function UsersTable() {
       ),
     },
     {
-      key: 'createdAt',
-      header: 'Last Login',
-      sortable: true,
-      render: (user) => (
-        <span className="text-muted-foreground">
-          {new Date(user.createdAt).toLocaleDateString()}
-        </span>
-      ),
-    },
-    {
       key: 'actions',
-      header: 'Actions',
+      header: '',
       align: 'right',
       shrink: true,
       render: (user) => (
-        <div className="flex items-center justify-end space-x-1 sm:space-x-2">
+        <div className="flex items-center justify-end space-x-1">
           <button
             onClick={() => openEditModal(user)}
             className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
+            title="Edit"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
             </svg>
           </button>
           <button
-            onClick={() => openDeleteConfirm(user)}
+            onClick={() => openDeleteModal(user)}
             className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+            title="Delete"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -242,124 +290,103 @@ export function UsersTable() {
     },
   ];
 
+  const modalTitle = editingUser ? 'Edit User' : 'Add User';
+  const submitButtonText = editingUser ? 'Update' : 'Create';
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-3xl font-bold text-foreground font-rubik">Users</h2>
-          <p className="text-muted-foreground mt-1">Manage user access and permissions.</p>
+          <h2 className="text-2xl font-semibold text-foreground">Users</h2>
+          <p className="text-sm text-muted-foreground mt-1">Manage team access and permissions</p>
         </div>
-        <button
-          onClick={openCreateModal}
-          className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center shadow-md transition-all active:scale-95"
-        >
-          <svg className="w-[18px] h-[18px] mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <Button onClick={openCreateModal}>
+          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
           Add User
-        </button>
+        </Button>
       </div>
 
-      <div className="space-y-4">
-        <div className="bg-card rounded-xl border border-border p-4">
-          <div className="relative w-full max-w-md">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted-foreground">
-              <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </div>
-            <input
-              type="text"
-              placeholder="Search users..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="block w-full pl-10 pr-3 py-2 border border-input rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition-all outline-none bg-muted/20 text-sm"
-            />
+      <div className="bg-card rounded-xl border border-border p-4">
+        <div className="relative w-full max-w-md">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted-foreground">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
           </div>
+          <input
+            type="text"
+            placeholder="Search users..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="block w-full pl-10 pr-3 py-2 border border-input rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition-all outline-none bg-muted/20 text-sm"
+          />
         </div>
-
-        <Table<User>
-          columns={columns}
-          data={filteredUsers}
-          keyExtractor={(user) => user.id}
-          pagination={pagination}
-          sortConfig={sortConfig}
-          onSort={handleSort}
-          onPageChange={setCurrentPage}
-          isLoading={isLoading}
-          emptyMessage="No users found matching your search."
-        />
       </div>
+
+      <Table<User>
+        columns={columns}
+        data={filteredUsers}
+        keyExtractor={(user) => user.id}
+        pagination={pagination}
+        sortConfig={sortConfig}
+        onSort={handleSort}
+        onPageChange={setCurrentPage}
+        isLoading={isLoading}
+        emptyMessage="No users found. Add your first team member to get started."
+      />
 
       <Modal
         isOpen={isModalOpen}
         onClose={handleModalClose}
-        title={editingUser ? 'Edit User' : 'Add New User'}
+        title={modalTitle}
         size="md"
-        footer={
-          <div className="flex justify-end space-x-3">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={handleModalClose}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              form="user-form"
-              isLoading={isSubmitting}
-            >
-              Save Changes
-            </Button>
-          </div>
-        }
       >
         <form id="user-form" onSubmit={handleSubmit} className="space-y-4">
-          <Input
-            label="First Name"
-            type="text"
-            required
-            value={formData.firstName}
-            onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-          />
-          <Input
-            label="Last Name"
-            type="text"
-            required
-            value={formData.lastName}
-            onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-          />
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="First Name"
+              value={formData.firstName}
+              onChange={(e) => updateFormField('firstName', e.target.value)}
+              required
+              placeholder="John"
+            />
+            <Input
+              label="Last Name"
+              value={formData.lastName}
+              onChange={(e) => updateFormField('lastName', e.target.value)}
+              required
+              placeholder="Doe"
+            />
+          </div>
           <Input
             label="Email"
             type="email"
-            required
             value={formData.email}
-            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            onChange={(e) => updateFormField('email', e.target.value)}
+            required
+            placeholder="john@example.com"
           />
           <Input
             label={editingUser ? 'Password (leave empty to keep current)' : 'Password'}
             type="password"
             required={!editingUser}
             value={formData.password}
-            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+            onChange={(e) => updateFormField('password', e.target.value)}
+            placeholder="••••••••"
           />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <Select
               label="Role"
               value={formData.role}
-              onChange={(e) => setFormData({ ...formData, role: e.target.value as Role })}
-              options={[
-                { value: Role.PLATFORM_OWNER, label: 'Platform Owner' },
-                { value: Role.OPERATION, label: 'Operation' },
-                { value: Role.MANAGER, label: 'Manager' },
-                { value: Role.ACCOUNTING, label: 'Accounting' },
-              ]}
+              onChange={(e) => updateFormField('role', e.target.value as Role)}
+              options={ROLE_OPTIONS}
             />
             <Select
               label="Status"
               value={formData.isActive ? 'Active' : 'Inactive'}
-              onChange={(e) => setFormData({ ...formData, isActive: e.target.value === 'Active' })}
+              onChange={(e) => updateFormField('isActive', e.target.value === 'Active')}
               options={[
                 { value: 'Active', label: 'Active' },
                 { value: 'Inactive', label: 'Inactive' },
@@ -371,18 +398,25 @@ export function UsersTable() {
               {formError}
             </div>
           )}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={handleModalClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!canSubmit || isSubmitting}>
+              {isSubmitting ? 'Saving...' : submitButtonText}
+            </Button>
+          </div>
         </form>
       </Modal>
 
       <ConfirmModal
-        isOpen={deleteConfirmOpen}
+        isOpen={isDeleteModalOpen}
         onClose={handleDeleteModalClose}
-        onConfirm={handleDeleteConfirm}
+        onConfirm={handleConfirmDelete}
         title="Delete User"
-        message={userToDelete ? `Are you sure you want to delete ${userToDelete.firstName} ${userToDelete.lastName}? This action cannot be undone.` : ''}
+        message={deletingUser ? `Are you sure you want to delete ${deletingUser.firstName} ${deletingUser.lastName}? This action cannot be undone.` : ''}
         confirmText="Delete"
         cancelText="Cancel"
-        variant="destructive"
       />
     </div>
   );

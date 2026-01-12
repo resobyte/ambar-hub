@@ -55,6 +55,31 @@ const iconMap: Record<string, React.ReactNode> = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
     </svg>
   ),
+  orders: (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+    </svg>
+  ),
+  error: (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+    </svg>
+  ),
+  shelf: (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+    </svg>
+  ),
+  supplier: (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+    </svg>
+  ),
+  purchase: (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+    </svg>
+  ),
 };
 
 export function Sidebar({ routes, currentPath, isMobileMenuOpen, onMobileMenuClose }: SidebarProps) {
@@ -72,10 +97,9 @@ export function Sidebar({ routes, currentPath, isMobileMenuOpen, onMobileMenuClo
   return (
     <>
       {/* Desktop Sidebar */}
-      <aside 
-        className={`hidden md:flex flex-col bg-card border-r border-border shadow-sm transition-all duration-300 ease-in-out ${
-          isCollapsed ? 'w-20' : 'w-64'
-        }`}
+      <aside
+        className={`hidden md:flex flex-col bg-card border-r border-border shadow-sm transition-all duration-300 ease-in-out ${isCollapsed ? 'w-20' : 'w-64'
+          }`}
       >
         <div className={`p-4 h-16 flex items-center border-b border-border ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
           {!isCollapsed && (
@@ -84,7 +108,7 @@ export function Sidebar({ routes, currentPath, isMobileMenuOpen, onMobileMenuClo
           {isCollapsed && (
             <h1 className="text-xl font-bold font-rubik tracking-wide text-primary">AP</h1>
           )}
-          <button 
+          <button
             onClick={() => setIsCollapsed(!isCollapsed)}
             className={`p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors ${isCollapsed ? 'hidden' : 'block'}`}
           >
@@ -93,9 +117,9 @@ export function Sidebar({ routes, currentPath, isMobileMenuOpen, onMobileMenuClo
             </svg>
           </button>
         </div>
-        
+
         {isCollapsed && (
-          <button 
+          <button
             onClick={() => setIsCollapsed(false)}
             className="w-full flex justify-center py-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
           >
@@ -111,16 +135,14 @@ export function Sidebar({ routes, currentPath, isMobileMenuOpen, onMobileMenuClo
               key={route.path}
               href={route.path}
               title={isCollapsed ? route.label : undefined}
-              className={`flex items-center w-full rounded-lg transition-all duration-200 group relative ${
-                isCollapsed ? 'justify-center px-2 py-3' : 'px-4 py-3'
-              } ${
-                isActive(route.path) 
-                  ? 'bg-[rgba(128,0,32,0.1)] text-primary font-semibold' 
+              className={`flex items-center w-full rounded-lg transition-all duration-200 group relative ${isCollapsed ? 'justify-center px-2 py-3' : 'px-4 py-3'
+                } ${isActive(route.path)
+                  ? 'bg-[rgba(128,0,32,0.1)] text-primary font-semibold'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
+                }`}
             >
               <span className={`${!isCollapsed && 'mr-3'} shrink-0`}>{route.icon && iconMap[route.icon]}</span>
-              
+
               {!isCollapsed && (
                 <span className="whitespace-nowrap overflow-hidden transition-all duration-300">
                   {route.label}
@@ -137,13 +159,12 @@ export function Sidebar({ routes, currentPath, isMobileMenuOpen, onMobileMenuClo
         </nav>
 
         <div className="p-3 border-t border-border">
-          <button 
+          <button
             onClick={handleLogout}
             disabled={isPending}
             title={isCollapsed ? "Logout" : undefined}
-            className={`flex items-center w-full rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors group relative disabled:opacity-50 ${
-              isCollapsed ? 'justify-center px-2 py-3' : 'px-4 py-3'
-            }`}
+            className={`flex items-center w-full rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors group relative disabled:opacity-50 ${isCollapsed ? 'justify-center px-2 py-3' : 'px-4 py-3'
+              }`}
           >
             {isPending ? (
               <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
@@ -164,16 +185,15 @@ export function Sidebar({ routes, currentPath, isMobileMenuOpen, onMobileMenuClo
 
       {/* Mobile Menu Overlay */}
       {isMobileMenuOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40 md:hidden" 
-          onClick={onMobileMenuClose} 
+        <div
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={onMobileMenuClose}
         />
       )}
 
       {/* Mobile Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 w-64 bg-card border-r border-border text-foreground z-50 transform transition-transform duration-300 md:hidden flex flex-col ${
-        isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-      }`}>
+      <aside className={`fixed inset-y-0 left-0 w-64 bg-card border-r border-border text-foreground z-50 transform transition-transform duration-300 md:hidden flex flex-col ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}>
         <div className="p-4 h-16 flex justify-between items-center border-b border-border shrink-0">
           <h1 className="text-xl font-bold font-rubik text-primary">AmbarHub</h1>
           <button onClick={onMobileMenuClose} className="text-muted-foreground hover:text-foreground">
@@ -188,11 +208,10 @@ export function Sidebar({ routes, currentPath, isMobileMenuOpen, onMobileMenuClo
               key={route.path}
               href={route.path}
               onClick={onMobileMenuClose}
-              className={`flex items-center w-full px-4 py-3 rounded-lg ${
-                isActive(route.path) 
-                  ? 'bg-[rgba(128,0,32,0.1)] text-primary font-semibold' 
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
+              className={`flex items-center w-full px-4 py-3 rounded-lg ${isActive(route.path)
+                ? 'bg-[rgba(128,0,32,0.1)] text-primary font-semibold'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                }`}
             >
               <span className="mr-3">{route.icon && iconMap[route.icon]}</span>
               {route.label}
@@ -200,7 +219,7 @@ export function Sidebar({ routes, currentPath, isMobileMenuOpen, onMobileMenuClo
           ))}
         </nav>
         <div className="p-3 border-t border-border shrink-0">
-          <button 
+          <button
             onClick={handleLogout}
             disabled={isPending}
             className="flex items-center w-full px-4 py-3 text-muted-foreground hover:bg-muted hover:text-foreground rounded-lg disabled:opacity-50"

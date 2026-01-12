@@ -20,6 +20,7 @@ import {
   getActiveShippingProviders,
 } from '@/lib/api';
 import { useToast } from '@/components/common/ToastContext';
+import { IntegrationStoreList } from '@/components/integrations/IntegrationStoreList';
 
 interface Integration {
   id: string;
@@ -108,9 +109,7 @@ export function IntegrationsTable() {
   const [total, setTotal] = useState(0);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [isStoreConfigModalOpen, setIsStoreConfigModalOpen] = useState(false);
   const [editingIntegration, setEditingIntegration] = useState<Integration | null>(null);
-  const [configIntegrationId, setConfigIntegrationId] = useState<string | null>(null);
   const [deletingIntegrationId, setDeletingIntegrationId] = useState<string | null>(null);
   const [formData, setFormData] = useState<IntegrationFormData>({
     name: '',
@@ -199,11 +198,6 @@ export function IntegrationsTable() {
     setIsModalOpen(false);
   }, []);
 
-  const handleStoreConfigModalClose = useCallback(() => {
-    setIsStoreConfigModalOpen(false);
-    setConfigIntegrationId(null);
-  }, []);
-
   const handleDeleteModalClose = useCallback(() => {
     setIsDeleteModalOpen(false);
   }, []);
@@ -219,7 +213,6 @@ export function IntegrationsTable() {
     setFormData(newData);
     setInitialFormData(newData);
 
-    // Load existing store configs
     const existingConfigs = integrationStores.filter(is => is && is.integrationId === integration.id);
     const storeIds = existingConfigs.map(is => is.storeId);
     setSelectedStoreIds(storeIds);
@@ -267,11 +260,9 @@ export function IntegrationsTable() {
         success('Integration created successfully');
       }
 
-      // Handle store configurations
       const existingConfigs = integrationStores.filter(is => is && is.integrationId === (editingIntegration?.id || integrationId));
       const existingStoreIds = new Set(existingConfigs.map(is => is.storeId));
 
-      // Create or update store configs
       for (const storeId of selectedStoreIds) {
         const config = storeConfigs.get(storeId);
         if (!config) continue;
@@ -307,7 +298,6 @@ export function IntegrationsTable() {
         existingStoreIds.delete(storeId);
       }
 
-      // Remove stores that are no longer selected
       const storeIdsToRemove = Array.from(existingStoreIds);
       for (const storeId of storeIdsToRemove) {
         const configToRemove = existingConfigs.find(is => is.storeId === storeId);
@@ -335,29 +325,12 @@ export function IntegrationsTable() {
     });
   }, []);
 
-  const handleNameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    updateFormField('name', e.target.value);
-  }, [updateFormField]);
-
-  const handleTypeChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
-    updateFormField('type', e.target.value as IntegrationFormData['type']);
-  }, [updateFormField]);
-
-  const handleApiUrlChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    updateFormField('apiUrl', e.target.value);
-  }, [updateFormField]);
-
-  const handleIsActiveChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
-    updateFormField('isActive', e.target.value === 'Active');
-  }, [updateFormField]);
-
   const handleStoreSelectionChange = useCallback((storeId: string, selected: boolean) => {
     setSelectedStoreIds(prev => {
       const newSelection = selected
         ? [...prev, storeId]
         : prev.filter(id => id !== storeId);
 
-      // Add default config for newly selected store
       if (selected && !storeConfigs.has(storeId)) {
         setStoreConfigs(prev => new Map(prev).set(storeId, {
           ...DEFAULT_STORE_CONFIG,
@@ -393,7 +366,6 @@ export function IntegrationsTable() {
     });
   }, []);
 
-  // Get store IDs already connected to this integration
   const connectedStoreIds = useMemo(() => {
     if (!editingIntegration) return [];
     return integrationStores
@@ -401,16 +373,13 @@ export function IntegrationsTable() {
       .map(is => is.storeId);
   }, [integrationStores, editingIntegration]);
 
-  // Get store IDs that already have an integration of the same type (business rule)
   const conflictingStoreIds = useMemo(() => {
     const currentType = formData.type;
     const currentIntegrationId = editingIntegration?.id;
 
-    // Find all integration stores with the same type
     const sameTypeStoreIds = integrationStores
       .filter(is => {
         if (!is) return false;
-        // Find the integration for this store
         const integration = integrations.find(i => i.id === is.integrationId);
         return integration && integration.type === currentType && integration.id !== currentIntegrationId;
       })
@@ -420,11 +389,9 @@ export function IntegrationsTable() {
   }, [integrationStores, integrations, formData.type, editingIntegration]);
 
   const isFormValid = useMemo(() => {
-    // Integration form validation
     const integrationValid = formData.name.trim().length > 0 &&
-                           formData.apiUrl.trim().length > 0;
+      formData.apiUrl.trim().length > 0;
 
-    // Store configs validation - validate both selected and connected stores
     const storeIdsToValidate = editingIntegration
       ? Array.from(new Set([...selectedStoreIds, ...connectedStoreIds]))
       : selectedStoreIds;
@@ -432,26 +399,23 @@ export function IntegrationsTable() {
     const storeConfigsValid = storeIdsToValidate.every(storeId => {
       const config = storeConfigs.get(storeId);
       return config &&
-             config.shippingProviderId.trim().length > 0 &&
-             config.sellerId.trim().length > 0 &&
-             config.apiKey.trim().length > 0 &&
-             config.apiSecret.trim().length > 0;
+        config.shippingProviderId.trim().length > 0 &&
+        config.sellerId.trim().length > 0 &&
+        config.apiKey.trim().length > 0 &&
+        config.apiSecret.trim().length > 0;
     });
 
     return integrationValid && storeConfigsValid;
   }, [formData.name, formData.apiUrl, selectedStoreIds, storeConfigs, editingIntegration, connectedStoreIds]);
 
   const isFormDirty = useMemo(() => {
-    // Check integration-level changes
     const hasIntegrationChanges = JSON.stringify(formData) !== JSON.stringify(initialFormData);
 
-    // Check store selection changes
     const hasStoreSelectionChanges =
       selectedStoreIds.length !== initialSelectedStoreIds.length ||
       selectedStoreIds.some(id => !initialSelectedStoreIds.includes(id)) ||
       initialSelectedStoreIds.some(id => !selectedStoreIds.includes(id));
 
-    // Check store config changes
     const hasStoreConfigChanges = selectedStoreIds.some(storeId => {
       const current = storeConfigs.get(storeId);
       const initial = initialStoreConfigs.get(storeId);
@@ -517,35 +481,36 @@ export function IntegrationsTable() {
         </span>
       ),
     },
-    { key: 'apiUrl', header: 'API URL' },
     {
       key: 'storeCount',
       header: 'Stores',
-      render: (row: Integration) => <span>{row.storeCount}</span>,
+      render: (row: Integration) => (
+        <span className="text-muted-foreground">{row.storeCount}</span>
+      ),
     },
     {
       key: 'isActive',
       header: 'Status',
       render: (row: Integration) => (
-        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${
-          row.isActive
-            ? 'bg-success/10 text-success border-success/20'
-            : 'bg-muted text-muted-foreground border-border'
-        }`}>
+        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${row.isActive
+          ? 'bg-success/10 text-success border-success/20'
+          : 'bg-muted text-muted-foreground border-border'
+          }`}>
           {row.isActive ? 'Active' : 'Passive'}
         </span>
       ),
     },
     {
       key: 'actions',
-      header: 'Actions',
+      header: '',
       align: 'right',
       shrink: true,
       render: (row: Integration) => (
-        <div className="flex items-center justify-end space-x-1 sm:space-x-2">
+        <div className="flex items-center justify-end space-x-1">
           <button
             onClick={() => handleEdit(row)}
             className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
+            title="Edit"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -554,6 +519,7 @@ export function IntegrationsTable() {
           <button
             onClick={() => handleDelete(row.id)}
             className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+            title="Delete"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -571,21 +537,11 @@ export function IntegrationsTable() {
     totalPages: Math.ceil(total / 10),
   }), [page, total]);
 
-  // Filter store options to exclude already connected stores
-  const storeOptions = useMemo(() =>
-    (stores || [])
-      .filter(s => !connectedStoreIds.includes(s.id))
-      .map((s) => ({ value: s.id, label: s.name })),
-    [stores, connectedStoreIds]
-  );
-
-  // Get all store options including connected ones for display
   const allStoreOptions = useMemo(() =>
     (stores || []).map((s) => ({ value: s.id, label: s.name })),
     [stores]
   );
 
-  // Shipping provider options
   const shippingProviderOptions = useMemo(() =>
     (shippingProviders || []).map((p) => ({ value: p.id, label: `${p.name} (${p.type})` })),
     [shippingProviders]
@@ -593,9 +549,13 @@ export function IntegrationsTable() {
 
   return (
     <>
-      <div className="mb-4 flex justify-end">
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h2 className="text-2xl font-semibold text-foreground">Integrations</h2>
+          <p className="text-sm text-muted-foreground mt-1">Manage marketplace connections and sync settings</p>
+        </div>
         <Button onClick={handleCreate}>
-          <svg className="w-[18px] h-[18px] mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
           Add Integration
@@ -609,193 +569,65 @@ export function IntegrationsTable() {
         isLoading={loading}
         pagination={pagination}
         onPageChange={setPage}
+        emptyMessage="No integrations yet. Connect your first marketplace to get started."
       />
 
       <Modal isOpen={isModalOpen} onClose={handleModalClose} title={modalTitle} size="full">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Input
-              label="Name"
-              value={formData.name}
-              onChange={handleNameChange}
-              required
-            />
-            <Select
-              label="Type"
-              value={formData.type}
-              onChange={handleTypeChange}
-              options={INTEGRATION_TYPES}
-              required
-            />
-            <Input
-              label="API URL"
-              value={formData.apiUrl}
-              onChange={handleApiUrlChange}
-              type="url"
-              required
-            />
-            <Select
-              label="Status"
-              value={formData.isActive ? 'Active' : 'Passive'}
-              onChange={handleIsActiveChange}
-              options={[
-                { value: 'Active', label: 'Active' },
-                { value: 'Passive', label: 'Passive' },
-              ]}
-            />
-          </div>
-
-          <div className="border-t border-border pt-4">
-            <h3 className="text-lg font-semibold mb-3">Store Configuration</h3>
-            <div className="space-y-2 max-h-[60vh] overflow-y-auto">
-              {allStoreOptions.map(option => {
-                const isSelected = selectedStoreIds.includes(option.value);
-                const isConnected = connectedStoreIds.includes(option.value);
-                const hasConflict = conflictingStoreIds.includes(option.value);
-                const config = storeConfigs.get(option.value);
-                const isDisabled = isConnected || hasConflict;
-
-                // Get conflict reason
-                const conflictReason = hasConflict
-                  ? `This store already has a ${formData.type} integration`
-                  : '';
-
-                return (
-                  <div key={option.value} className={`border border-border rounded-lg p-3 ${isConnected ? 'bg-muted/50' : ''} ${hasConflict ? 'bg-destructive/5' : ''}`}>
-                    <div className="flex items-center justify-between mb-2">
-                      <label
-                        className={`flex items-center space-x-2 ${!isDisabled ? 'cursor-pointer' : 'cursor-not-allowed'}`}
-                        title={conflictReason}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isSelected || isConnected}
-                          disabled={isDisabled}
-                          onChange={(e) => !isDisabled && handleStoreSelectionChange(option.value, e.target.checked)}
-                          className="w-4 h-4 rounded border-border disabled:opacity-50"
-                        />
-                        <span className="font-medium">{option.label}</span>
-                        {isConnected && (
-                          <span className="text-xs text-muted-foreground ml-2">(Connected)</span>
-                        )}
-                        {hasConflict && !isConnected && (
-                          <span className="text-xs text-destructive ml-2" title={conflictReason}>
-                            Already has {formData.type}
-                          </span>
-                        )}
-                      </label>
-                    </div>
-
-                    {((isSelected && !isConnected) || (isConnected && config)) && (
-                      <div className={`ml-6 mt-3 space-y-3 ${config && !config.isActive ? 'opacity-60' : ''}`}>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium">Store Configuration</span>
-                          <Select
-                            value={config!.isActive ? 'Active' : 'Passive'}
-                            onChange={(e) => updateStoreConfig(option.value, 'isActive', e.target.value === 'Active')}
-                            options={[
-                              { value: 'Active', label: 'Active' },
-                              { value: 'Passive', label: 'Passive' },
-                            ]}
-                          />
-                        </div>
-
-                        {/* Shipping Selection */}
-                        <div>
-                          <label className="block text-xs text-muted-foreground mb-1">Shipping Provider *</label>
-                          <Select
-                            value={config!.shippingProviderId || ''}
-                            onChange={(e) => updateStoreConfig(option.value, 'shippingProviderId', e.target.value)}
-                            options={shippingProviderOptions.length > 0 ? shippingProviderOptions : [{ value: '', label: 'No shipping providers available' }]}
-                            disabled={shippingProviderOptions.length === 0}
-                          />
-                          {shippingProviderOptions.length === 0 && (
-                            <p className="text-xs text-destructive mt-1">
-                              Create shipping providers first
-                            </p>
-                          )}
-                        </div>
-
-                        {/* Integration Credentials */}
-                        <div className="border-t border-border pt-3">
-                          <h4 className="text-sm font-medium mb-2">Integration Credentials</h4>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            <Input
-                              label="Seller ID"
-                              value={config!.sellerId}
-                              onChange={(e) => updateStoreConfig(option.value, 'sellerId', e.target.value)}
-                              required
-                            />
-                            <Input
-                              label="API Key"
-                              value={config!.apiKey}
-                              onChange={(e) => updateStoreConfig(option.value, 'apiKey', e.target.value)}
-                              required
-                            />
-                            <Input
-                              label="API Secret"
-                              value={config!.apiSecret}
-                              onChange={(e) => updateStoreConfig(option.value, 'apiSecret', e.target.value)}
-                              type="password"
-                              required
-                            />
-                          </div>
-                        </div>
-
-                        {/* Sync Settings */}
-                        <div className="border-t border-border pt-3">
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            <div>
-                              <label className="block text-xs text-muted-foreground mb-1">Interval (min)</label>
-                              <Input
-                                value={config!.crawlIntervalMinutes}
-                                onChange={(e) => updateStoreConfig(option.value, 'crawlIntervalMinutes', parseInt(e.target.value) || 1)}
-                                type="number"
-                                min="1"
-                                required
-                              />
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <input
-                                type="checkbox"
-                                id={`stock-${option.value}`}
-                                checked={config!.sendStock}
-                                onChange={(e) => updateStoreConfig(option.value, 'sendStock', e.target.checked)}
-                                className="w-4 h-4 rounded border-border"
-                              />
-                              <label htmlFor={`stock-${option.value}`} className="text-xs">Stock</label>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <input
-                                type="checkbox"
-                                id={`price-${option.value}`}
-                                checked={config!.sendPrice}
-                                onChange={(e) => updateStoreConfig(option.value, 'sendPrice', e.target.checked)}
-                                className="w-4 h-4 rounded border-border"
-                              />
-                              <label htmlFor={`price-${option.value}`} className="text-xs">Price</label>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <input
-                                type="checkbox"
-                                id={`order-${option.value}`}
-                                checked={config!.sendOrderStatus}
-                                onChange={(e) => updateStoreConfig(option.value, 'sendOrderStatus', e.target.checked)}
-                                className="w-4 h-4 rounded border-border"
-                              />
-                              <label htmlFor={`order-${option.value}`} className="text-xs">Order Status</label>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Integration Information */}
+          <div>
+            <h3 className="text-sm font-semibold text-foreground mb-3">Integration Details</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input
+                label="Name"
+                value={formData.name}
+                onChange={(e) => updateFormField('name', e.target.value)}
+                required
+                placeholder="Integration name"
+              />
+              <Select
+                label="Type"
+                value={formData.type}
+                onChange={(e) => updateFormField('type', e.target.value as IntegrationFormData['type'])}
+                options={INTEGRATION_TYPES}
+                required
+              />
+              <Input
+                label="API URL"
+                value={formData.apiUrl}
+                onChange={(e) => updateFormField('apiUrl', e.target.value)}
+                type="url"
+                required
+                placeholder="https://api.example.com"
+              />
+              <Select
+                label="Status"
+                value={formData.isActive ? 'Active' : 'Passive'}
+                onChange={(e) => updateFormField('isActive', e.target.value === 'Active')}
+                options={[
+                  { value: 'Active', label: 'Active' },
+                  { value: 'Passive', label: 'Passive' },
+                ]}
+              />
             </div>
           </div>
 
-          <div className="flex justify-end gap-2">
+          {/* Store Configuration */}
+          <div className="border-t border-border pt-4">
+            <IntegrationStoreList
+              stores={stores}
+              selectedStoreIds={selectedStoreIds}
+              connectedStoreIds={connectedStoreIds}
+              conflictingStoreIds={conflictingStoreIds}
+              storeConfigs={storeConfigs}
+              shippingProviders={shippingProviders}
+              integrationType={formData.type}
+              onStoreSelectionChange={handleStoreSelectionChange}
+              onConfigChange={updateStoreConfig}
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-border">
             <Button type="button" variant="outline" onClick={handleModalClose}>
               Cancel
             </Button>

@@ -1,4 +1,5 @@
-import { IsString, IsNotEmpty, IsOptional, IsNumber, Min, Max, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsNumber, Min, Max, MaxLength, IsEnum } from 'class-validator';
+import { ProductType } from '../enums/product-type.enum';
 
 export class UpdateProductDto {
   @IsString()
@@ -26,6 +27,10 @@ export class UpdateProductDto {
   @MaxLength(255)
   sku?: string;
 
+  @IsEnum(ProductType)
+  @IsOptional()
+  productType?: ProductType;
+
   @IsNumber()
   @Min(0)
   @Max(100)
@@ -50,8 +55,14 @@ export class UpdateProductDto {
   @IsNumber()
   @Min(0)
   @IsOptional()
+  setPrice?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
   lastSalePrice?: number;
 
   @IsOptional()
   isActive?: boolean;
 }
+

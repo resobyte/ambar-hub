@@ -14,16 +14,9 @@ export default async function WarehousesPage() {
 
   return (
     <AppLayout user={user} currentPath="/warehouses">
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-3xl font-bold text-foreground font-rubik">Warehouses</h2>
-          <p className="text-muted-foreground mt-1">Manage your warehouses</p>
-        </div>
-
-        <Suspense fallback={<div>Loading...</div>}>
-          <WarehousesTable />
-        </Suspense>
-      </div>
+      <Suspense fallback={<div>Loading...</div>}>
+        <WarehousesTable />
+      </Suspense>
     </AppLayout>
   );
 }

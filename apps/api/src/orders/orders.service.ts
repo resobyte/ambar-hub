@@ -1,0 +1,840 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Order } from './entities/order.entity';
+import { OrderItem } from './entities/order-item.entity';
+import { FaultyOrder, FaultyOrderReason } from './entities/faulty-order.entity';
+import { CustomersService } from '../customers/customers.service';
+import { IntegrationsService } from '../integrations/integrations.service';
+import { OrderStatus } from './enums/order-status.enum';
+import { IntegrationType } from '../integrations/entities/integration.entity';
+import { Product } from '../products/entities/product.entity';
+import { ProductSetItem } from '../products/entities/product-set-item.entity';
+import { ProductType } from '../products/enums/product-type.enum';
+import axios from 'axios';
+
+@Injectable()
+export class OrdersService {
+    private readonly logger = new Logger(OrdersService.name);
+
+    constructor(
+        @InjectRepository(Order)
+        private readonly orderRepository: Repository<Order>,
+        @InjectRepository(OrderItem)
+        private readonly orderItemRepository: Repository<OrderItem>,
+        @InjectRepository(FaultyOrder)
+        private readonly faultyOrderRepository: Repository<FaultyOrder>,
+        @InjectRepository(Product)
+        private readonly productRepository: Repository<Product>,
+        @InjectRepository(ProductSetItem)
+        private readonly productSetItemRepository: Repository<ProductSetItem>,
+        private readonly customersService: CustomersService,
+        private readonly integrationsService: IntegrationsService,
+    ) { }
+
+    private mapStatus(status: string): OrderStatus {
+        if (!status) return OrderStatus.UNKNOWN;
+        const s = status.toLowerCase();
+
+        // Common/Hepsiburada statuses
+        if (s === 'created' || s === 'open') return OrderStatus.CREATED;
+        if (s === 'unpacked') return OrderStatus.REPACK; // Mapped "Unpacked" (Damaged/Open Pkg) to REPACK
+        if (s === 'picking' || s === 'ready_to_ship' || s === 'preparing') return OrderStatus.PICKING;
+        if (s === 'shipped') return OrderStatus.SHIPPED;
+        if (s === 'cancelled') return OrderStatus.CANCELLED;
+        if (s === 'delivered') return OrderStatus.DELIVERED;
+
+        // Trendyol Statuses
+        switch (status) {
+            case 'Created': return OrderStatus.CREATED;
+            case 'Picking': return OrderStatus.PICKING;
+            case 'Invoiced': return OrderStatus.INVOICED;
+            case 'Shipped': return OrderStatus.SHIPPED;
+            case 'Cancelled': return OrderStatus.CANCELLED;
+            case 'Delivered': return OrderStatus.DELIVERED;
+            case 'UnDelivered': return OrderStatus.UNDELIVERED;
+            case 'Returned': return OrderStatus.RETURNED;
+            case 'Repack': return OrderStatus.REPACK;
+            case 'UnSupplied': return OrderStatus.UNSUPPLIED;
+
+            // Ikas Statuses
+            case 'DRAFT': return OrderStatus.CREATED;
+            case 'PARTIALLY_CANCELLED': return OrderStatus.CREATED; // Treat partial cancel as still active/created
+            case 'PARTIALLY_REFUNDED': return OrderStatus.RETURNED;
+            case 'REFUNDED': return OrderStatus.RETURNED;
+            case 'REFUND_REJECTED': return OrderStatus.DELIVERED; // Return rejected implies kept by customer
+            case 'REFUND_REQUESTED': return OrderStatus.RETURNED;
+            case 'WAITING_UPSELL_ACTION': return OrderStatus.CREATED;
+
+            default: return OrderStatus.UNKNOWN;
+        }
+    }
+
+    /**
+     * Check if a barcode belongs to a SET product and return expanded components
+     * Returns null if not a SET, or array of component items if it is
+     */
+    private async expandSetProduct(barcode: string, originalLine: any): Promise<any[] | null> {
+        if (!barcode) return null;
+
+        // Find product by barcode
+        const product = await this.productRepository.findOne({
+            where: { barcode, productType: ProductType.SET },
+        });
+
+        if (!product) return null;
+
+        // Get SET components
+        const setItems = await this.productSetItemRepository.find({
+            where: { setProductId: product.id },
+            relations: ['componentProduct'],
+            order: { sortOrder: 'ASC' },
+        });
+
+        if (setItems.length === 0) return null;
+
+        // Expand to component items
+        return setItems.map((setItem, index) => ({
+            ...originalLine,
+            // Use component product info
+            productName: setItem.componentProduct.name,
+            barcode: setItem.componentProduct.barcode,
+            sku: setItem.componentProduct.sku,
+            merchantSku: setItem.componentProduct.sku,
+            stockCode: setItem.componentProduct.sku,
+            // Quantity multiplied by component quantity
+            quantity: (originalLine.quantity || 1) * setItem.quantity,
+            // Use price share from SET definition
+            price: Number(setItem.priceShare),
+            lineUnitPrice: Number(setItem.priceShare),
+            unitPrice: Number(setItem.priceShare),
+            // Mark as SET component
+            _isSetComponent: true,
+            _setProductId: product.id,
+            _setBarcode: barcode,
+            // Adjust line number
+            lineNo: (originalLine.lineNo || 1) * 100 + index,
+        }));
+    }
+
+    /**
+     * Check if all products in order lines exist in our database
+     * Returns missing barcodes if any
+     */
+    private async checkProductsExist(lines: any[]): Promise<{ valid: boolean; missing: string[] }> {
+        const missing: string[] = [];
+        for (const line of lines) {
+            const barcode = line.barcode;
+            if (!barcode) continue;
+
+            const product = await this.productRepository.findOne({ where: { barcode } });
+            if (!product) {
+                missing.push(barcode);
+            }
+        }
+        return { valid: missing.length === 0, missing };
+    }
+
+    /**
+     * Save order to faulty orders table
+     */
+    private async saveAsFaultyOrder(
+        pkg: any,
+        integrationId: string,
+        storeId: string,
+        missingBarcodes: string[],
+    ): Promise<void> {
+        const packageId = pkg.shipmentPackageId?.toString() || pkg.packageId?.toString() || pkg.orderNumber;
+
+        // Check if already exists
+        const existing = await this.faultyOrderRepository.findOne({ where: { packageId } });
+        if (existing) {
+            existing.missingBarcodes = missingBarcodes;
+            existing.retryCount += 1;
+            existing.rawData = pkg;
+            await this.faultyOrderRepository.save(existing);
+            this.logger.log(`Updated faulty order ${packageId} (retry #${existing.retryCount})`);
+            return;
+        }
+
+        const faultyOrder = this.faultyOrderRepository.create({
+            integrationId,
+            storeId,
+            packageId,
+            orderNumber: pkg.orderNumber?.toString(),
+            rawData: pkg,
+            missingBarcodes,
+            errorReason: FaultyOrderReason.MISSING_PRODUCTS,
+            retryCount: 0,
+            customerName: `${pkg.customerFirstName || ''} ${pkg.customerLastName || ''}`.trim(),
+            totalPrice: pkg.totalPrice || 0,
+            currencyCode: pkg.currencyCode || 'TRY',
+        });
+
+        await this.faultyOrderRepository.save(faultyOrder);
+        this.logger.warn(`Saved faulty order ${packageId} - missing products: ${missingBarcodes.join(', ')}`);
+    }
+
+    async syncOrders(integrationId: string) {
+        const integration = await this.integrationsService.findWithStores(integrationId);
+        if (!integration || !integration.isActive) {
+            this.logger.warn(`Invalid or inactive integration: ${integrationId}`);
+            return;
+        }
+
+        if (!integration.integrationStores || integration.integrationStores.length === 0) {
+            this.logger.warn(`No stores found for integration: ${integrationId}`);
+            return;
+        }
+
+        // For each connected store in this integration
+        for (const storeConfig of integration.integrationStores) {
+            if (!storeConfig.isActive) continue;
+
+            try {
+                if (integration.type === IntegrationType.TRENDYOL) {
+                    await this.syncTrendyolOrders(storeConfig.sellerId, storeConfig.apiKey, storeConfig.apiSecret, integrationId, storeConfig.storeId);
+                } else if (integration.type === IntegrationType.HEPSIBURADA) {
+                    await this.syncHepsiburadaOrders(storeConfig.sellerId, storeConfig.apiKey, storeConfig.apiSecret, integrationId, storeConfig.storeId, storeConfig.store?.name || 'Unknown Store');
+                } else if (integration.type === IntegrationType.IKAS) {
+                    await this.syncIkasOrders(storeConfig.apiKey, storeConfig.apiSecret, storeConfig.sellerId, integrationId, storeConfig.storeId);
+                }
+            } catch (error) {
+                this.logger.error(`Failed to sync orders for store ${storeConfig.storeId}`, error);
+            }
+        }
+    }
+
+    private async syncTrendyolOrders(sellerId: string, apiKey: string, apiSecret: string, integrationId: string, storeId: string) {
+        const url = `https://apigw.trendyol.com/integration/order/sellers/${sellerId}/orders`;
+        const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
+        const startDate = Date.now() - 14 * 24 * 60 * 60 * 1000;
+        const endDate = Date.now();
+
+        let page = 0;
+        let totalPages = 1;
+
+        do {
+            const params = new URLSearchParams({
+                startDate: startDate.toString(),
+                endDate: endDate.toString(),
+                page: page.toString(),
+                size: '50',
+                orderByField: 'PackageLastModifiedDate',
+                orderByDirection: 'DESC'
+            });
+
+            try {
+                const response = await fetch(`${url}?${params}`, {
+                    method: 'GET',
+                    headers: { Authorization: `Basic ${auth}` },
+                });
+
+                if (!response.ok) {
+                    this.logger.error(`Trendyol API error for store ${storeId}: ${response.statusText}`);
+                    break;
+                }
+
+                const data: any = await response.json();
+                const packages = data.content;
+                totalPages = data.totalPages;
+
+                this.logger.log(`Fetched page ${page + 1}/${totalPages} (${packages.length} orders) for store ${storeId}`);
+
+                for (const pkg of packages) {
+                    await this.processOrderPackage(pkg, integrationId, storeId);
+                }
+
+                page++;
+            } catch (error) {
+                this.logger.error(`Error fetching page ${page} for store ${storeId}`, error);
+                break;
+            }
+        } while (page < totalPages);
+    }
+
+    private async syncHepsiburadaOrders(merchantId: string, username: string, password: string, integrationId: string, storeId: string, storeName: string) {
+        // Trim credentials
+        merchantId = merchantId?.trim();
+        username = username?.trim();
+        password = password?.trim();
+
+        this.logger.debug(`Hepsiburada Sync via SDK - Store: ${storeName}`);
+
+        try {
+            const auth = Buffer.from(`${merchantId}:${password}`).toString('base64');
+
+            const endpoints = [
+                { url: `https://oms-external.hepsiburada.com/orders/merchantid/${merchantId}`, type: 'Open' },
+                { url: `https://oms-external.hepsiburada.com/packages/merchantid/${merchantId}/delivered`, type: 'Delivered' }
+            ];
+
+            for (const endpoint of endpoints) {
+                this.logger.log(`Fetching ${endpoint.type} Hepsiburada orders from ${endpoint.url}`);
+
+                let offset = 0;
+                let limit = 100;
+                let hasMore = true;
+                let totalFetched = 0;
+
+                while (hasMore) {
+                    try {
+                        const response = await axios.get(endpoint.url, {
+                            headers: {
+                                'Authorization': `Basic ${auth}`,
+                                'User-Agent': 'hamurlabs_dev',
+                                'Accept': 'application/json',
+                                'Content-Type': 'application/json'
+                            },
+                            params: {
+                                limit: limit,
+                                offset: offset
+                            }
+                        });
+
+                        const data = response.data;
+                        const orders = Array.isArray(data) ? data : (data.items || []);
+
+                        if (orders.length === 0) {
+                            hasMore = false;
+                            break;
+                        }
+
+                        this.logger.log(`Fetched batch of ${orders.length} ${endpoint.type} orders (Offset: ${offset})`);
+
+                        let successCount = 0;
+                        let failCount = 0;
+
+                        for (const order of orders) {
+                            try {
+                                const internalPkg = this.mapHepsiburadaOrder(order);
+                                if (!internalPkg) {
+                                    this.logger.warn(`Skipping empty order/package from ${endpoint.type}`);
+                                    continue;
+                                }
+                                await this.processOrderPackage(internalPkg, integrationId, storeId);
+                                successCount++;
+                            } catch (err) {
+                                failCount++;
+                                this.logger.error(`Failed to process order ${order?.orderNumber || order?.id}: ${err.message}. Raw Data: ${JSON.stringify(order)}`, err);
+                            }
+                        }
+
+                        totalFetched += orders.length;
+                        this.logger.log(`Processed batch: ${successCount} succeeded, ${failCount} failed. Total fetched so far: ${totalFetched}`);
+
+                        if (orders.length < limit) {
+                            hasMore = false;
+                        } else {
+                            offset += limit;
+                        }
+
+                    } catch (error) {
+                        if (axios.isAxiosError(error)) {
+                            this.logger.error(`Error fetching ${endpoint.type} orders at offset ${offset}: ${error.message}`, error.response?.data);
+                        } else {
+                            this.logger.error(`Error fetching ${endpoint.type} orders for store ${storeId} at offset ${offset}`, error);
+                        }
+                        // If a batch fails, we probably should stop or skip? For now, let's stop this endpoint to avoid infinite loops if it's a persistent error
+                        hasMore = false;
+                    }
+                }
+            }
+
+        } catch (error) {
+            this.logger.error(`Critical error in Hepsiburada sync for store ${storeId}`, error);
+        }
+    }
+
+    private mapHepsiburadaOrder(hbOrder: any): any {
+        if (!hbOrder) return null;
+
+        const customer = hbOrder.Customer || hbOrder.customer;
+        const billingAddress = hbOrder.BillingAddress || hbOrder.billingAddress;
+        const shippingAddress = hbOrder.ShippingAddress || hbOrder.shippingAddress;
+        const items = hbOrder.Items || hbOrder.items || [];
+
+        const totalPrice = hbOrder.TotalPrice?.Amount || hbOrder.totalPrice?.amount || hbOrder.TotalPrice || hbOrder.totalPrice || 0;
+
+        return {
+            orderNumber: hbOrder.OrderNumber || hbOrder.orderNumber || hbOrder.Id || hbOrder.id,
+            orderDate: hbOrder.OrderDate || hbOrder.orderDate || hbOrder.DeliveredDate || new Date().toISOString(),
+            totalPrice,
+            grossAmount: totalPrice, // Hepsiburada returns net price, no separate gross
+            totalDiscount: 0,
+            sellerDiscount: 0,
+            tyDiscount: 0,
+            status: hbOrder.Status || hbOrder.status || items?.[0]?.Status || items?.[0]?.status || 'UNKNOWN',
+            customerFirstName: customer?.Name?.split(' ')[0] || customer?.name?.split(' ')[0] || 'Hb',
+            customerLastName: customer?.Name?.split(' ').slice(1).join(' ') || customer?.name?.split(' ').slice(1).join(' ') || 'Customer',
+            customerEmail: customer?.Email || customer?.email,
+            customerId: customer?.Id || customer?.id,
+            tcIdentityNumber: null,
+            billingAddress: {
+                phone: billingAddress?.PhoneNumber || billingAddress?.phoneNumber || customer?.PhoneNumber || customer?.phoneNumber
+            },
+            shipmentAddress: {
+                city: shippingAddress?.City || shippingAddress?.city,
+                district: shippingAddress?.District || shippingAddress?.district,
+                fullAddress: shippingAddress?.Address || shippingAddress?.address,
+                phone: shippingAddress?.PhoneNumber || shippingAddress?.phoneNumber
+            },
+            lines: items.map((item: any) => {
+                const itemPrice = item.Price?.Amount || item.price?.amount || item.Price || item.price || 0;
+                return {
+                    productName: item.ProductName || item.productName || item.Name || item.name,
+                    sku: item.MerchantSku || item.merchantSku || item.Sku || item.sku,
+                    barcode: item.Barcode || item.barcode,
+                    quantity: item.Quantity || item.quantity,
+                    price: itemPrice,
+                    lineGrossAmount: itemPrice, // Hepsiburada returns net price
+                    discount: 0,
+                    lineSellerDiscount: 0,
+                    lineTyDiscount: 0,
+                };
+            })
+        };
+    }
+
+    private async processOrderPackage(pkg: any, integrationId: string, storeId: string) {
+        const packageId = pkg.packageId || pkg.shipmentPackageId?.toString() || pkg.orderNumber;
+        const orderNumber = pkg.orderNumber;
+
+        // 0. Check if this is already in faulty orders and products now exist
+        const existingFaulty = await this.faultyOrderRepository.findOne({ where: { packageId } });
+
+        // 1. Validate all products exist
+        const lines = pkg.lines || [];
+        const { valid, missing } = await this.checkProductsExist(lines);
+
+        if (!valid) {
+            // Products missing - save to faulty orders
+            await this.saveAsFaultyOrder(pkg, integrationId, storeId, missing);
+            return; // Don't process as regular order
+        }
+
+        // Products exist - if was faulty, remove from faulty orders
+        if (existingFaulty) {
+            await this.faultyOrderRepository.delete({ id: existingFaulty.id });
+            this.logger.log(`Resolved faulty order ${packageId} - all products now exist`);
+        }
+
+        // 2. Create/Update Customer
+        const customerData = {
+            firstName: pkg.customerFirstName,
+            lastName: pkg.customerLastName,
+            email: pkg.customerEmail,
+            phone: pkg.invoiceAddress?.phone || pkg.shipmentAddress?.phone,
+            city: pkg.shipmentAddress?.city,
+            district: pkg.shipmentAddress?.district,
+            address: pkg.shipmentAddress?.fullAddress,
+            tcIdentityNumber: pkg.identityNumber || pkg.tcIdentityNumber,
+            trendyolCustomerId: pkg.customerId?.toString(),
+        };
+
+        if (!customerData.email) {
+            customerData.email = `customer-${customerData.trendyolCustomerId || orderNumber}@placeholder.com`;
+        }
+
+        const customer = await this.customersService.createOrUpdate(customerData);
+
+        // 2. Check Order by packageId (unique)
+        let order = await this.orderRepository.findOne({ where: { packageId } });
+        const status = this.mapStatus(pkg.status || pkg.shipmentPackageStatus);
+
+        if (order) {
+            // Update existing order
+            if (order.status !== status || order.integrationStatus !== pkg.status) {
+                order.status = status;
+                order.integrationStatus = pkg.status || pkg.shipmentPackageStatus;
+                order.lastModifiedDate = pkg.lastModifiedDate ? new Date(pkg.lastModifiedDate) : new Date();
+                order.invoiceLink = pkg.invoiceLink || order.invoiceLink;
+                order.cargoTrackingNumber = pkg.cargoTrackingNumber?.toString() || order.cargoTrackingNumber;
+                order.cargoTrackingLink = pkg.cargoTrackingLink || order.cargoTrackingLink;
+                order.packageHistories = pkg.packageHistories || order.packageHistories;
+                await this.orderRepository.save(order);
+            }
+        } else {
+            const newOrder = this.orderRepository.create({
+                // Identifiers
+                packageId,
+                orderNumber,
+                integrationId,
+                storeId,
+                customer,
+
+                // Status
+                status,
+                integrationStatus: pkg.status || pkg.shipmentPackageStatus,
+
+                // Pricing
+                totalPrice: pkg.totalPrice ?? pkg.packageTotalPrice ?? 0,
+                grossAmount: pkg.grossAmount ?? pkg.packageGrossAmount,
+                totalDiscount: pkg.totalDiscount ?? pkg.packageTotalDiscount ?? 0,
+                sellerDiscount: pkg.packageSellerDiscount ?? pkg.sellerDiscount ?? 0,
+                tyDiscount: pkg.totalTyDiscount ?? pkg.packageTyDiscount ?? pkg.tyDiscount ?? 0,
+                currencyCode: pkg.currencyCode,
+
+                // Dates
+                orderDate: new Date(pkg.orderDate),
+                estimatedDeliveryStart: pkg.estimatedDeliveryStartDate ? new Date(pkg.estimatedDeliveryStartDate) : null,
+                estimatedDeliveryEnd: pkg.estimatedDeliveryEndDate ? new Date(pkg.estimatedDeliveryEndDate) : null,
+                agreedDeliveryDate: pkg.agreedDeliveryDate ? new Date(pkg.agreedDeliveryDate) : null,
+                lastModifiedDate: pkg.lastModifiedDate ? new Date(pkg.lastModifiedDate) : null,
+
+                // Cargo & Shipping
+                cargoTrackingNumber: pkg.cargoTrackingNumber?.toString(),
+                cargoTrackingLink: pkg.cargoTrackingLink,
+                cargoSenderNumber: pkg.cargoSenderNumber,
+                cargoProviderName: pkg.cargoProviderName,
+                deliveryType: pkg.deliveryType,
+                fastDelivery: pkg.fastDelivery ?? false,
+                whoPays: pkg.whoPays,
+
+                // Addresses (JSON)
+                shippingAddress: pkg.shipmentAddress,
+                invoiceAddress: pkg.invoiceAddress,
+
+                // Invoice & Tax
+                invoiceLink: pkg.invoiceLink,
+                taxNumber: pkg.taxNumber,
+                commercial: pkg.commercial ?? false,
+
+                // Micro Export
+                micro: pkg.micro ?? false,
+                etgbNo: pkg.etgbNo,
+                etgbDate: pkg.etgbDate ? new Date(pkg.etgbDate) : null,
+                hsCode: pkg.hsCode,
+                containsDangerousProduct: pkg.containsDangerousProduct ?? false,
+
+                // Warehouse & Fulfillment
+                warehouseId: pkg.warehouseId?.toString(),
+                giftBoxRequested: pkg.giftBoxRequested ?? false,
+                threePByTrendyol: pkg['3pByTrendyol'] ?? false,
+                deliveredByService: pkg.deliveredByService ?? false,
+                cargoDeci: pkg.cargoDeci,
+                isCod: pkg.isCod ?? false,
+                createdBy: pkg.createdBy,
+                originPackageIds: pkg.originPackageIds,
+
+                // Package History
+                packageHistories: pkg.packageHistories,
+            } as any);
+
+            const savedOrder = await this.orderRepository.save(newOrder) as unknown as Order;
+
+            // Create order items with SET expansion
+            const rawLines = pkg.lines || [];
+            const expandedLines: any[] = [];
+
+            // Expand SET products to components
+            for (const line of rawLines) {
+                const expandedComponents = await this.expandSetProduct(line.barcode, line);
+                if (expandedComponents) {
+                    // This is a SET product, add expanded components
+                    expandedLines.push(...expandedComponents);
+                } else {
+                    // Not a SET, add as-is
+                    expandedLines.push(line);
+                }
+            }
+
+            // Create order items from expanded lines
+            const items = expandedLines.map((line: any) => this.orderItemRepository.create({
+                orderId: savedOrder.id,
+
+                // Identifiers
+                lineId: line.lineId?.toString() || line.id?.toString(),
+                productName: line.productName,
+                sku: line.sku,
+                merchantSku: line.merchantSku,
+                stockCode: line.stockCode,
+                barcode: line.barcode,
+                productCode: line.productCode?.toString() || line.contentId?.toString(),
+                contentId: line.contentId?.toString(),
+
+                // Product Details
+                productColor: line.productColor,
+                productSize: line.productSize,
+                productOrigin: line.productOrigin,
+                productCategoryId: line.productCategoryId,
+
+                // Quantity & Pricing
+                quantity: line.quantity,
+                unitPrice: line.price ?? line.lineUnitPrice ?? 0,
+                grossAmount: line.lineGrossAmount ?? line.amount,
+                discount: line.discount ?? line.lineTotalDiscount ?? 0,
+                sellerDiscount: line.lineSellerDiscount ?? 0,
+                tyDiscount: line.tyDiscount ?? line.lineTyDiscount ?? 0,
+                currencyCode: line.currencyCode,
+
+                // Tax & Commission
+                vatBaseAmount: line.vatBaseAmount,
+                vatRate: line.vatRate,
+                commission: line.commission,
+
+                // Status & Campaign
+                orderLineItemStatus: line.orderLineItemStatusName,
+                salesCampaignId: line.salesCampaignId,
+
+                // Cancellation
+                cancelledBy: line.cancelledBy,
+                cancelReason: line.cancelReason,
+                cancelReasonCode: line.cancelReasonCode,
+
+                // JSON Details
+                discountDetails: line.discountDetails,
+                fastDeliveryOptions: line.fastDeliveryOptions,
+
+                // SET Product Tracking
+                setProductId: line._setProductId || null,
+                isSetComponent: line._isSetComponent || false,
+                setBarcode: line._setBarcode || null,
+            } as any)) as unknown as OrderItem[];
+
+            if (items.length > 0) {
+                await this.orderItemRepository.save(items);
+            }
+        }
+    }
+
+    private async syncIkasOrders(clientId: string, clientSecret: string, storeName: string, integrationId: string, storeId: string) {
+        this.logger.debug(`Syncing Ikas orders for store: ${storeName}`);
+        const authUrl = `https://embeauty.myikas.com/api/admin/oauth/token`;
+        // Based on docs, GraphQL might be on the main api domain or v1 path
+        const graphQlUrl = `https://api.myikas.com/api/v1/admin/graphql`;
+
+        try {
+            // 1. Get Access Token
+            const tokenResponse = await axios.post(authUrl, new URLSearchParams({
+                grant_type: 'client_credentials',
+                client_id: clientId,
+                client_secret: clientSecret,
+            }), {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+            });
+
+            const accessToken = tokenResponse.data.access_token;
+            if (!accessToken) {
+                this.logger.error(`Failed to obtain access token for Ikas store ${storeName}`);
+                return;
+            }
+
+            // 2. Fetch Orders via GraphQL
+            const query = `
+                query ListOrders($page: Int, $limit: Int) {
+                    listOrder(pagination: { page: $page, limit: $limit }) {
+                        data {
+                            id
+                            orderNumber
+                            orderedAt
+                            status
+                            totalPrice
+                            currencyCode
+                            customer {
+                                id
+                                firstName
+                                lastName
+                                email
+                                phone
+                            }
+                            billingAddress {
+                                phone
+                                city { name }
+                                district { name }
+                                addressLine1
+                                addressLine2
+                            }
+                            shippingAddress {
+                                phone
+                                city { name }
+                                district { name }
+                                addressLine1
+                                addressLine2
+                            }
+                            orderLineItems {
+                                id
+                                quantity
+                                price
+                                variant {
+                                    name
+                                    sku
+                                    barcodeList
+                                }
+                            }
+                        }
+                        hasNext
+                        page
+                        limit
+                        count
+                    }
+                }
+            `;
+
+            let page = 1;
+            let hasNext = true;
+
+            while (hasNext) {
+                const response = await axios.post(graphQlUrl, {
+                    query,
+                    variables: { page, limit: 50 },
+                }, {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.data.errors) {
+                    this.logger.error(`GraphQL errors for Ikas store ${storeName}: ${JSON.stringify(response.data.errors)}`);
+                    break;
+                }
+
+                const listOrder = response.data.data.listOrder;
+                const orders = listOrder.data;
+                hasNext = listOrder.hasNext;
+
+                this.logger.log(`Fetched Ikas page ${page} (${orders.length} orders) for store ${storeName}`);
+
+                for (const order of orders) {
+                    try {
+                        const internalPkg = this.mapIkasOrder(order);
+                        if (internalPkg) {
+                            await this.processOrderPackage(internalPkg, integrationId, storeId);
+                        }
+                    } catch (err) {
+                        this.logger.error(`Failed to process Ikas order ${order.orderNumber}: ${err.message}`, err);
+                    }
+                }
+
+                if (hasNext) {
+                    page++;
+                } else {
+                    break; // Just to be safe
+                }
+            }
+
+        } catch (error) {
+            if (axios.isAxiosError(error)) {
+                this.logger.error(`Error syncing Ikas orders for ${storeName}: ${error.message}`);
+                this.logger.error(`Response Status: ${error.response?.status}`);
+                this.logger.error(`Response Data: ${JSON.stringify(error.response?.data)}`);
+            } else {
+                this.logger.error(`Error syncing Ikas orders for ${storeName}`, error);
+            }
+        }
+    }
+
+    private mapIkasOrder(ikasOrder: any): any {
+        if (!ikasOrder) return null;
+
+        const customer = ikasOrder.customer;
+        const shippingAddress = ikasOrder.shippingAddress;
+
+        const address = [shippingAddress?.addressLine1, shippingAddress?.addressLine2].filter(Boolean).join(' ');
+
+        // Calculate totals for Ikas
+        const totalDiscount = (ikasOrder.orderLineItems || []).reduce(
+            (sum: number, item: any) => sum + (item.discountPrice || 0), 0
+        );
+        const grossAmount = (ikasOrder.totalPrice || 0) + totalDiscount;
+
+        return {
+            orderNumber: ikasOrder.orderNumber,
+            orderDate: ikasOrder.orderedAt,
+            totalPrice: ikasOrder.totalPrice,
+            grossAmount,
+            totalDiscount,
+            sellerDiscount: 0, // Ikas doesn't distinguish seller vs platform discount
+            tyDiscount: 0,
+            status: ikasOrder.status,
+            customerFirstName: customer?.firstName || 'Ikas',
+            customerLastName: customer?.lastName || 'Customer',
+            customerEmail: customer?.email,
+            customerId: customer?.id,
+            tcIdentityNumber: null,
+            billingAddress: {
+                phone: ikasOrder.billingAddress?.phone || customer?.phone
+            },
+            shipmentAddress: {
+                city: shippingAddress?.city?.name,
+                district: shippingAddress?.district?.name,
+                fullAddress: address,
+                phone: shippingAddress?.phone
+            },
+            lines: (ikasOrder.orderLineItems || []).map((item: any) => {
+                const itemDiscount = item.discountPrice || 0;
+                const itemGrossAmount = (item.price || 0) + itemDiscount;
+                return {
+                    productName: item.variant?.name || 'Unknown Product',
+                    sku: item.variant?.sku,
+                    barcode: item.variant?.barcodeList?.[0] || '',
+                    quantity: item.quantity,
+                    price: item.finalPrice || item.price,
+                    lineGrossAmount: itemGrossAmount,
+                    discount: itemDiscount,
+                    lineSellerDiscount: 0,
+                    lineTyDiscount: 0,
+                };
+            })
+        };
+    }
+
+    async findAll(page = 1, limit = 10, filters?: {
+        orderNumber?: string;
+        packageId?: string;
+        integrationId?: string;
+        status?: string;
+    }): Promise<{ data: Order[], total: number }> {
+        const queryBuilder = this.orderRepository.createQueryBuilder('order')
+            .leftJoinAndSelect('order.customer', 'customer')
+            .leftJoinAndSelect('order.items', 'items')
+            .leftJoinAndSelect('order.store', 'store')
+            .leftJoinAndSelect('order.integration', 'integration');
+
+        if (filters?.orderNumber) {
+            queryBuilder.andWhere('order.orderNumber LIKE :orderNumber', { orderNumber: `%${filters.orderNumber}%` });
+        }
+        if (filters?.packageId) {
+            queryBuilder.andWhere('order.packageId LIKE :packageId', { packageId: `%${filters.packageId}%` });
+        }
+        if (filters?.integrationId) {
+            queryBuilder.andWhere('order.integrationId = :integrationId', { integrationId: filters.integrationId });
+        }
+        if (filters?.status) {
+            queryBuilder.andWhere('order.status = :status', { status: filters.status });
+        }
+
+        queryBuilder.orderBy('order.orderDate', 'DESC')
+            .skip((page - 1) * limit)
+            .take(limit);
+
+        const [data, total] = await queryBuilder.getManyAndCount();
+        return { data, total };
+    }
+
+    async findFaultyOrders(page: number = 1, limit: number = 10) {
+        const [data, total] = await this.faultyOrderRepository.findAndCount({
+            order: { createdAt: 'DESC' },
+            skip: (page - 1) * limit,
+            take: limit,
+            relations: ['integration', 'store'],
+        });
+
+        return {
+            success: true,
+            data,
+            meta: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit),
+            },
+        };
+    }
+
+    async deleteFaultyOrder(id: string): Promise<void> {
+        await this.faultyOrderRepository.delete(id);
+    }
+}
+

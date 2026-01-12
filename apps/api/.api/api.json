@@ -1,0 +1,11 @@
+{
+  "version": "1.0",
+  "apis": [
+    {
+      "identifier": "hb-poc",
+      "source": "@hb-poc/v1.0#ak72fkmggg4c9i",
+      "integrity": "sha512-3/Xq79q/u/uvBNJYPoefYWcsZ5lknDvnp4HltDNGYJNQt4GztQX/qzeeYWqc4+VtZuqFtGIZqeaiffyc2W2gLw==",
+      "installerVersion": "6.1.3"
+    }
+  ]
+}

@@ -12,6 +12,12 @@ import { ProductsModule } from './products/products.module';
 import { ProductStoresModule } from './product-stores/product-stores.module';
 import { ProductIntegrationsModule } from './product-integrations/product-integrations.module';
 import { ShippingProvidersModule } from './shipping-providers/shipping-providers.module';
+import { OrdersModule } from './orders/orders.module';
+import { CustomersModule } from './customers/customers.module';
+import { InvoicesModule } from './invoices/invoices.module';
+import { ShelvesModule } from './shelves/shelves.module';
+import { SuppliersModule } from './suppliers/suppliers.module';
+import { PurchasesModule } from './purchases/purchases.module';
 
 @Module({
   imports: [
@@ -30,7 +36,7 @@ import { ShippingProvidersModule } from './shipping-providers/shipping-providers
         database: configService.get('DB_NAME'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
         synchronize: configService.get('NODE_ENV') === 'development',
-        logging: configService.get('NODE_ENV') === 'development',
+        logging: configService.get('NODE_ENV') === 'production',
       }),
       inject: [ConfigService],
     }),
@@ -45,6 +51,13 @@ import { ShippingProvidersModule } from './shipping-providers/shipping-providers
     ProductStoresModule,
     ProductIntegrationsModule,
     ShippingProvidersModule,
+    OrdersModule,
+    CustomersModule,
+    InvoicesModule,
+    ShelvesModule,
+    SuppliersModule,
+    PurchasesModule,
   ],
 })
-export class AppModule {}
+export class AppModule { }
+

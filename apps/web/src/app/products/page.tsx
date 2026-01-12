@@ -14,16 +14,9 @@ export default async function ProductsPage() {
 
   return (
     <AppLayout user={user} currentPath="/products">
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-3xl font-bold text-foreground font-rubik">Products</h2>
-          <p className="text-muted-foreground mt-1">Manage your product catalog</p>
-        </div>
-
-        <Suspense fallback={<div>Loading...</div>}>
-          <ProductsTable />
-        </Suspense>
-      </div>
+      <Suspense fallback={<div>Loading...</div>}>
+        <ProductsTable />
+      </Suspense>
     </AppLayout>
   );
 }

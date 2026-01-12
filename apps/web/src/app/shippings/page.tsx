@@ -14,16 +14,9 @@ export default async function ShippingPage() {
 
   return (
     <AppLayout user={user} currentPath="/shippings">
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-3xl font-bold text-foreground font-rubik">Shipping</h2>
-          <p className="text-muted-foreground mt-1">Manage shipping providers</p>
-        </div>
-
-        <Suspense fallback={<div>Loading...</div>}>
-          <ShippingTable />
-        </Suspense>
-      </div>
+      <Suspense fallback={<div>Loading...</div>}>
+        <ShippingTable />
+      </Suspense>
     </AppLayout>
   );
 }

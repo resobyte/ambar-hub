@@ -118,28 +118,12 @@ export function WarehousesTable() {
     }
   }, [deletingWarehouseId, fetchWarehouses, success, error]);
 
-  const handleNameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const newValue = e.target.value;
+  const updateFormField = useCallback(<K extends keyof WarehouseFormData>(
+    field: K,
+    value: WarehouseFormData[K]
+  ) => {
     setFormData(prev => {
-      const newData = { ...prev, name: newValue };
-      formDataRef.current = newData;
-      return newData;
-    });
-  }, []);
-
-  const handleAddressChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const newValue = e.target.value;
-    setFormData(prev => {
-      const newData = { ...prev, address: newValue };
-      formDataRef.current = newData;
-      return newData;
-    });
-  }, []);
-
-  const handleIsActiveChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newValue = e.target.value === 'Active';
-    setFormData(prev => {
-      const newData = { ...prev, isActive: newValue };
+      const newData = { ...prev, [field]: value };
       formDataRef.current = newData;
       return newData;
     });
@@ -169,8 +153,13 @@ export function WarehousesTable() {
 
   const columns = useMemo<Column<Warehouse>[]>(() => [
     { key: 'name', header: 'Name' },
-    { key: 'address', header: 'Address' },
-    { key: 'storeCount', header: 'Stores' },
+    {
+      key: 'storeCount',
+      header: 'Stores',
+      render: (row: Warehouse) => (
+        <span className="text-muted-foreground">{row.storeCount}</span>
+      ),
+    },
     {
       key: 'isActive',
       header: 'Status',
@@ -186,14 +175,15 @@ export function WarehousesTable() {
     },
     {
       key: 'actions',
-      header: 'Actions',
+      header: '',
       align: 'right',
       shrink: true,
       render: (row: Warehouse) => (
-        <div className="flex items-center justify-end space-x-1 sm:space-x-2">
+        <div className="flex items-center justify-end space-x-1">
           <button
             onClick={() => handleEdit(row)}
             className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
+            title="Edit"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -202,7 +192,7 @@ export function WarehousesTable() {
           <button
             onClick={() => handleDelete(row.id)}
             disabled={row.storeCount > 0}
-            title={row.storeCount > 0 ? 'Cannot delete warehouse with linked stores' : undefined}
+            title={row.storeCount > 0 ? 'Cannot delete: Has linked stores' : 'Delete'}
             className={`p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors ${
               row.storeCount > 0 ? 'opacity-50 cursor-not-allowed' : ''
             }`}
@@ -225,9 +215,13 @@ export function WarehousesTable() {
 
   return (
     <>
-      <div className="mb-4 flex justify-end">
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h2 className="text-2xl font-semibold text-foreground">Warehouses</h2>
+          <p className="text-sm text-muted-foreground mt-1">Manage storage locations for your inventory</p>
+        </div>
         <Button onClick={handleCreate}>
-          <svg className="w-[18px] h-[18px] mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
           Add Warehouse
@@ -241,31 +235,34 @@ export function WarehousesTable() {
         isLoading={loading}
         pagination={pagination}
         onPageChange={setPage}
+        emptyMessage="No warehouses yet. Create your first warehouse to get started."
       />
 
-      <Modal isOpen={isModalOpen} onClose={handleModalClose} title={modalTitle}>
+      <Modal isOpen={isModalOpen} onClose={handleModalClose} title={modalTitle} size="md">
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input
             label="Name"
             value={formData.name}
-            onChange={handleNameChange}
+            onChange={(e) => updateFormField('name', e.target.value)}
             required
+            placeholder="Enter warehouse name"
           />
           <Input
             label="Address"
             value={formData.address}
-            onChange={handleAddressChange}
+            onChange={(e) => updateFormField('address', e.target.value)}
+            placeholder="Enter warehouse address (optional)"
           />
           <Select
             label="Status"
             value={formData.isActive ? 'Active' : 'Passive'}
-            onChange={handleIsActiveChange}
+            onChange={(e) => updateFormField('isActive', e.target.value === 'Active')}
             options={[
               { value: 'Active', label: 'Active' },
               { value: 'Passive', label: 'Passive' },
             ]}
           />
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={handleModalClose}>
               Cancel
             </Button>

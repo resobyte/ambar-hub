@@ -162,6 +162,14 @@ After running the seed, use these credentials:
 │   │   ├── src/
 │   │   │   ├── auth/           # Authentication module
 │   │   │   ├── users/          # Users module
+│   │   │   ├── integrations/   # Integrations module
+│   │   │   ├── integration-stores/  # Integration-Store relationships
+│   │   │   ├── products/       # Products module
+│   │   │   ├── product-integrations/  # Product-Integration relationships
+│   │   │   ├── product-stores/  # Product-Store relationships
+│   │   │   ├── stores/         # Stores module
+│   │   │   ├── warehouses/     # Warehouses module
+│   │   │   ├── shipping-providers/  # Shipping providers module
 │   │   │   ├── common/         # Shared utilities
 │   │   │   └── database/       # Database configuration
 │   │   ├── Dockerfile
@@ -170,7 +178,18 @@ After running the seed, use these credentials:
 │   └── web/                    # Next.js frontend
 │       ├── src/
 │       │   ├── app/            # Next.js App Router pages
+│       │   │   ├── auth/       # Authentication pages
+│       │   │   ├── dashboard/  # Dashboard page
+│       │   │   ├── integrations/  # Integrations management
+│       │   │   ├── products/   # Products management
+│       │   │   ├── shippings/  # Shipping providers management
+│       │   │   ├── stores/     # Stores management
+│       │   │   ├── users/      # Users management
+│       │   │   ├── warehouses/ # Warehouses management
+│       │   │   └── account/    # Account settings
 │       │   ├── components/     # React components
+│       │   │   ├── common/     # Common UI components
+│       │   │   └── layouts/    # Layout components
 │       │   ├── lib/            # Utilities and helpers
 │       │   ├── types/          # Re-exports from @repo/types
 │       │   └── config/         # Re-exports from @repo/auth-config
@@ -199,12 +218,252 @@ After running the seed, use these credentials:
 └── README.md
 ```
 
+## Data Model & Entity Relationships
+
+### Entity Relationship Diagram
+
+```
+                            ┌──────────────────┐
+                            │ ShippingProvider │
+                            └────────┬─────────┘
+                                     │
+                                     │ n:1 (optional)
+                                     │
+┌─────────────┐           ┌──────────┴────────────┐           ┌──────────────┐
+│  Warehouse  │ 1       n │  IntegrationStore     │ n       1 │ Integration  │
+│             ├───────────┤   (Junction Table)    ├───────────┤              │
+│             │           │                       │           │ - TRENDYOL   │
+└─────────────┘           │ - sellerId            │           │ - HEPSIBURADA│
+       │                  │ - apiKey/apiSecret    │           │ - IKAS       │
+       │ 1                │ - crawlInterval       │           └──────────────┘
+       │                  │ - send flags          │
+       │ n                └───────────────────────┘
+       │                            │
+┌──────┴──────┐                    │
+│    Store    │────────────────────┘
+│             │ 1
+└──────┬──────┘
+       │
+       │ n
+       │
+┌──────┴────────────┐           ┌──────────────────┐
+│  ProductStore     │ n       1 │    Product       │
+│ (Junction Table)  ├───────────┤                  │
+│                   │           │ - name, sku      │
+│ - storeSku        │           │ - prices         │
+│ - storeSalePrice  │           │ - brand, barcode │
+│ - stockQuantity   │           └──────────────────┘
+└────────┬──────────┘
+         │
+         │ 1
+         │
+         │ n
+┌────────┴──────────────┐
+│ ProductIntegration    │
+│ (Junction Table)      │
+│                       │
+│ - integrationSalePrice│
+└───────────────────────┘
+```
+
+### Core Entity Relationships
+
+#### 1. Warehouse → Store (One-to-Many, Mandatory)
+- **Cardinality**: 1 Warehouse : n Stores
+- **Foreign Key**: `Store.warehouseId` → `Warehouse.id` (NOT NULL)
+- **Cascade**: RESTRICT (cannot delete warehouse with active stores)
+- **Business Rule**: Every store MUST be connected to exactly one warehouse
+
+#### 2. Store ↔ Integration (Many-to-Many via IntegrationStore)
+- **Junction Table**: `integration_stores`
+- **Unique Constraint**: (integrationId, storeId) - prevents duplicates
+- **Cascade**: CASCADE on delete (removes junction records)
+- **Business Rule**: Same integration (e.g., Trendyol) can be used by multiple stores, each with unique credentials
+- **Store-Specific Data**:
+  - API credentials (sellerId, apiKey, apiSecret)
+  - Integration settings (crawlInterval, send flags)
+  - Optional shipping provider link
+
+#### 3. Store ↔ Product (Many-to-Many via ProductStore)
+- **Junction Table**: `product_stores`
+- **Unique Constraint**: (productId, storeId) - one product per store relationship
+- **Cascade**: CASCADE on delete
+- **Business Rule**: Products can be sold across multiple stores with store-specific configurations
+- **Store-Specific Data**:
+  - Store SKU (storeSku)
+  - Store-specific price (storeSalePrice)
+  - Stock quantity per store
+
+#### 4. ProductStore ↔ Integration (Many-to-Many via ProductIntegration)
+- **Junction Table**: `product_integrations`
+- **Unique Constraint**: (productStoreId, integrationId)
+- **Cascade**: CASCADE on delete
+- **Business Rule**: Products assigned to stores can have integration-specific pricing
+- **Integration-Specific Data**:
+  - Integration sale price override (highest priority in pricing hierarchy)
+
+### Pricing Hierarchy
+
+The system implements a three-tier pricing strategy:
+
+1. **ProductIntegration.integrationSalePrice** (Highest Priority)
+   - Integration-specific price override
+   - Example: Same product can have different prices on Trendyol vs Hepsiburada
+
+2. **ProductStore.storeSalePrice** (Medium Priority)
+   - Store-specific price
+   - Fallback if integration price not set
+
+3. **Product.salePrice** (Lowest Priority/Default)
+   - Base product price
+   - Used when no store or integration overrides exist
+
+### Entity Schemas
+
+#### Warehouse
+```typescript
+{
+  id: uuid
+  name: string (max 255)
+  address: string | null (max 255)
+  isActive: boolean (default: true)
+  stores: Store[]  // One-to-Many
+}
+```
+
+#### Store
+```typescript
+{
+  id: uuid
+  name: string (max 255)
+  proxyUrl: string (max 255)
+  warehouseId: uuid  // REQUIRED - Foreign key
+  isActive: boolean (default: true)
+  warehouse: Warehouse  // Many-to-One
+  integrationStores: IntegrationStore[]  // One-to-Many
+  productStores: ProductStore[]  // One-to-Many
+}
+```
+
+#### Integration
+```typescript
+{
+  id: uuid
+  name: string (max 255)
+  type: IntegrationType  // Enum: TRENDYOL | HEPSIBURADA | IKAS
+  apiUrl: string (max 500)
+  isActive: boolean (default: true)
+  integrationStores: IntegrationStore[]  // One-to-Many
+  productIntegrations: ProductIntegration[]  // One-to-Many
+}
+```
+
+#### IntegrationStore (Junction)
+```typescript
+{
+  id: uuid
+  integrationId: uuid  // REQUIRED
+  storeId: uuid  // REQUIRED
+  shippingProviderId: uuid | null  // Optional
+  sellerId: string (max 255)
+  apiKey: string (max 500)
+  apiSecret: string (max 500)
+  crawlIntervalMinutes: number (default: 60)
+  sendStock: boolean (default: true)
+  sendPrice: boolean (default: true)
+  sendOrderStatus: boolean (default: true)
+  isActive: boolean (default: true)
+  @Unique(['integrationId', 'storeId'])
+}
+```
+
+#### Product
+```typescript
+{
+  id: uuid
+  name: string (max 255)
+  brand: string | null (max 255)
+  category: string (max 255)
+  barcode: string | null (unique, max 255)
+  sku: string (max 255)
+  vatRate: number (default: 20)
+  desi: number | null
+  purchasePrice: decimal(10,2) (default: 0)
+  salePrice: decimal(10,2) (default: 0)
+  lastSalePrice: decimal(10,2) | null
+  isActive: boolean (default: true)
+  productStores: ProductStore[]  // One-to-Many
+}
+```
+
+#### ProductStore (Junction)
+```typescript
+{
+  id: uuid
+  productId: uuid  // REQUIRED
+  storeId: uuid  // REQUIRED
+  storeSku: string | null (max 255)
+  storeSalePrice: decimal(10,2) | null
+  stockQuantity: number (default: 0)
+  isActive: boolean (default: true)
+  productIntegrations: ProductIntegration[]  // One-to-Many
+  @Unique(['productId', 'storeId'])
+}
+```
+
+#### ProductIntegration (Junction)
+```typescript
+{
+  id: uuid
+  productStoreId: uuid  // REQUIRED - Links to ProductStore
+  integrationId: uuid  // REQUIRED
+  integrationSalePrice: decimal(10,2) | null  // Highest priority in pricing
+  isActive: boolean (default: true)
+  @Unique(['productStoreId', 'integrationId'])
+}
+```
+
+### Business Constraints & Validation Rules
+
+#### Database Level
+1. **Foreign Key Constraints**:
+   - `stores.warehouse_id` → `warehouses.id` (NOT NULL, RESTRICT on delete)
+   - `integration_stores.integration_id` → `integrations.id` (CASCADE on delete)
+   - `integration_stores.store_id` → `stores.id` (CASCADE on delete)
+   - `product_stores.product_id` → `products.id` (CASCADE on delete)
+   - `product_stores.store_id` → `stores.id` (CASCADE on delete)
+   - `product_integrations.product_store_id` → `product_stores.id` (CASCADE on delete)
+   - `product_integrations.integration_id` → `integrations.id` (CASCADE on delete)
+
+2. **Unique Constraints**:
+   - `integration_stores`: (integrationId, storeId)
+   - `product_stores`: (productId, storeId)
+   - `product_integrations`: (productStoreId, integrationId)
+   - `products.barcode`: unique when not null
+
+3. **Indexes**: Automatically created on foreign key columns
+
+#### Application Level
+1. **Store Creation**: Must provide valid `warehouseId`
+2. **Integration Assignment**: Must use IntegrationStore junction with credentials
+3. **Product Assignment**: Must use ProductStore junction with store-specific data
+4. **Warehouse Deletion**: Blocked if stores exist (RESTRICT cascade)
+5. **Soft Deletes**: All entities support `isActive` flag for logical deletion
+
+### Cascade Behavior
+
+- **Warehouse Deletion**: RESTRICTED (cannot delete if stores exist)
+- **Store Deletion**: Cascades to `integration_stores` and `product_stores`
+- **Integration Deletion**: Cascades to `integration_stores` and `product_integrations`
+- **Product Deletion**: Cascades to `product_stores` and `product_integrations`
+- **ProductStore Deletion**: Cascades to `product_integrations`
+
 ## Roles
 
-| Role | Dashboard | Users | Account |
-|------|-----------|-------|---------|
-| PLATFORM_OWNER | ✓ | ✓ | ✓ |
-| OPERATION | ✗ | ✗ | ✓ |
+| Role | Dashboard | Users | Integrations | Products | Stores | Warehouses | Shippings | Account |
+|------|-----------|-------|--------------|----------|--------|------------|-----------|---------|
+| PLATFORM_OWNER | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| OPERATION | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ |
 
 ## API Endpoints
 
@@ -220,6 +479,62 @@ After running the seed, use these credentials:
 - POST `/api/users` - Create user
 - PATCH `/api/users/:id` - Update user
 - DELETE `/api/users/:id` - Soft delete user
+
+### Integrations (PLATFORM_OWNER only)
+- GET `/api/integrations` - List integrations with pagination
+- GET `/api/integrations/:id` - Get integration by ID
+- POST `/api/integrations` - Create integration
+- PATCH `/api/integrations/:id` - Update integration
+- DELETE `/api/integrations/:id` - Soft delete integration
+
+### Integration Stores (PLATFORM_OWNER only)
+- GET `/api/integration-stores` - List integration-store relationships with pagination
+- GET `/api/integration-stores/:id` - Get integration-store by ID
+- POST `/api/integration-stores` - Create integration-store relationship
+- PATCH `/api/integration-stores/:id` - Update integration-store relationship
+- DELETE `/api/integration-stores/:id` - Soft delete integration-store relationship
+
+### Products (PLATFORM_OWNER only)
+- GET `/api/products` - List products with pagination
+- GET `/api/products/:id` - Get product by ID
+- POST `/api/products` - Create product
+- PATCH `/api/products/:id` - Update product
+- DELETE `/api/products/:id` - Soft delete product
+
+### Product Integrations (PLATFORM_OWNER only)
+- GET `/api/product-integrations` - List product-integration relationships with pagination
+- GET `/api/product-integrations/:id` - Get product-integration by ID
+- POST `/api/product-integrations` - Create product-integration relationship
+- PATCH `/api/product-integrations/:id` - Update product-integration relationship
+- DELETE `/api/product-integrations/:id` - Soft delete product-integration relationship
+
+### Product Stores (PLATFORM_OWNER only)
+- GET `/api/product-stores` - List product-store relationships with pagination
+- GET `/api/product-stores/:id` - Get product-store by ID
+- POST `/api/product-stores` - Create product-store relationship
+- PATCH `/api/product-stores/:id` - Update product-store relationship
+- DELETE `/api/product-stores/:id` - Soft delete product-store relationship
+
+### Stores (PLATFORM_OWNER only)
+- GET `/api/stores` - List stores with pagination
+- GET `/api/stores/:id` - Get store by ID
+- POST `/api/stores` - Create store
+- PATCH `/api/stores/:id` - Update store
+- DELETE `/api/stores/:id` - Soft delete store
+
+### Warehouses (PLATFORM_OWNER only)
+- GET `/api/warehouses` - List warehouses with pagination
+- GET `/api/warehouses/:id` - Get warehouse by ID
+- POST `/api/warehouses` - Create warehouse
+- PATCH `/api/warehouses/:id` - Update warehouse
+- DELETE `/api/warehouses/:id` - Soft delete warehouse
+
+### Shipping Providers (PLATFORM_OWNER only)
+- GET `/api/shipping-providers` - List shipping providers with pagination
+- GET `/api/shipping-providers/:id` - Get shipping provider by ID
+- POST `/api/shipping-providers` - Create shipping provider
+- PATCH `/api/shipping-providers/:id` - Update shipping provider
+- DELETE `/api/shipping-providers/:id` - Soft delete shipping provider
 
 ## Theming
 

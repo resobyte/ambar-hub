@@ -10,7 +10,7 @@ export class UpdateIntegrationDto {
   @IsOptional()
   type?: IntegrationType;
 
-  @IsUrl()
+  @IsString()
   @IsOptional()
   apiUrl?: string;
 

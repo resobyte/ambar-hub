@@ -23,8 +23,12 @@ import {
   createProductIntegration,
   updateProductIntegration,
   deleteProductIntegration,
+  getProductSetItems,
+  updateProductSetItems,
+  ProductSetItem,
 } from '@/lib/api';
 import { useToast } from '@/components/common/ToastContext';
+import { ProductStoreList } from '@/components/products/ProductStoreList';
 
 interface Product {
   id: string;
@@ -98,6 +102,8 @@ interface ProductFormData {
   salePrice: number;
   lastSalePrice: number;
   isActive: boolean;
+  productType: 'SIMPLE' | 'SET';
+  setPrice: number;
 }
 
 interface StoreConfigData {
@@ -132,6 +138,18 @@ const DEFAULT_INTEGRATION_CONFIG: Omit<IntegrationConfigData, 'integrationId'> =
   isActive: true,
 };
 
+const PRODUCT_TYPES = [
+  { value: 'SIMPLE', label: 'Tekli Ürün' },
+  { value: 'SET', label: 'Set Ürün' },
+];
+
+interface SetComponentData {
+  componentProductId: string;
+  quantity: number;
+  priceShare: number;
+  sortOrder: number;
+}
+
 export function ProductsTable() {
   const [products, setProducts] = useState<Product[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
@@ -158,7 +176,10 @@ export function ProductsTable() {
     salePrice: 0,
     lastSalePrice: 0,
     isActive: true,
+    productType: 'SIMPLE',
+    setPrice: 0,
   });
+  const [setComponents, setSetComponents] = useState<SetComponentData[]>([]);
   const [initialFormData, setInitialFormData] = useState<ProductFormData>({
     name: '',
     brand: '',
@@ -171,6 +192,8 @@ export function ProductsTable() {
     salePrice: 0,
     lastSalePrice: 0,
     isActive: true,
+    productType: 'SIMPLE',
+    setPrice: 0,
   });
   const [initialStoreConfigs, setInitialStoreConfigs] = useState<Map<string, StoreConfigData>>(new Map());
   const [initialSelectedStoreIds, setInitialSelectedStoreIds] = useState<string[]>([]);
@@ -248,7 +271,6 @@ export function ProductsTable() {
     fetchProductIntegrations();
   }, [fetchProducts, fetchStores, fetchProductStores, fetchIntegrations, fetchIntegrationStores, fetchProductIntegrations]);
 
-  // Get integrations connected to a specific store (only active ones)
   const getStoreIntegrations = useCallback((storeId: string): Integration[] => {
     return integrationStores
       .filter(is => is.storeId === storeId && is.isActive)
@@ -270,9 +292,13 @@ export function ProductsTable() {
       salePrice: 0,
       lastSalePrice: 0,
       isActive: true,
+      productType: 'SIMPLE' as const,
+      setPrice: 0,
     };
     setFormData(newData);
+    formDataRef.current = newData;
     setInitialFormData(newData);
+    setSetComponents([]);
     setSelectedStoreIds([]);
     setInitialSelectedStoreIds([]);
     setStoreConfigs(new Map());
@@ -304,11 +330,27 @@ export function ProductsTable() {
       salePrice: product.salePrice || 0,
       lastSalePrice: product.lastSalePrice || 0,
       isActive: product.isActive,
+      productType: (product as any).productType || 'SIMPLE' as const,
+      setPrice: (product as any).setPrice || 0,
     };
     setFormData(newData);
+    formDataRef.current = newData;
     setInitialFormData(newData);
 
-    // Load existing store configs
+    // Load SET components if product is SET type
+    if ((product as any).productType === 'SET') {
+      getProductSetItems(product.id).then(items => {
+        setSetComponents(items.map((item, index) => ({
+          componentProductId: item.componentProductId,
+          quantity: item.quantity,
+          priceShare: item.priceShare,
+          sortOrder: item.sortOrder ?? index,
+        })));
+      });
+    } else {
+      setSetComponents([]);
+    }
+
     const existingConfigs = productStores.filter(ps => ps && ps.productId === product.id);
     const storeIds = existingConfigs.map(ps => ps.storeId);
     setSelectedStoreIds(storeIds);
@@ -327,7 +369,6 @@ export function ProductsTable() {
     setInitialStoreConfigs(new Map(configsMap));
     setInitialSelectedStoreIds([...storeIds]);
 
-    // Load existing integration configs
     const integrationConfigsMap = new Map<string, Map<string, IntegrationConfigData>>();
     existingConfigs.forEach(ps => {
       const storeIntegrations = productIntegrations.filter(
@@ -370,11 +411,14 @@ export function ProductsTable() {
         success('Product created successfully');
       }
 
-      // Handle store configurations
+      // Save SET components if product type is SET
+      if (currentFormData.productType === 'SET' && setComponents.length > 0) {
+        await updateProductSetItems(productId, setComponents.filter(c => c.componentProductId));
+      }
+
       const existingConfigs = productStores.filter(ps => ps && ps.productId === (editingProduct?.id || productId));
       const existingStoreIds = new Set(existingConfigs.map(ps => ps.storeId));
 
-      // Create or update store configs
       for (const storeId of selectedStoreIds) {
         const config = storeConfigs.get(storeId);
         if (!config) continue;
@@ -403,7 +447,6 @@ export function ProductsTable() {
         }
         existingStoreIds.delete(storeId);
 
-        // Handle integration configs for this store
         const storeIntegrationConfigs = integrationConfigs.get(storeId);
         if (storeIntegrationConfigs) {
           const existingProductIntegrations = productIntegrations.filter(
@@ -429,7 +472,6 @@ export function ProductsTable() {
             }
           });
 
-          // Remove integrations that are no longer configured
           Array.from(existingIntegrationIds).forEach(async (integrationId) => {
             const piToRemove = existingProductIntegrations.find(pi => pi.integrationId === integrationId);
             if (piToRemove) {
@@ -439,7 +481,6 @@ export function ProductsTable() {
         }
       }
 
-      // Remove stores that are no longer selected
       const storeIdsToRemove = Array.from(existingStoreIds);
       for (const storeId of storeIdsToRemove) {
         const configToRemove = existingConfigs.find(ps => ps.storeId === storeId);
@@ -468,57 +509,12 @@ export function ProductsTable() {
     });
   }, []);
 
-  const handleNameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    updateFormField('name', e.target.value);
-  }, [updateFormField]);
-
-  const handleBrandChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    updateFormField('brand', e.target.value);
-  }, [updateFormField]);
-
-  const handleCategoryChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    updateFormField('category', e.target.value);
-  }, [updateFormField]);
-
-  const handleBarcodeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    updateFormField('barcode', e.target.value);
-  }, [updateFormField]);
-
-  const handleSkuChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    updateFormField('sku', e.target.value);
-  }, [updateFormField]);
-
-  const handleVatRateChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
-    updateFormField('vatRate', parseFloat(e.target.value));
-  }, [updateFormField]);
-
-  const handleDesiChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    updateFormField('desi', parseFloat(e.target.value) || 0);
-  }, [updateFormField]);
-
-  const handlePurchasePriceChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    updateFormField('purchasePrice', parseFloat(e.target.value) || 0);
-  }, [updateFormField]);
-
-  const handleSalePriceChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    updateFormField('salePrice', parseFloat(e.target.value) || 0);
-  }, [updateFormField]);
-
-  const handleLastSalePriceChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    updateFormField('lastSalePrice', parseFloat(e.target.value) || 0);
-  }, [updateFormField]);
-
-  const handleIsActiveChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
-    updateFormField('isActive', e.target.value === 'Active');
-  }, [updateFormField]);
-
   const handleStoreSelectionChange = useCallback((storeId: string, selected: boolean) => {
     setSelectedStoreIds(prev => {
       const newSelection = selected
         ? [...prev, storeId]
         : prev.filter(id => id !== storeId);
 
-      // Add default config for newly selected store
       if (selected && !storeConfigs.has(storeId)) {
         setStoreConfigs(prev => new Map(prev).set(storeId, {
           ...DEFAULT_STORE_CONFIG,
@@ -529,7 +525,6 @@ export function ProductsTable() {
         }));
       }
 
-      // Initialize integration configs for newly selected store
       if (selected) {
         const storeIntegrations = getStoreIntegrations(storeId);
         setIntegrationConfigs(prev => {
@@ -545,7 +540,6 @@ export function ProductsTable() {
           return newMap;
         });
       } else {
-        // Remove integration configs when store is deselected
         setIntegrationConfigs(prev => {
           const newMap = new Map(prev);
           newMap.delete(storeId);
@@ -595,7 +589,6 @@ export function ProductsTable() {
     });
   }, []);
 
-  // Get store IDs already connected to this product
   const connectedStoreIds = useMemo(() => {
     if (!editingProduct) return [];
     return productStores
@@ -604,40 +597,28 @@ export function ProductsTable() {
   }, [productStores, editingProduct]);
 
   const isFormValid = useMemo(() => {
-    // Product form validation
     const productValid = formData.name.trim().length > 0;
-
-    // Store configs validation - validate both selected and connected stores
     const storeIdsToValidate = editingProduct
       ? Array.from(new Set([...selectedStoreIds, ...connectedStoreIds]))
       : selectedStoreIds;
-
     const storeConfigsValid = storeIdsToValidate.every(storeId => {
       const config = storeConfigs.get(storeId);
       return config !== undefined;
     });
-
     return productValid && storeConfigsValid;
   }, [formData.name, selectedStoreIds, storeConfigs, editingProduct, connectedStoreIds]);
 
   const isFormDirty = useMemo(() => {
-    // Check product-level changes
     const hasProductChanges = JSON.stringify(formData) !== JSON.stringify(initialFormData);
-
-    // Check store selection changes
     const hasStoreSelectionChanges =
       selectedStoreIds.length !== initialSelectedStoreIds.length ||
       selectedStoreIds.some(id => !initialSelectedStoreIds.includes(id)) ||
       initialSelectedStoreIds.some(id => !selectedStoreIds.includes(id));
-
-    // Check store config changes
     const hasStoreConfigChanges = selectedStoreIds.some(storeId => {
       const current = storeConfigs.get(storeId);
       const initial = initialStoreConfigs.get(storeId);
-
       if (!current && !initial) return false;
       if (!current || !initial) return true;
-
       return (
         current.storeSku !== initial.storeSku ||
         current.storeSalePrice !== initial.storeSalePrice ||
@@ -645,22 +626,16 @@ export function ProductsTable() {
         current.isActive !== initial.isActive
       );
     });
-
-    // Check integration config changes
     const hasIntegrationConfigChanges = selectedStoreIds.some(storeId => {
       const currentStoreMap = integrationConfigs.get(storeId);
       const initialStoreMap = initialIntegrationConfigs.get(storeId);
-
       if (!currentStoreMap && !initialStoreMap) return false;
       if (!currentStoreMap || !initialStoreMap) return true;
-
       const currentIntegrationIds = Array.from(currentStoreMap.keys());
       const initialIntegrationIds = Array.from(initialStoreMap.keys());
-
       if (currentIntegrationIds.length !== initialIntegrationIds.length) return true;
       if (currentIntegrationIds.some(id => !initialIntegrationIds.includes(id))) return true;
       if (initialIntegrationIds.some(id => !currentIntegrationIds.includes(id))) return true;
-
       return currentIntegrationIds.some(integrationId => {
         const current = currentStoreMap.get(integrationId);
         const initial = initialStoreMap.get(integrationId);
@@ -670,7 +645,6 @@ export function ProductsTable() {
         );
       });
     });
-
     return hasProductChanges || hasStoreSelectionChanges || hasStoreConfigChanges || hasIntegrationConfigChanges;
   }, [formData, initialFormData, selectedStoreIds, initialSelectedStoreIds, storeConfigs, initialStoreConfigs, integrationConfigs, initialIntegrationConfigs]);
 
@@ -709,31 +683,33 @@ export function ProductsTable() {
     {
       key: 'storeCount',
       header: 'Stores',
-      render: (row: Product) => <span>{row.storeCount}</span>,
+      render: (row: Product) => (
+        <span className="text-muted-foreground">{row.storeCount}</span>
+      ),
     },
     {
       key: 'isActive',
       header: 'Status',
       render: (row: Product) => (
-        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${
-          row.isActive
-            ? 'bg-success/10 text-success border-success/20'
-            : 'bg-muted text-muted-foreground border-border'
-        }`}>
+        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${row.isActive
+          ? 'bg-success/10 text-success border-success/20'
+          : 'bg-muted text-muted-foreground border-border'
+          }`}>
           {row.isActive ? 'Active' : 'Passive'}
         </span>
       ),
     },
     {
       key: 'actions',
-      header: 'Actions',
+      header: '',
       align: 'right',
       shrink: true,
       render: (row: Product) => (
-        <div className="flex items-center justify-end space-x-1 sm:space-x-2">
+        <div className="flex items-center justify-end space-x-1">
           <button
             onClick={() => handleEdit(row)}
             className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
+            title="Edit"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -742,6 +718,7 @@ export function ProductsTable() {
           <button
             onClick={() => handleDelete(row.id)}
             className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+            title="Delete"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -759,15 +736,6 @@ export function ProductsTable() {
     totalPages: Math.ceil(total / 10),
   }), [page, total]);
 
-  // Filter store options to exclude already connected stores
-  const storeOptions = useMemo(() =>
-    (stores || [])
-      .filter(s => !connectedStoreIds.includes(s.id))
-      .map((s) => ({ value: s.id, label: s.name })),
-    [stores, connectedStoreIds]
-  );
-
-  // Get all store options including connected ones for display
   const allStoreOptions = useMemo(() =>
     (stores || []).map((s) => ({ value: s.id, label: s.name })),
     [stores]
@@ -775,9 +743,13 @@ export function ProductsTable() {
 
   return (
     <>
-      <div className="mb-4 flex justify-end">
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h2 className="text-2xl font-semibold text-foreground">Products</h2>
+          <p className="text-sm text-muted-foreground mt-1">Manage your product catalog and pricing</p>
+        </div>
         <Button onClick={handleCreate}>
-          <svg className="w-[18px] h-[18px] mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
           Add Product
@@ -791,218 +763,212 @@ export function ProductsTable() {
         isLoading={loading}
         pagination={pagination}
         onPageChange={setPage}
+        emptyMessage="No products yet. Add your first product to get started."
       />
 
       <Modal isOpen={isModalOpen} onClose={handleModalClose} title={modalTitle} size="full">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Input
-              label="Name"
-              value={formData.name}
-              onChange={handleNameChange}
-              required
-            />
-            <Input
-              label="Brand"
-              value={formData.brand}
-              onChange={handleBrandChange}
-            />
-            <Input
-              label="Category"
-              value={formData.category}
-              onChange={handleCategoryChange}
-            />
-            <Input
-              label="Barcode"
-              value={formData.barcode}
-              onChange={handleBarcodeChange}
-            />
-            <Input
-              label="SKU"
-              value={formData.sku}
-              onChange={handleSkuChange}
-            />
-            <Select
-              label="VAT Rate"
-              value={String(formData.vatRate)}
-              onChange={handleVatRateChange}
-              options={VAT_RATES}
-            />
-            <Input
-              label="Desi"
-              value={formData.desi}
-              onChange={handleDesiChange}
-              type="number"
-              min="0"
-              step="0.1"
-            />
-            <Input
-              label="Purchase Price"
-              value={formData.purchasePrice}
-              onChange={handlePurchasePriceChange}
-              type="number"
-              min="0"
-              step="0.01"
-            />
-            <Input
-              label="Sale Price"
-              value={formData.salePrice}
-              onChange={handleSalePriceChange}
-              type="number"
-              min="0"
-              step="0.01"
-            />
-            <Input
-              label="Last Sale Price"
-              value={formData.lastSalePrice}
-              onChange={handleLastSalePriceChange}
-              type="number"
-              min="0"
-              step="0.01"
-            />
-            <Select
-              label="Status"
-              value={formData.isActive ? 'Active' : 'Passive'}
-              onChange={handleIsActiveChange}
-              options={[
-                { value: 'Active', label: 'Active' },
-                { value: 'Passive', label: 'Passive' },
-              ]}
-            />
-          </div>
-
-          <div className="border-t border-border pt-4">
-            <h3 className="text-lg font-semibold mb-3">Store Configuration</h3>
-            <div className="space-y-2 max-h-[60vh] overflow-y-auto">
-              {allStoreOptions.map(option => {
-                const isSelected = selectedStoreIds.includes(option.value);
-                const isConnected = connectedStoreIds.includes(option.value);
-                const config = storeConfigs.get(option.value);
-                const isDisabled = isConnected;
-                const storeIntegrationConfigs = integrationConfigs.get(option.value);
-                const storeIntegrations = getStoreIntegrations(option.value);
-
-                return (
-                  <div key={option.value} className={`border border-border rounded-lg ${isConnected ? 'bg-muted/50' : ''}`}>
-                    <div className="p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <label
-                          className={`flex items-center space-x-2 ${!isDisabled ? 'cursor-pointer' : 'cursor-not-allowed'}`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isSelected || isConnected}
-                            disabled={isDisabled}
-                            onChange={(e) => !isDisabled && handleStoreSelectionChange(option.value, e.target.checked)}
-                            className="w-4 h-4 rounded border-border disabled:opacity-50"
-                          />
-                          <span className="font-medium">{option.label}</span>
-                          {isConnected && (
-                            <span className="text-xs text-muted-foreground ml-2">(Connected)</span>
-                          )}
-                        </label>
-                      </div>
-
-                      {((isSelected && !isConnected) || (isConnected && config)) && (
-                        <div className={`ml-6 mt-3 space-y-3 ${config && !config.isActive ? 'opacity-60' : ''}`}>
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium">Store Configuration</span>
-                            <Select
-                              value={config!.isActive ? 'Active' : 'Passive'}
-                              onChange={(e) => updateStoreConfig(option.value, 'isActive', e.target.value === 'Active')}
-                              options={[
-                                { value: 'Active', label: 'Active' },
-                                { value: 'Passive', label: 'Passive' },
-                              ]}
-                            />
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            <Input
-                              label="Store SKU"
-                              value={config!.storeSku}
-                              onChange={(e) => updateStoreConfig(option.value, 'storeSku', e.target.value)}
-                            />
-                            <Input
-                              label="Store Sale Price"
-                              value={config!.storeSalePrice}
-                              onChange={(e) => updateStoreConfig(option.value, 'storeSalePrice', parseFloat(e.target.value) || 0)}
-                              type="number"
-                              min="0"
-                              step="0.01"
-                            />
-                            <Input
-                              label="Stock Quantity"
-                              value={config!.stockQuantity}
-                              onChange={(e) => updateStoreConfig(option.value, 'stockQuantity', parseInt(e.target.value) || 0)}
-                              type="number"
-                              min="0"
-                            />
-                          </div>
-
-                          {/* Integration Pricing - Nested under Store */}
-                          {storeIntegrations.length > 0 && (
-                            <div className="mt-4 pt-4 border-t border-border">
-                              <span className="text-sm font-medium text-muted-foreground">Integration Pricing</span>
-                              <div className="mt-3 space-y-2 ml-2">
-                                {storeIntegrations.map(integration => {
-                                  const integrationConfig = storeIntegrationConfigs?.get(integration.id);
-                                  return (
-                                    <div key={integration.id} className="border border-border/60 rounded-md p-3 bg-muted/30">
-                                      <div className="flex items-center justify-between mb-2">
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-sm font-medium">{integration.name}</span>
-                                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                                            integration.type === 'TRENDYOL'
-                                              ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
-                                              : integration.type === 'Hepsiburada'
-                                              ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
-                                              : integration.type === 'AMAZON'
-                                              ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400'
-                                              : integration.type === 'N11'
-                                              ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                              : integration.type === 'PAZZI'
-                                              ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                                              : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
-                                          }`}>
-                                            {integration.type}
-                                          </span>
-                                        </div>
-                                        <Select
-                                          value={integrationConfig?.isActive ? 'Active' : 'Passive'}
-                                          onChange={(e) => updateIntegrationConfig(option.value, integration.id, 'isActive', e.target.value === 'Active')}
-                                          options={[
-                                            { value: 'Active', label: 'Active' },
-                                            { value: 'Passive', label: 'Passive' },
-                                          ]}
-                                        />
-                                      </div>
-                                      <div className="grid grid-cols-1 gap-2">
-                                        <Input
-                                          label="Integration Sale Price"
-                                          value={integrationConfig?.integrationSalePrice ?? 0}
-                                          onChange={(e) => updateIntegrationConfig(option.value, integration.id, 'integrationSalePrice', parseFloat(e.target.value) || 0)}
-                                          type="number"
-                                          min="0"
-                                          step="0.01"
-                                          placeholder="Optional override"
-                                        />
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Product Information */}
+          <div>
+            <h3 className="text-sm font-semibold text-foreground mb-3">Product Information</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Input
+                label="Name"
+                value={formData.name}
+                onChange={(e) => updateFormField('name', e.target.value)}
+                required
+                placeholder="Product name"
+              />
+              <Input
+                label="Brand"
+                value={formData.brand}
+                onChange={(e) => updateFormField('brand', e.target.value)}
+                placeholder="Brand"
+              />
+              <Input
+                label="Category"
+                value={formData.category}
+                onChange={(e) => updateFormField('category', e.target.value)}
+                placeholder="Category"
+              />
+              <Input
+                label="Barcode"
+                value={formData.barcode}
+                onChange={(e) => updateFormField('barcode', e.target.value)}
+                placeholder="Barcode"
+              />
+              <Input
+                label="SKU"
+                value={formData.sku}
+                onChange={(e) => updateFormField('sku', e.target.value)}
+                placeholder="SKU"
+              />
+              <Select
+                label="VAT Rate"
+                value={String(formData.vatRate)}
+                onChange={(e) => updateFormField('vatRate', parseFloat(e.target.value))}
+                options={VAT_RATES}
+              />
+              <Input
+                label="Desi"
+                value={formData.desi}
+                onChange={(e) => updateFormField('desi', parseFloat(e.target.value) || 0)}
+                type="number"
+                min="0"
+                step="0.1"
+                placeholder="Weight/Volume"
+              />
+              <Input
+                label="Purchase Price"
+                value={formData.purchasePrice}
+                onChange={(e) => updateFormField('purchasePrice', parseFloat(e.target.value) || 0)}
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+              />
+              <Input
+                label="Sale Price"
+                value={formData.salePrice}
+                onChange={(e) => updateFormField('salePrice', parseFloat(e.target.value) || 0)}
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+              />
+              <Input
+                label="Last Sale Price"
+                value={formData.lastSalePrice}
+                onChange={(e) => updateFormField('lastSalePrice', parseFloat(e.target.value) || 0)}
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+              />
+              <Select
+                label="Ürün Tipi"
+                value={formData.productType}
+                onChange={(e) => updateFormField('productType', e.target.value as 'SIMPLE' | 'SET')}
+                options={PRODUCT_TYPES}
+              />
+              {formData.productType === 'SET' && (
+                <Input
+                  label="Set Fiyatı"
+                  value={formData.setPrice}
+                  onChange={(e) => updateFormField('setPrice', parseFloat(e.target.value) || 0)}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                />
+              )}
+              <div className="md:col-span-3">
+                <Select
+                  label="Status"
+                  value={formData.isActive ? 'Active' : 'Passive'}
+                  onChange={(e) => updateFormField('isActive', e.target.value === 'Active')}
+                  options={[
+                    { value: 'Active', label: 'Active' },
+                    { value: 'Passive', label: 'Passive' },
+                  ]}
+                />
+              </div>
             </div>
           </div>
 
-          <div className="flex justify-end gap-2">
+          {/* SET Components - only visible for SET type */}
+          {formData.productType === 'SET' && (
+            <div className="border-t border-border pt-4">
+              <h3 className="text-sm font-semibold text-foreground mb-3">Set Bileşenleri</h3>
+              <div className="space-y-3">
+                {setComponents.map((comp, index) => (
+                  <div key={index} className="flex items-center gap-3 p-3 bg-muted/30 rounded-lg">
+                    <div className="flex-1">
+                      <Select
+                        label="Ürün"
+                        value={comp.componentProductId}
+                        onChange={(e) => {
+                          const newComps = [...setComponents];
+                          newComps[index].componentProductId = e.target.value;
+                          setSetComponents(newComps);
+                        }}
+                        options={products.filter(p => (p as any).productType !== 'SET').map(p => ({ value: p.id, label: p.name }))}
+                      />
+                    </div>
+                    <div className="w-24">
+                      <Input
+                        label="Adet"
+                        type="number"
+                        min="1"
+                        value={comp.quantity}
+                        onChange={(e) => {
+                          const newComps = [...setComponents];
+                          newComps[index].quantity = parseInt(e.target.value) || 1;
+                          setSetComponents(newComps);
+                        }}
+                      />
+                    </div>
+                    <div className="w-32">
+                      <Input
+                        label="Fiyat Payı"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={comp.priceShare}
+                        onChange={(e) => {
+                          const newComps = [...setComponents];
+                          newComps[index].priceShare = parseFloat(e.target.value) || 0;
+                          setSetComponents(newComps);
+                        }}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSetComponents(setComponents.filter((_, i) => i !== index))}
+                      className="p-2 text-destructive hover:bg-destructive/10 rounded-md mt-5"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setSetComponents([...setComponents, { componentProductId: '', quantity: 1, priceShare: 0, sortOrder: setComponents.length }])}
+                >
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Bileşen Ekle
+                </Button>
+                {setComponents.length > 0 && (
+                  <div className="text-sm text-muted-foreground">
+                    Toplam Fiyat Payı: {setComponents.reduce((sum, c) => sum + c.priceShare, 0).toFixed(2)} TL
+                    {formData.setPrice > 0 && ` / Set Fiyatı: ${formData.setPrice.toFixed(2)} TL`}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Store Configuration */}
+          <div className="border-t border-border pt-4">
+            <ProductStoreList
+              stores={stores}
+              selectedStoreIds={selectedStoreIds}
+              connectedStoreIds={connectedStoreIds}
+              storeConfigs={storeConfigs}
+              integrationConfigs={integrationConfigs}
+              getStoreIntegrations={getStoreIntegrations}
+              onStoreSelectionChange={handleStoreSelectionChange}
+              onStoreConfigChange={updateStoreConfig}
+              onIntegrationConfigChange={updateIntegrationConfig}
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-border">
             <Button type="button" variant="outline" onClick={handleModalClose}>
               Cancel
             </Button>

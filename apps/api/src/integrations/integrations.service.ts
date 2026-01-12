@@ -19,7 +19,7 @@ export class IntegrationsService {
     private readonly integrationRepository: Repository<Integration>,
     @InjectRepository(IntegrationStore)
     private readonly integrationStoreRepository: Repository<IntegrationStore>,
-  ) {}
+  ) { }
 
   async create(createIntegrationDto: CreateIntegrationDto): Promise<IntegrationResponseDto> {
     const integration = this.integrationRepository.create(createIntegrationDto);
@@ -105,6 +105,13 @@ export class IntegrationsService {
     });
 
     return IntegrationResponseDto.fromEntity(updatedIntegration, storeCount);
+  }
+
+  async findWithStores(id: string): Promise<Integration | null> {
+    return this.integrationRepository.findOne({
+      where: { id },
+      relations: ['integrationStores', 'integrationStores.store'],
+    });
   }
 
   async remove(id: string): Promise<void> {

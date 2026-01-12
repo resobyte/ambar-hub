@@ -110,7 +110,6 @@ export function ShippingTable() {
     e.preventDefault();
     try {
       const currentFormData = formDataRef.current;
-
       if (editingProvider) {
         await updateShippingProvider(editingProvider.id, {
           name: currentFormData.name,
@@ -121,7 +120,6 @@ export function ShippingTable() {
         await createShippingProvider(currentFormData);
         success('Shipping provider created successfully');
       }
-
       setIsModalOpen(false);
       fetchShippingProviders();
     } catch (err: any) {
@@ -129,28 +127,24 @@ export function ShippingTable() {
     }
   }, [editingProvider, fetchShippingProviders, success, error]);
 
-  const handleNameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const newValue = e.target.value;
-    setFormData(prev => {
-      const newData = { ...prev, name: newValue };
-      formDataRef.current = newData;
-      return newData;
-    });
-  }, []);
+  const handleConfirmDelete = useCallback(async () => {
+    if (!deletingProviderId) return;
+    try {
+      await deleteShippingProvider(deletingProviderId);
+      success('Shipping provider deleted successfully');
+      setIsDeleteModalOpen(false);
+      fetchShippingProviders();
+    } catch (err: any) {
+      error(err.message || 'Delete failed');
+    }
+  }, [deletingProviderId, fetchShippingProviders, success, error]);
 
-  const handleTypeChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newValue = e.target.value as 'ARAS';
+  const updateFormField = useCallback(<K extends keyof ShippingFormData>(
+    field: K,
+    value: ShippingFormData[K]
+  ) => {
     setFormData(prev => {
-      const newData = { ...prev, type: newValue };
-      formDataRef.current = newData;
-      return newData;
-    });
-  }, []);
-
-  const handleIsActiveChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newValue = e.target.value === 'Active';
-    setFormData(prev => {
-      const newData = { ...prev, isActive: newValue };
+      const newData = { ...prev, [field]: value };
       formDataRef.current = newData;
       return newData;
     });
@@ -167,18 +161,6 @@ export function ShippingTable() {
   const canSubmit = useMemo(() => {
     return isFormValid && (isFormDirty || !editingProvider);
   }, [isFormValid, isFormDirty, editingProvider]);
-
-  const handleConfirmDelete = useCallback(async () => {
-    if (!deletingProviderId) return;
-    try {
-      await deleteShippingProvider(deletingProviderId);
-      success('Shipping provider deleted successfully');
-      setIsDeleteModalOpen(false);
-      fetchShippingProviders();
-    } catch (err: any) {
-      error(err.message || 'Delete failed');
-    }
-  }, [deletingProviderId, fetchShippingProviders, success, error]);
 
   const modalTitle = useMemo(() =>
     editingProvider ? 'Edit Shipping Provider' : 'Add Shipping Provider',
@@ -203,8 +185,10 @@ export function ShippingTable() {
     },
     {
       key: 'integrationCount',
-      header: 'Used by Integrations',
-      render: (row: ShippingProvider) => <span>{row.integrationCount}</span>,
+      header: 'Used by',
+      render: (row: ShippingProvider) => (
+        <span className="text-muted-foreground">{row.integrationCount} {row.integrationCount === 1 ? 'integration' : 'integrations'}</span>
+      ),
     },
     {
       key: 'isActive',
@@ -221,11 +205,11 @@ export function ShippingTable() {
     },
     {
       key: 'actions',
-      header: 'Actions',
+      header: '',
       align: 'right',
       shrink: true,
       render: (row: ShippingProvider) => (
-        <div className="flex items-center justify-end space-x-1 sm:space-x-2">
+        <div className="flex items-center justify-end space-x-1">
           <button
             onClick={() => handleEdit(row)}
             className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
@@ -237,9 +221,11 @@ export function ShippingTable() {
           </button>
           <button
             onClick={() => handleDelete(row.id)}
-            className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title={row.integrationCount > 0 ? 'Cannot delete: Used by integrations' : 'Delete'}
             disabled={row.integrationCount > 0}
+            title={row.integrationCount > 0 ? 'Cannot delete: Used by integrations' : 'Delete'}
+            className={`p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors ${
+              row.integrationCount > 0 ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -252,12 +238,13 @@ export function ShippingTable() {
 
   return (
     <>
-      <div className="mb-4 flex justify-between items-center">
-        {shippingProviders.length === 0 && !loading && (
-          <p className="text-muted-foreground">Create shipping methods to use them in integrations.</p>
-        )}
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h2 className="text-2xl font-semibold text-foreground">Shipping Providers</h2>
+          <p className="text-sm text-muted-foreground mt-1">Manage shipping carriers for order fulfillment</p>
+        </div>
         <Button onClick={handleCreate}>
-          <svg className="w-[18px] h-[18px] mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
           Add Shipping
@@ -269,37 +256,36 @@ export function ShippingTable() {
         data={shippingProviders}
         keyExtractor={keyExtractor}
         isLoading={loading}
+        emptyMessage="No shipping providers yet. Add your first carrier to get started."
       />
 
-      <Modal isOpen={isModalOpen} onClose={handleModalClose} title={modalTitle} size="xl">
+      <Modal isOpen={isModalOpen} onClose={handleModalClose} title={modalTitle} size="md">
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Input
-              label="Name"
-              value={formData.name}
-              onChange={handleNameChange}
-              required
-            />
-            <Select
-              label="Provider"
-              value={formData.type}
-              onChange={handleTypeChange}
-              options={SHIPPING_TYPES}
-              required
-              disabled={!!editingProvider}
-            />
-            <Select
-              label="Status"
-              value={formData.isActive ? 'Active' : 'Passive'}
-              onChange={handleIsActiveChange}
-              options={[
-                { value: 'Active', label: 'Active' },
-                { value: 'Passive', label: 'Passive' },
-              ]}
-            />
-          </div>
-
-          <div className="flex justify-end gap-2">
+          <Input
+            label="Name"
+            value={formData.name}
+            onChange={(e) => updateFormField('name', e.target.value)}
+            required
+            placeholder="Enter provider name"
+          />
+          <Select
+            label="Provider Type"
+            value={formData.type}
+            onChange={(e) => updateFormField('type', e.target.value as ShippingFormData['type'])}
+            options={SHIPPING_TYPES}
+            required
+            disabled={!!editingProvider}
+          />
+          <Select
+            label="Status"
+            value={formData.isActive ? 'Active' : 'Passive'}
+            onChange={(e) => updateFormField('isActive', e.target.value === 'Active')}
+            options={[
+              { value: 'Active', label: 'Active' },
+              { value: 'Passive', label: 'Passive' },
+            ]}
+          />
+          <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={handleModalClose}>
               Cancel
             </Button>

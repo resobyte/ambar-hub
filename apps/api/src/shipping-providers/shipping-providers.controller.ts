@@ -34,13 +34,13 @@ export class ShippingProvidersController {
 
   @Post()
   @Roles(Role.PLATFORM_OWNER)
-  create(createShippingProviderDto: CreateShippingProviderDto): Promise<ShippingProviderResponseDto> {
+  create(@Body() createShippingProviderDto: CreateShippingProviderDto): Promise<ShippingProviderResponseDto> {
     return this.shippingProvidersService.create(createShippingProviderDto);
   }
 
   @Patch(':id')
   @Roles(Role.PLATFORM_OWNER)
-  update(@Param('id') id: string, updateShippingProviderDto: UpdateShippingProviderDto): Promise<ShippingProviderResponseDto> {
+  update(@Param('id') id: string, @Body() updateShippingProviderDto: UpdateShippingProviderDto): Promise<ShippingProviderResponseDto> {
     return this.shippingProvidersService.update(id, updateShippingProviderDto);
   }
 
