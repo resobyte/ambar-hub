@@ -11,7 +11,12 @@ import {
   UseGuards,
   ParseIntPipe,
   DefaultValuePipe,
+  UseInterceptors,
+  UploadedFile,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -29,6 +34,23 @@ export class ProductsController {
   @Post()
   create(@Body() createProductDto: CreateProductDto) {
     return this.productsService.create(createProductDto);
+  }
+
+  @Post('import')
+  @UseInterceptors(FileInterceptor('file'))
+  async importExcel(@UploadedFile() file: Express.Multer.File) {
+    return this.productsService.importExcel(file.buffer);
+  }
+
+  @Get('import/template')
+  async downloadTemplate(@Res() res: Response) {
+    const buffer = await this.productsService.generateExcelTemplate();
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename=urun_sablonu.xlsx',
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
   }
 
   @Get()

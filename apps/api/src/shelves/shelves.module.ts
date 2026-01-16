@@ -5,8 +5,10 @@ import { ShelvesService } from './shelves.service';
 import { Shelf } from './entities/shelf.entity';
 import { ShelfStock } from './entities/shelf-stock.entity';
 
+import { ProductStore } from '../product-stores/entities/product-store.entity';
+
 @Module({
-    imports: [TypeOrmModule.forFeature([Shelf, ShelfStock])],
+    imports: [TypeOrmModule.forFeature([Shelf, ShelfStock, ProductStore])],
     controllers: [ShelvesController],
     providers: [ShelvesService],
     exports: [ShelvesService],

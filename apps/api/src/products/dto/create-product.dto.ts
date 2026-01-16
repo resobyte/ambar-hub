@@ -9,13 +9,11 @@ export class CreateProductDto {
 
   @IsString()
   @IsOptional()
-  @MaxLength(255)
-  brand?: string;
+  brandId?: string;
 
   @IsString()
   @IsOptional()
-  @MaxLength(255)
-  category?: string;
+  categoryId?: string;
 
   @IsString()
   @IsOptional()

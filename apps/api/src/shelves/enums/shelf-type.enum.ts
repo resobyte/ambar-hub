@@ -12,5 +12,5 @@ export const SHELF_TYPE_RULES = {
     [ShelfType.DAMAGED]: { isSellable: false, isReservable: false },
     [ShelfType.PACKING]: { isSellable: false, isReservable: false },
     [ShelfType.PICKING]: { isSellable: true, isReservable: true },
-    [ShelfType.RECEIVING]: { isSellable: false, isReservable: false },
+    [ShelfType.RECEIVING]: { isSellable: false, isReservable: true },
 };

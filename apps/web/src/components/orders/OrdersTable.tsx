@@ -6,6 +6,7 @@ import { Badge } from '@/components/common/Badge';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import { Select } from '@/components/common/Select';
+import { ChevronRight, ChevronDown } from 'lucide-react';
 
 interface OrdersTableProps {
     orders: Order[];
@@ -40,6 +41,17 @@ export function OrdersTable({
     const [invoiceLoading, setInvoiceLoading] = useState<string | null>(null);
     const [pdfHtml, setPdfHtml] = useState<string | null>(null);
     const [showPdfModal, setShowPdfModal] = useState(false);
+    const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+    const toggleExpand = (id: string) => {
+        const newExpanded = new Set(expandedIds);
+        if (newExpanded.has(id)) {
+            newExpanded.delete(id);
+        } else {
+            newExpanded.add(id);
+        }
+        setExpandedIds(newExpanded);
+    };
 
     const getStatusColor = (status: OrderStatus) => {
         switch (status) {
@@ -146,6 +158,7 @@ export function OrdersTable({
                             <table className="w-full text-sm text-left">
                                 <thead className="bg-muted/50 text-muted-foreground uppercase text-xs">
                                     <tr>
+                                        <th className="w-10"></th>
                                         <th className="px-4 py-3 font-medium">Sipariş No</th>
                                         <th className="px-4 py-3 font-medium">Kaynak</th>
                                         <th className="px-4 py-3 font-medium">Müşteri</th>
@@ -157,40 +170,123 @@ export function OrdersTable({
                                 </thead>
                                 <tbody className="divide-y divide-border">
                                     {orders.map((order) => (
-                                        <tr key={order.id} className="hover:bg-muted/20 transaction-colors">
-                                            <td className="px-4 py-3">
-                                                <div className="font-medium">{order.orderNumber}</div>
-                                                {/* @ts-ignore */}
-                                                <div className="text-xs text-muted-foreground">{order.packageId}</div>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <Badge variant="outline">
-                                                    {order.integration?.name || '-'}
-                                                </Badge>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                {order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : 'Misafir'}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                {new Date(order.orderDate).toLocaleDateString('tr-TR')}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                {new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(order.totalPrice)}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <Badge variant={getStatusColor(order.status)}>{order.status}</Badge>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={() => handleCreateInvoice(order.id)}
-                                                    disabled={invoiceLoading === order.id}
-                                                >
-                                                    {invoiceLoading === order.id ? '...' : '📄 Fatura'}
-                                                </Button>
-                                            </td>
-                                        </tr>
+                                        <>
+                                            <tr key={order.id} className="hover:bg-muted/20 transaction-colors">
+                                                <td className="px-4 py-3 text-center">
+                                                    <button
+                                                        onClick={() => toggleExpand(order.id)}
+                                                        className="p-1 hover:bg-muted rounded text-muted-foreground"
+                                                    >
+                                                        {expandedIds.has(order.id) ? (
+                                                            <ChevronDown className="w-4 h-4" />
+                                                        ) : (
+                                                            <ChevronRight className="w-4 h-4" />
+                                                        )}
+                                                    </button>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <div className="font-medium">{order.orderNumber}</div>
+                                                    {/* @ts-ignore */}
+                                                    <div className="text-xs text-muted-foreground">{order.packageId}</div>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <Badge variant="outline">
+                                                        {order.integration?.name || '-'}
+                                                    </Badge>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    {order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : 'Misafir'}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    {new Date(order.orderDate).toLocaleDateString('tr-TR')}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    {new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(order.totalPrice)}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <Badge variant={getStatusColor(order.status)}>{order.status}</Badge>
+                                                </td>
+                                                <td className="px-4 py-3 space-x-2">
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() => handleCreateInvoice(order.id)}
+                                                        disabled={invoiceLoading === order.id}
+                                                    >
+                                                        {invoiceLoading === order.id ? '...' : '📄 Fatura'}
+                                                    </Button>
+                                                    {order.cargoTrackingNumber && (
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            onClick={async () => {
+                                                                try {
+                                                                    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/orders/${order.id}/label`, {
+                                                                        method: 'POST',
+                                                                        headers: { 'Content-Type': 'application/json' },
+                                                                    });
+                                                                    if (res.ok) {
+                                                                        alert('Aras Kargo barkodu başarıyla oluşturuldu.');
+                                                                        // Optionally reload orders to show updated status if we displayed it
+                                                                        // For now just alert is fine
+                                                                    } else {
+                                                                        const err = await res.json();
+                                                                        alert(`Hata: ${err.message || 'Barkod alınamadı'}`);
+                                                                    }
+                                                                } catch (e: any) {
+                                                                    alert(`Hata: ${e.message}`);
+                                                                }
+                                                            }}
+                                                        >
+                                                            📦 Aras
+                                                        </Button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                            {expandedIds.has(order.id) && (
+                                                <tr key={`${order.id}-detail`} className="bg-muted/10">
+                                                    <td colSpan={8} className="p-4 pl-14">
+                                                        <div className="rounded border bg-background overflow-hidden">
+                                                            <div className="bg-muted px-4 py-2 text-xs font-semibold text-muted-foreground uppercase">
+                                                                Sipariş İçeriği
+                                                            </div>
+                                                            {order.items && order.items.length > 0 ? (
+                                                                <table className="w-full text-sm">
+                                                                    <thead className="text-muted-foreground text-xs uppercase bg-muted/30">
+                                                                        <tr>
+                                                                            <th className="px-4 py-2 font-medium text-left">Ürün Adı</th>
+                                                                            <th className="px-4 py-2 font-medium text-left">SKU</th>
+                                                                            <th className="px-4 py-2 font-medium text-center">Adet</th>
+                                                                            <th className="px-4 py-2 font-medium text-right">Birim Fiyat</th>
+                                                                            <th className="px-4 py-2 font-medium text-right">Toplam</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody className="divide-y divide-border">
+                                                                        {order.items.map((item) => (
+                                                                            <tr key={item.id}>
+                                                                                <td className="px-4 py-2">{item.productName}</td>
+                                                                                <td className="px-4 py-2 font-mono text-xs">{item.sku || '-'}</td>
+                                                                                <td className="px-4 py-2 text-center">{item.quantity}</td>
+                                                                                <td className="px-4 py-2 text-right">
+                                                                                    {new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(item.unitPrice)}
+                                                                                </td>
+                                                                                <td className="px-4 py-2 text-right">
+                                                                                    {new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(item.unitPrice * item.quantity)}
+                                                                                </td>
+                                                                            </tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                </table>
+                                                            ) : (
+                                                                <div className="p-4 text-center text-muted-foreground">
+                                                                    Ürün bilgisi yok
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </>
                                     ))}
                                 </tbody>
                             </table>

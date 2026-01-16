@@ -1,0 +1,70 @@
+# Ambar-Hub - Windsurf AI Rules
+
+## Project: E-commerce WMS (Warehouse Management System)
+
+### Tech Stack
+| Layer | Technology |
+|-------|-----------|
+| Monorepo | pnpm + Turborepo |
+| Backend | NestJS 10 + TypeORM + MySQL |
+| Frontend | Next.js 14 + React 18 + TailwindCSS |
+| Auth | JWT + HTTP-only cookies |
+
+### Directory Structure
+```
+apps/api/src/      → NestJS backend modules
+apps/web/src/      → Next.js pages and components
+packages/types/    → Shared TypeScript types
+packages/auth-config/ → Auth utilities
+integration-mist/  → Reference only (READ-ONLY)
+```
+
+### Backend Module Pattern
+```
+[module]/
+├── entities/[entity].entity.ts
+├── dto/create-[entity].dto.ts
+├── dto/update-[entity].dto.ts
+├── enums/[entity]-status.enum.ts
+├── [module].service.ts
+├── [module].controller.ts
+└── [module].module.ts
+```
+
+### Key Conventions
+
+#### Entities
+- Extend `BaseEntity` (id, createdAt, updatedAt, deletedAt)
+- Column decorator: `@Column({ name: 'snake_case' })`
+
+#### Services
+- Inject with `@InjectRepository(Entity)`
+- Add logger: `private readonly logger = new Logger(Name.name)`
+
+#### Controllers
+- UUID validation: `@Param('id', ParseUUIDPipe)`
+- Response format: `{ success: true, data: result }`
+
+#### Frontend Pages
+- Server page.tsx → Suspense → Client component
+- AppLayout requires: `user={user} currentPath="/path"`
+
+#### API Functions
+- Location: `apps/web/src/lib/api.ts`
+- All fetch calls: `credentials: 'include'`
+
+### Language
+- UI: Turkish (Siparişler, Rotalar, Paketleme)
+- Code: English
+
+### Commands
+```bash
+pnpm dev        # All apps
+pnpm dev:api    # Backend
+pnpm dev:web    # Frontend
+```
+
+### Remember
+- Register modules in app.module.ts
+- Add types to api.ts for frontend
+- DO NOT modify integration-mist/

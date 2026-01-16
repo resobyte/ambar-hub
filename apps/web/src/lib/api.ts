@@ -130,8 +130,8 @@ export interface IntegrationStore {
 export interface Product {
   id: string;
   name: string;
-  brand: string | null;
-  category: string | null;
+  brand: Brand | null;
+  category: Category | null;
   barcode: string | null;
   sku: string | null;
   vatRate: number;
@@ -141,6 +141,9 @@ export interface Product {
   lastSalePrice: number | null;
   isActive: boolean;
   storeCount: number;
+  totalStockQuantity: number;
+  totalSellableQuantity: number;
+  totalReservableQuantity: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -157,6 +160,8 @@ export interface ProductStore {
   storeSku: string | null;
   storeSalePrice: number | null;
   stockQuantity: number;
+  sellableQuantity: number;
+  reservableQuantity: number;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -417,8 +422,8 @@ export async function getProduct(id: string): Promise<ApiResponse<Product>> {
 
 export async function createProduct(data: {
   name: string;
-  brand?: string;
-  category?: string;
+  brandId?: string;
+  categoryId?: string;
   barcode?: string;
   sku?: string;
   vatRate: number;
@@ -439,10 +444,38 @@ export async function createProduct(data: {
   return res.json();
 }
 
+export async function importProducts(file: File): Promise<{ success: number; errors: string[] }> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const res = await fetch(`${API_URL}/products/import`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Import failed');
+  }
+  return res.json();
+}
+
+export async function downloadImportTemplate(): Promise<Blob> {
+  const res = await fetch(`${API_URL}/products/import/template`, {
+    method: 'GET',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    throw new Error('Şablon indirilemedi');
+  }
+  return res.blob();
+}
+
 export async function updateProduct(id: string, data: {
   name?: string;
-  brand?: string;
-  category?: string;
+  brandId?: string;
+  categoryId?: string;
   barcode?: string;
   sku?: string;
   vatRate?: number;
@@ -780,6 +813,8 @@ export interface Order {
   totalPrice: number;
   orderDate: string;
   items?: OrderItem[];
+  cargoTrackingNumber?: string;
+  cargoLabelZpl?: string;
 }
 
 export async function getOrders(page = 1, limit = 10): Promise<PaginationResponse<Order>> {
@@ -906,3 +941,456 @@ export async function getInvoiceByOrderId(orderId: string): Promise<Invoice | nu
   return res.json();
 }
 
+
+// Routes API
+
+export enum RouteStatus {
+  COLLECTING = 'COLLECTING',
+  READY = 'READY',
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED',
+}
+
+export interface Route {
+  id: string;
+  name: string;
+  description: string | null;
+  status: RouteStatus;
+  labelPrintedAt: string | null;
+  totalOrderCount: number;
+  totalItemCount: number;
+  pickedItemCount: number;
+  packedOrderCount: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  orders?: Order[];
+}
+
+export interface RouteSuggestion {
+  id: string;
+  type: 'single_product' | 'single_product_multi' | 'mixed';
+  name: string;
+  description: string;
+  storeName?: string;
+  storeId?: string;
+  orderCount: number;
+  totalQuantity: number;
+  products: {
+    barcode: string;
+    name: string;
+    orderCount: number;
+    totalQuantity: number;
+  }[];
+  orders: any[];
+  priority: number;
+}
+
+export async function getRoutes(status?: RouteStatus[]): Promise<{ data: Route[]; meta: { total: number } }> {
+  const params = new URLSearchParams();
+  if (status && status.length > 0) {
+    params.append('status', status.join(','));
+  }
+  const res = await fetch(`${API_URL}/routes?${params}`, {
+    cache: 'no-store',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    return { data: [], meta: { total: 0 } };
+  }
+  return res.json();
+}
+
+export async function getRoute(id: string): Promise<ApiResponse<Route>> {
+  const res = await fetch(`${API_URL}/routes/${id}`, {
+    cache: 'no-store',
+    credentials: 'include',
+  });
+  return res.json();
+}
+
+export async function createRoute(data: { name: string; description?: string; orderIds: string[] }): Promise<ApiResponse<Route>> {
+  const res = await fetch(`${API_URL}/routes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Route creation failed');
+  }
+  return res.json();
+}
+
+export async function deleteRoute(id: string): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${API_URL}/routes/${id}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  return res.json();
+}
+
+export async function getFilteredOrders(filter: {
+  storeId?: string;
+  integrationId?: string;
+  type?: string;
+  productBarcodes?: string[];
+  overdue?: boolean;
+  search?: string;
+}): Promise<{ data: any[]; meta: { total: number } }> {
+  const params = new URLSearchParams();
+  if (filter.storeId) params.append('storeId', filter.storeId);
+  if (filter.integrationId) params.append('integrationId', filter.integrationId);
+  if (filter.type) params.append('type', filter.type);
+  if (filter.productBarcodes?.length) params.append('productBarcodes', filter.productBarcodes.join(','));
+  if (filter.overdue) params.append('overdue', 'true');
+  if (filter.search) params.append('search', filter.search);
+
+  const res = await fetch(`${API_URL}/routes/filter-orders?${params}`, {
+    cache: 'no-store',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    return { data: [], meta: { total: 0 } };
+  }
+  return res.json();
+}
+
+export async function getRouteSuggestions(options?: {
+  storeId?: string;
+  type?: string;
+  productBarcodes?: string[];
+}): Promise<{ data: RouteSuggestion[]; meta: { total: number } }> {
+  const params = new URLSearchParams();
+  if (options?.storeId) params.append('storeId', options.storeId);
+  if (options?.type) params.append('type', options.type);
+  if (options?.productBarcodes?.length) params.append('productBarcodes', options.productBarcodes.join(','));
+
+  const res = await fetch(`${API_URL}/routes/suggestions?${params}`, {
+    cache: 'no-store',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    return { data: [], meta: { total: 0 } };
+  }
+  return res.json();
+}
+
+export async function printRouteLabel(routeId: string): Promise<string> {
+  const res = await fetch(`${API_URL}/routes/${routeId}/print-label`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    throw new Error('Failed to print label');
+  }
+  return res.text();
+}
+
+// Packing API
+
+export interface PackingSession {
+  id: string;
+  routeId: string;
+  route?: Route;
+  userId: string | null;
+  status: 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
+  currentOrderId: string | null;
+  stationId: string | null;
+  startedAt: string;
+  completedAt: string | null;
+  totalOrders: number;
+  packedOrders: number;
+  items?: PackingOrderItem[];
+}
+
+export interface PackingOrderItem {
+  id: string;
+  sessionId: string;
+  orderId: string;
+  order?: Order;
+  barcode: string;
+  requiredQuantity: number;
+  scannedQuantity: number;
+  isComplete: boolean;
+  scannedAt: string | null;
+  sequence: number;
+}
+
+export async function startPackingSession(routeId: string, stationId?: string): Promise<ApiResponse<PackingSession>> {
+  const res = await fetch(`${API_URL}/packing/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ routeId, stationId }),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Failed to start packing session');
+  }
+  return res.json();
+}
+
+export async function getPackingSession(id: string): Promise<ApiResponse<PackingSession>> {
+  const res = await fetch(`${API_URL}/packing/session/${id}`, {
+    credentials: 'include',
+  });
+  return res.json();
+}
+
+export async function getCurrentPackingOrder(sessionId: string): Promise<ApiResponse<any>> {
+  const res = await fetch(`${API_URL}/packing/session/${sessionId}/current-order`, {
+    credentials: 'include',
+  });
+  return res.json();
+}
+
+export async function scanPackingBarcode(sessionId: string, barcode: string): Promise<{
+  success: boolean;
+  message: string;
+  data: { item?: PackingOrderItem; orderComplete?: boolean; nextOrderId?: string };
+}> {
+  const res = await fetch(`${API_URL}/packing/scan`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ sessionId, barcode }),
+  });
+  return res.json();
+}
+
+export async function completePackingOrder(sessionId: string, orderId: string): Promise<{
+  success: boolean;
+  message: string;
+  data: { sessionComplete?: boolean; nextOrderId?: string };
+}> {
+  const res = await fetch(`${API_URL}/packing/complete-order`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ sessionId, orderId }),
+  });
+  return res.json();
+}
+
+export async function cancelPackingSession(sessionId: string): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${API_URL}/packing/session/${sessionId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  return res.json();
+}
+
+// Picking API
+
+export interface PickingItem {
+  barcode: string;
+  productName: string;
+  shelfLocation?: string;
+  totalQuantity: number;
+  pickedQuantity: number;
+  isComplete: boolean;
+  orders: {
+    orderId: string;
+    orderNumber: string;
+    quantity: number;
+  }[];
+}
+
+export interface PickingProgress {
+  routeId: string;
+  routeName: string;
+  status: RouteStatus;
+  totalItems: number;
+  pickedItems: number;
+  totalOrders: number;
+  items: PickingItem[];
+  isComplete: boolean;
+}
+
+export async function getPickingProgress(routeId: string): Promise<ApiResponse<PickingProgress>> {
+  const res = await fetch(`${API_URL}/picking/progress/${routeId}`, {
+    credentials: 'include',
+  });
+  return res.json();
+}
+
+export async function scanPickingBarcode(routeId: string, barcode: string, quantity: number = 1): Promise<{
+  success: boolean;
+  message: string;
+  data: { item?: PickingItem; progress?: PickingProgress };
+}> {
+  const res = await fetch(`${API_URL}/picking/scan`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ routeId, barcode, quantity }),
+  });
+  return res.json();
+}
+
+export async function bulkScanPicking(routeId: string, barcodes: string[]): Promise<{
+  success: boolean;
+  message: string;
+  data: { scanned: number; failed: string[]; progress: PickingProgress };
+}> {
+  const res = await fetch(`${API_URL}/picking/bulk-scan`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ routeId, barcodes }),
+  });
+  return res.json();
+}
+
+export async function completePickingManually(routeId: string): Promise<ApiResponse<PickingProgress>> {
+  const res = await fetch(`${API_URL}/picking/complete/${routeId}`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  return res.json();
+}
+
+export async function resetPicking(routeId: string): Promise<ApiResponse<PickingProgress>> {
+  const res = await fetch(`${API_URL}/picking/reset/${routeId}`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  return res.json();
+}
+// Definitions API
+
+// Brands
+export interface Brand {
+  id: string;
+  name: string;
+  isActive: boolean;
+}
+
+export async function getBrands(): Promise<ApiResponse<Brand[]>> {
+  const res = await fetch(`${API_URL}/brands`, { credentials: 'include' });
+  return res.json();
+}
+
+export async function createBrand(data: { name: string; isActive?: boolean }): Promise<ApiResponse<Brand>> {
+  const res = await fetch(`${API_URL}/brands`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function updateBrand(id: string, data: { name?: string; isActive?: boolean }): Promise<ApiResponse<Brand>> {
+  const res = await fetch(`${API_URL}/brands/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function deleteBrand(id: string): Promise<ApiResponse<void>> {
+  const res = await fetch(`${API_URL}/brands/${id}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  return res.json();
+}
+
+// Categories
+export interface Category {
+  id: string;
+  name: string;
+  parentId?: string;
+  parent?: Category;
+  children?: Category[];
+  isActive: boolean;
+}
+
+export async function getCategories(): Promise<ApiResponse<Category[]>> {
+  const res = await fetch(`${API_URL}/categories`, { credentials: 'include' });
+  return res.json();
+}
+
+export async function createCategory(data: { name: string; parentId?: string | null; isActive?: boolean }): Promise<ApiResponse<Category>> {
+  const res = await fetch(`${API_URL}/categories`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function updateCategory(id: string, data: { name?: string; parentId?: string | null; isActive?: boolean }): Promise<ApiResponse<Category>> {
+  const res = await fetch(`${API_URL}/categories/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function deleteCategory(id: string): Promise<ApiResponse<void>> {
+  const res = await fetch(`${API_URL}/categories/${id}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  return res.json();
+}
+
+// Packing Materials
+export enum PackingMaterialType {
+  BOX = 'BOX',
+  ENVELOPE = 'ENVELOPE',
+  TAPE = 'TAPE',
+  BUBBLE_WRAP = 'BUBBLE_WRAP',
+  OTHER = 'OTHER'
+}
+
+export interface PackingMaterial {
+  id: string;
+  name: string;
+  type: PackingMaterialType;
+  stockQuantity: number;
+  lowStockThreshold: number;
+  isActive: boolean;
+}
+
+export async function getPackingMaterials(): Promise<ApiResponse<PackingMaterial[]>> {
+  const res = await fetch(`${API_URL}/packing-materials`, { credentials: 'include' });
+  return res.json();
+}
+
+export async function createPackingMaterial(data: { name: string; type: PackingMaterialType; stockQuantity: number; lowStockThreshold?: number; isActive?: boolean }): Promise<ApiResponse<PackingMaterial>> {
+  const res = await fetch(`${API_URL}/packing-materials`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function updatePackingMaterial(id: string, data: { name?: string; type?: PackingMaterialType; stockQuantity?: number; lowStockThreshold?: number; isActive?: boolean }): Promise<ApiResponse<PackingMaterial>> {
+  const res = await fetch(`${API_URL}/packing-materials/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function deletePackingMaterial(id: string): Promise<ApiResponse<void>> {
+  const res = await fetch(`${API_URL}/packing-materials/${id}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  return res.json();
+}

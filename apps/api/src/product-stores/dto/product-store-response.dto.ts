@@ -6,6 +6,8 @@ export class ProductStoreResponseDto {
   storeSku: string | null;
   storeSalePrice: number | null;
   stockQuantity: number;
+  sellableQuantity: number;
+  reservableQuantity: number;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -19,6 +21,8 @@ export class ProductStoreResponseDto {
       storeSku: entity.storeSku || null,
       storeSalePrice: entity.storeSalePrice ? Number(entity.storeSalePrice) : null,
       stockQuantity: entity.stockQuantity || 0,
+      sellableQuantity: entity.sellableQuantity || 0,
+      reservableQuantity: entity.reservableQuantity || 0,
       isActive: entity.isActive,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,

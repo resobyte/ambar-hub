@@ -9,6 +9,8 @@ import { Select } from '@/components/common/Select';
 import { ConfirmModal } from '@/components/common/ConfirmModal';
 import {
   getProducts,
+  importProducts,
+  downloadImportTemplate,
   createProduct,
   updateProduct,
   deleteProduct,
@@ -26,27 +28,15 @@ import {
   getProductSetItems,
   updateProductSetItems,
   ProductSetItem,
+  getBrands,
+  getCategories,
+  Brand,
+  Category,
+  Product,
 } from '@/lib/api';
 import { useToast } from '@/components/common/ToastContext';
 import { ProductStoreList } from '@/components/products/ProductStoreList';
 
-interface Product {
-  id: string;
-  name: string;
-  brand: string | null;
-  category: string | null;
-  barcode: string | null;
-  sku: string | null;
-  vatRate: number;
-  desi: number | null;
-  purchasePrice: number | null;
-  salePrice: number | null;
-  lastSalePrice: number | null;
-  isActive: boolean;
-  storeCount: number;
-  createdAt: string;
-  updatedAt: string;
-}
 
 interface ProductStore {
   id: string;
@@ -56,6 +46,8 @@ interface ProductStore {
   storeSku: string | null;
   storeSalePrice: number | null;
   stockQuantity: number;
+  sellableQuantity: number;
+  reservableQuantity: number;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -92,8 +84,8 @@ interface ProductIntegration {
 
 interface ProductFormData {
   name: string;
-  brand: string;
-  category: string;
+  brandId: string;
+  categoryId: string;
   barcode: string;
   sku: string;
   vatRate: number;
@@ -111,6 +103,8 @@ interface StoreConfigData {
   storeSku: string;
   storeSalePrice: number;
   stockQuantity: number;
+  sellableQuantity?: number;
+  reservableQuantity?: number;
   isActive: boolean;
 }
 
@@ -152,6 +146,8 @@ interface SetComponentData {
 
 export function ProductsTable() {
   const [products, setProducts] = useState<Product[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [productStores, setProductStores] = useState<ProductStore[]>([]);
   const [integrations, setIntegrations] = useState<Integration[]>([]);
@@ -166,8 +162,8 @@ export function ProductsTable() {
   const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
   const [formData, setFormData] = useState<ProductFormData>({
     name: '',
-    brand: '',
-    category: '',
+    brandId: '',
+    categoryId: '',
     barcode: '',
     sku: '',
     vatRate: 20,
@@ -182,8 +178,8 @@ export function ProductsTable() {
   const [setComponents, setSetComponents] = useState<SetComponentData[]>([]);
   const [initialFormData, setInitialFormData] = useState<ProductFormData>({
     name: '',
-    brand: '',
-    category: '',
+    brandId: '',
+    categoryId: '',
     barcode: '',
     sku: '',
     vatRate: 20,
@@ -202,7 +198,49 @@ export function ProductsTable() {
   const [integrationConfigs, setIntegrationConfigs] = useState<Map<string, Map<string, IntegrationConfigData>>>(new Map());
   const [initialIntegrationConfigs, setInitialIntegrationConfigs] = useState<Map<string, Map<string, IntegrationConfigData>>>(new Map());
   const formDataRef = useRef(formData);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { success, error } = useToast();
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setLoading(true);
+      const res = await importProducts(file);
+      if (res.errors && res.errors.length > 0) {
+        error(`Bazı satırlar yüklenemedi: ${res.errors.length} hata.`);
+        console.error(res.errors);
+      } else {
+        success(`${res.success} ürün başarıyla yüklendi.`);
+      }
+      fetchProducts();
+      fetchBrandsAndCategories(); // New brands/categories might have been created
+    } catch (err: any) {
+      error(err.message || 'Dosya yüklenirken bir hata oluştu.');
+    } finally {
+      setLoading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const blob = await downloadImportTemplate();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'urun_yukleme_sablonu.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err: any) {
+      error(err.message || 'Şablon indirilemedi');
+    }
+  };
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -216,6 +254,16 @@ export function ProductsTable() {
       setLoading(false);
     }
   }, [page, error]);
+
+  const fetchBrandsAndCategories = useCallback(async () => {
+    try {
+      const [brandsRes, categoriesRes] = await Promise.all([getBrands(), getCategories()]);
+      setBrands(brandsRes.data || []);
+      setCategories(categoriesRes.data || []);
+    } catch (err) {
+      error('Tanımlamalar yüklenemedi');
+    }
+  }, [error]);
 
   const fetchStores = useCallback(async () => {
     try {
@@ -269,7 +317,8 @@ export function ProductsTable() {
     fetchIntegrations();
     fetchIntegrationStores();
     fetchProductIntegrations();
-  }, [fetchProducts, fetchStores, fetchProductStores, fetchIntegrations, fetchIntegrationStores, fetchProductIntegrations]);
+    fetchBrandsAndCategories();
+  }, [fetchProducts, fetchStores, fetchProductStores, fetchIntegrations, fetchIntegrationStores, fetchProductIntegrations, fetchBrandsAndCategories]);
 
   const getStoreIntegrations = useCallback((storeId: string): Integration[] => {
     return integrationStores
@@ -282,8 +331,8 @@ export function ProductsTable() {
     setEditingProduct(null);
     const newData = {
       name: '',
-      brand: '',
-      category: '',
+      brandId: '',
+      categoryId: '',
       barcode: '',
       sku: '',
       vatRate: 20,
@@ -320,8 +369,8 @@ export function ProductsTable() {
     setEditingProduct(product);
     const newData = {
       name: product.name,
-      brand: product.brand || '',
-      category: product.category || '',
+      brandId: product.brand?.id || '',
+      categoryId: product.category?.id || '',
       barcode: product.barcode || '',
       sku: product.sku || '',
       vatRate: product.vatRate,
@@ -362,6 +411,8 @@ export function ProductsTable() {
         storeSku: ps.storeSku || '',
         storeSalePrice: ps.storeSalePrice || 0,
         stockQuantity: ps.stockQuantity,
+        sellableQuantity: ps.sellableQuantity,
+        reservableQuantity: ps.reservableQuantity,
         isActive: ps.isActive,
       });
     });
@@ -522,6 +573,8 @@ export function ProductsTable() {
           storeSku: '',
           storeSalePrice: 0,
           stockQuantity: 0,
+          sellableQuantity: 0,
+          reservableQuantity: 0,
         }));
       }
 
@@ -564,6 +617,8 @@ export function ProductsTable() {
         storeSku: '',
         storeSalePrice: 0,
         stockQuantity: 0,
+        sellableQuantity: 0,
+        reservableQuantity: 0,
       };
       newMap.set(storeId, { ...current, [field]: value });
       return newMap;
@@ -677,9 +732,31 @@ export function ProductsTable() {
 
   const columns = useMemo<Column<Product>[]>(() => [
     { key: 'name', header: 'Ürün Adı' },
-    { key: 'brand', header: 'Marka' },
-    { key: 'category', header: 'Kategori' },
+    {
+      key: 'brand',
+      header: 'Marka',
+      render: (row: Product) => row.brand?.name || '-'
+    },
+    {
+      key: 'category',
+      header: 'Kategori',
+      render: (row: Product) => row.category?.name || '-'
+    },
+    { key: 'barcode', header: 'Barkod' },
     { key: 'sku', header: 'SKU' },
+    {
+      key: 'totalStockQuantity',
+      header: 'Stok',
+      render: (row: Product) => (
+        <div className="flex flex-col">
+          <span className="font-semibold text-sm">{row.totalStockQuantity}</span>
+          <span className="text-muted-foreground text-[10px] flex gap-1.5 whitespace-nowrap">
+            <span className="text-green-600 font-medium" title="Satılabilir">S: {row.totalSellableQuantity}</span>
+            <span className="text-orange-600 font-medium" title="Rezerve">R: {row.totalReservableQuantity}</span>
+          </span>
+        </div>
+      ),
+    },
     {
       key: 'storeCount',
       header: 'Mağazalar',
@@ -748,12 +825,32 @@ export function ProductsTable() {
           <h2 className="text-2xl font-semibold text-foreground">Ürünler</h2>
           <p className="text-sm text-muted-foreground mt-1">Ürün kataloğunuzu ve fiyatlandırmayı yönetin</p>
         </div>
-        <Button onClick={handleCreate}>
-          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Ürün Ekle
-        </Button>
+        <div className="flex gap-2">
+          <input
+            type="file"
+            accept=".xlsx, .xls"
+            className="hidden"
+            ref={fileInputRef}
+            onChange={handleImport}
+          />
+          <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            Excel Yükle
+          </Button>
+          <Button variant="outline" onClick={handleDownloadTemplate} title="Örnek Excel Şablonu İndir">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+          </Button>
+          <Button onClick={handleCreate}>
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Ürün Ekle
+          </Button>
+        </div>
       </div>
 
       <Table
@@ -779,17 +876,23 @@ export function ProductsTable() {
                 required
                 placeholder="Ürün adı"
               />
-              <Input
+              <Select
                 label="Marka"
-                value={formData.brand}
-                onChange={(e) => updateFormField('brand', e.target.value)}
-                placeholder="Marka"
+                value={formData.brandId}
+                onChange={(e) => updateFormField('brandId', e.target.value)}
+                options={[
+                  { value: '', label: 'Marka Seçin' },
+                  ...brands.map(b => ({ value: b.id, label: b.name }))
+                ]}
               />
-              <Input
+              <Select
                 label="Kategori"
-                value={formData.category}
-                onChange={(e) => updateFormField('category', e.target.value)}
-                placeholder="Kategori"
+                value={formData.categoryId}
+                onChange={(e) => updateFormField('categoryId', e.target.value)}
+                options={[
+                  { value: '', label: 'Kategori Seçin' },
+                  ...categories.map(c => ({ value: c.id, label: c.name }))
+                ]}
               />
               <Input
                 label="Barkod"

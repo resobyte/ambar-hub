@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { Invoice } from './entities/invoice.entity';
 import { Order } from '../orders/entities/order.entity';
+import { Product } from '../products/entities/product.entity';
 import { InvoiceStatus } from './enums/invoice-status.enum';
 
 @Injectable()
@@ -16,6 +17,8 @@ export class InvoicesService {
         private readonly invoiceRepository: Repository<Invoice>,
         @InjectRepository(Order)
         private readonly orderRepository: Repository<Order>,
+        @InjectRepository(Product)
+        private readonly productRepository: Repository<Product>,
         private readonly configService: ConfigService,
     ) { }
 
@@ -49,17 +52,22 @@ export class InvoicesService {
         }
 
         // 2. Generate invoice number
+        // invoiceNumber: RST2026000000001 (internal tracking)
+        // voucherNo: 2026000000001 (for Uyumsoft)
         const invoiceNumber = await this.generateInvoiceNumber();
+        const voucherNo = invoiceNumber.replace('RST', ''); // Remove RST prefix for Uyumsoft
         const invoiceSerial = options?.branchCode?.substring(0, 3) || 'EMA';
-        const edocNo = `${invoiceSerial}${invoiceNumber}`;
+        const edocNo = `${invoiceSerial}${voucherNo}`;
 
         // 3. Build Uyumsoft request payload
-        const requestPayload = this.buildUyumsoftPayload(order, {
+        const requestPayload = await this.buildUyumsoftPayload(order, {
             invoiceNumber,
+            voucherNo,
             invoiceSerial,
             edocNo,
             ...options,
         });
+
 
         // 4. Create invoice record
         const invoice = this.invoiceRepository.create({
@@ -111,8 +119,9 @@ export class InvoicesService {
     /**
      * Build Uyumsoft InsertInvoice request payload
      */
-    private buildUyumsoftPayload(order: Order, options: {
+    private async buildUyumsoftPayload(order: Order, options: {
         invoiceNumber: string;
+        voucherNo: string;
         invoiceSerial: string;
         edocNo: string;
         branchCode?: string;
@@ -120,7 +129,7 @@ export class InvoicesService {
         costCenterCode?: string;
         whouseCode?: string;
         cardCode?: string;
-    }): object {
+    }): Promise<object> {
         const now = new Date();
         const orderDate = new Date(order.orderDate);
 
@@ -134,47 +143,62 @@ export class InvoicesService {
             voucherSerial: 'EMA',
         };
 
-        // Build line items
-        const details = (order.items || []).map((item, index) => ({
-            curRateTypeCode: '',
-            qty: item.quantity,
-            curCode: order.currencyCode || 'TRY',
-            lineNo: index + 1,
-            unitCode: 'ADET',
-            dcardCode: item.merchantSku || item.stockCode || item.sku || item.barcode || '',
-            note1: item.productOrigin ? `Mensei: ${item.productOrigin}` : 'Mensei: ',
-            note2: item.productOrigin || 'TR',
-            note3: '',
-            sourceApp: 'Fatura',
-            lineType: 'S',
-            vatRate: item.vatRate || 20,
-            priceListCode: '',
-            curRateTra: 0,
-            costCenterCode: options.costCenterCode || EMBEAUTY_CONFIG.costCenterCode,
-            whouseCode: options.whouseCode || EMBEAUTY_CONFIG.whouseCode,
-            sourceApp2: 'Fatura',
-            vatCode: item.vatRate || 20,
-            unitPrice: Number(item.unitPrice),
-            itemNameManual: item.productName,
-            qtyPrm: item.quantity,
-            amtVat: '',
-            vatStatus: 'Dahil',
-            sourceApp3: 'Fatura',
+        // Build line items - lookup Product SKU by barcode
+        const details = await Promise.all((order.items || []).map(async (item, index) => {
+            // TODO: Temporarily hardcoded for testing - revert after test
+            const dcardCode = '1000010001';
+            // Find product by barcode to get the correct SKU for Uyumsoft
+            // let dcardCode = item.barcode || item.merchantSku || item.stockCode || item.sku || '';
+            // if (item.barcode) {
+            //     const product = await this.productRepository.findOne({
+            //         where: { barcode: item.barcode }
+            //     });
+            //     if (product) {
+            //         dcardCode = product.sku;
+            //     }
+            // }
+
+            return {
+                curRateTypeCode: '',
+                qty: Number(item.quantity),
+                curCode: order.currencyCode || 'TRY',
+                lineNo: index + 1,
+                unitCode: 'ADET',
+                dcardCode,
+                note1: item.productOrigin ? `Mensei: ${item.productOrigin}` : 'Mensei: ',
+                note2: item.productOrigin || 'TR',
+                note3: '',
+                sourceApp: 'Fatura',
+                lineType: 'S',
+                vatRate: 20,
+                priceListCode: '',
+                curRateTra: 0,
+                costCenterCode: options.costCenterCode || EMBEAUTY_CONFIG.costCenterCode,
+                whouseCode: options.whouseCode || EMBEAUTY_CONFIG.whouseCode,
+                sourceApp2: 'Fatura',
+                vatCode: 20,
+                unitPrice: Number(item.unitPrice),
+                itemNameManual: item.productName?.substring(0, 100) || '',
+                qtyPrm: Number(item.quantity),
+                amtVat: '',
+                vatStatus: 'Dahil',
+                sourceApp3: 'Fatura',
+            };
         }));
 
         // Build main invoice payload
         return {
             value: {
                 curRateTypeCode: '',
-                transportTypeId: '',
+                transportTypeId: '57',
                 transporterId: null,
-                firstName: order.customer?.firstName || '',
-                familyName: order.customer?.lastName || '',
-                address1: this.formatAddress(order.shippingAddress),
+                firstName: (order.customer?.firstName || '').substring(0, 100),
+                familyName: (order.customer?.lastName || '').substring(0, 100),
+                address1: this.formatAddress(order.shippingAddress).substring(0, 100),
                 address2: '',
                 address3: '',
                 countyId: '',
-                voucherNo: options.invoiceNumber,
+                voucherNo: options.voucherNo,
                 sourceApp: 'Fatura',
                 gnlNote3: '',
                 cardType: 'Cari',
@@ -186,7 +210,7 @@ export class InvoicesService {
                 gnlNote4: '',
                 currencyOption: 'Sevk_Tarihindeki_Kur',
                 branchCode: options.branchCode || EMBEAUTY_CONFIG.branchCode,
-                gnlNote1: `${order.customer?.trendyolCustomerId || ''}_${order.orderNumber}`,
+                gnlNote1: order.orderNumber || '',
                 docTraCode: options.docTraCode || EMBEAUTY_CONFIG.docTraCode,
                 curTra: 1,
                 note1: options.edocNo,
@@ -291,21 +315,24 @@ export class InvoicesService {
 
     /**
      * Generate unique invoice number
+     * Format: RST2026000000001
      */
     private async generateInvoiceNumber(): Promise<string> {
         const year = new Date().getFullYear();
+        const prefix = 'RST';
         const lastInvoice = await this.invoiceRepository
             .createQueryBuilder('invoice')
-            .where('invoice.invoiceNumber LIKE :pattern', { pattern: `${year}%` })
+            .where('invoice.invoiceNumber LIKE :pattern', { pattern: `${prefix}${year}%` })
             .orderBy('invoice.invoiceNumber', 'DESC')
             .getOne();
 
         if (lastInvoice) {
-            const lastNumber = parseInt(lastInvoice.invoiceNumber.substring(4), 10);
-            return `${year}${String(lastNumber + 1).padStart(9, '0')}`;
+            // Extract number after RST2026 (7 chars)
+            const lastNumber = parseInt(lastInvoice.invoiceNumber.substring(7), 10);
+            return `${prefix}${year}${String(lastNumber + 1).padStart(9, '0')}`;
         }
 
-        return `${year}000000001`;
+        return `${prefix}${year}000000001`;
     }
 
     /**
@@ -394,10 +421,12 @@ export class InvoicesService {
         }
 
         // Rebuild payload with current config
-        const newPayload = this.buildUyumsoftPayload(order, {
+        const voucherNo = invoice.invoiceNumber.replace('RST', '');
+        const newPayload = await this.buildUyumsoftPayload(order, {
             invoiceNumber: invoice.invoiceNumber,
+            voucherNo,
             invoiceSerial: invoice.invoiceSerial || 'EMA',
-            edocNo: invoice.edocNo || `EMA${invoice.invoiceNumber}`,
+            edocNo: invoice.edocNo || `EMA${voucherNo}`,
             branchCode: invoice.branchCode,
             docTraCode: invoice.docTraCode,
             costCenterCode: invoice.costCenterCode,

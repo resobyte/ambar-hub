@@ -99,6 +99,9 @@ export class Order extends BaseEntity {
     @Column({ name: 'cargo_tracking_link', nullable: true })
     cargoTrackingLink: string;
 
+    @Column({ name: 'cargo_label_zpl', type: 'text', nullable: true })
+    cargoLabelZpl: string;
+
     @Column({ name: 'cargo_sender_number', nullable: true })
     cargoSenderNumber: string;
 

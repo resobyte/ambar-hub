@@ -186,6 +186,7 @@ export function IntegrationsTable() {
       isActive: true,
     };
     setFormData(newData);
+    formDataRef.current = newData;
     setInitialFormData(newData);
     setSelectedStoreIds([]);
     setInitialSelectedStoreIds([]);
@@ -211,6 +212,7 @@ export function IntegrationsTable() {
       isActive: integration.isActive,
     };
     setFormData(newData);
+    formDataRef.current = newData;
     setInitialFormData(newData);
 
     const existingConfigs = integrationStores.filter(is => is && is.integrationId === integration.id);

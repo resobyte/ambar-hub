@@ -180,6 +180,8 @@ export class PurchasesService {
             po.status = PurchaseOrderStatus.COMPLETED;
         } else if (anyReceived) {
             po.status = PurchaseOrderStatus.PARTIAL;
+        } else {
+            po.status = PurchaseOrderStatus.ORDERED;
         }
 
         await this.poRepository.save(po);

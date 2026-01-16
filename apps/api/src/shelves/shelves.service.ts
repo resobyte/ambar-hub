@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, TreeRepository, IsNull } from 'typeorm';
 import { Shelf } from './entities/shelf.entity';
@@ -6,6 +6,8 @@ import { ShelfStock } from './entities/shelf-stock.entity';
 import { CreateShelfDto } from './dto/create-shelf.dto';
 import { UpdateShelfDto } from './dto/update-shelf.dto';
 import { ShelfType, SHELF_TYPE_RULES } from './enums/shelf-type.enum';
+import { ProductStore } from '../product-stores/entities/product-store.entity';
+import { Warehouse } from '../warehouses/entities/warehouse.entity';
 
 @Injectable()
 export class ShelvesService {
@@ -14,6 +16,8 @@ export class ShelvesService {
         private readonly shelfRepository: TreeRepository<Shelf>,
         @InjectRepository(ShelfStock)
         private readonly shelfStockRepository: Repository<ShelfStock>,
+        @InjectRepository(ProductStore)
+        private readonly productStoreRepository: Repository<ProductStore>,
     ) { }
 
     async create(dto: CreateShelfDto): Promise<Shelf> {
@@ -56,6 +60,13 @@ export class ShelvesService {
             parent: parent,
             parentId: parent ? dto.parentId : null,
         };
+
+        if (dto.globalSlot) {
+            const existing = await this.shelfRepository.findOne({ where: { globalSlot: dto.globalSlot } });
+            if (existing) {
+                throw new BadRequestException(`Global slot ${dto.globalSlot} is already in use by shelf: ${existing.name}`);
+            }
+        }
 
         const shelf = this.shelfRepository.create(shelfData as Shelf);
 
@@ -193,7 +204,9 @@ export class ShelvesService {
             });
         }
 
-        return this.shelfStockRepository.save(stock);
+        const savedStock = await this.shelfStockRepository.save(stock);
+        await this.syncProductStock(productId, shelfId);
+        return savedStock;
     }
 
     async removeStock(shelfId: string, productId: string, quantity: number): Promise<ShelfStock | null> {
@@ -207,10 +220,85 @@ export class ShelvesService {
 
         if (stock.quantity === 0 && stock.reservedQuantity === 0) {
             await this.shelfStockRepository.remove(stock);
+            await this.syncProductStock(productId, shelfId);
             return null;
         }
 
-        return this.shelfStockRepository.save(stock);
+        const savedStock = await this.shelfStockRepository.save(stock);
+        await this.syncProductStock(productId, shelfId);
+        return savedStock;
+    }
+
+    private async syncProductStock(productId: string, shelfId: string) {
+        // 1. Get warehouse for context
+        const shelf = await this.shelfRepository.findOne({ where: { id: shelfId } });
+        if (!shelf || !shelf.warehouseId) return;
+        const warehouseId = shelf.warehouseId;
+
+        // 2. Aggregate stocks by type for this product in this warehouse
+        const stocks = await this.shelfStockRepository.createQueryBuilder('ss')
+            .innerJoinAndSelect('ss.shelf', 'shelf')
+            .where('ss.productId = :productId', { productId })
+            .andWhere('shelf.warehouseId = :warehouseId', { warehouseId })
+            .getMany();
+
+        // 3. Calculate totals based on rules
+        let sellable = 0;
+        let reservable = 0;
+        let total = 0;
+
+        for (const stock of stocks) {
+            total += stock.quantity;
+            if (stock.shelf.isSellable) {
+                sellable += stock.quantity;
+            }
+            if (stock.shelf.isReservable) {
+                reservable += stock.quantity;
+            }
+        }
+
+        // 4. Update ProductStores linked to this warehouse
+        // Get warehouse for context to find associated stores
+        const warehouse = await this.shelfRepository.manager.findOne(Warehouse, {
+            where: { id: warehouseId },
+            relations: ['stores'] // Assuming relation exists
+        });
+
+        console.log(`Syncing stock for Product ${productId} in Warehouse ${warehouseId}`);
+        if (!warehouse) {
+            console.error('Warehouse not found during stock sync');
+            return;
+        }
+        console.log(`Found Warehouse: ${warehouse.name}, Stores count: ${warehouse.stores?.length}`);
+
+        if (warehouse && warehouse.stores) {
+            for (const store of warehouse.stores) {
+                let productStore = await this.productStoreRepository.findOne({
+                    where: { productId, storeId: store.id }
+                });
+
+                if (productStore) {
+                    productStore.stockQuantity = total;
+                    // Formula: Sellable = Physical Sellable - Committed
+                    // Ensure we don't go below 0 for display, though conceptually it means backorder
+                    productStore.sellableQuantity = Math.max(0, sellable - (productStore.committedQuantity || 0));
+                    productStore.reservableQuantity = reservable;
+                    await this.productStoreRepository.save(productStore);
+                } else {
+                    // If productStore doesn't exist, create it (or handle as per business logic)
+                    // For now, let's assume it should exist or be created with default values
+                    productStore = this.productStoreRepository.create({
+                        productId,
+                        storeId: store.id,
+                        stockQuantity: total,
+                        sellableQuantity: Math.max(0, sellable), // No committed yet if new
+                        reservableQuantity: reservable,
+                        committedQuantity: 0, // Default to 0
+                    });
+                    await this.productStoreRepository.save(productStore);
+                }
+            }
+        }
     }
 
     async transferStock(

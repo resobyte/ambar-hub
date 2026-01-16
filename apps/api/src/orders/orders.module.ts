@@ -9,10 +9,11 @@ import { CustomersModule } from '../customers/customers.module';
 import { IntegrationsModule } from '../integrations/integrations.module';
 import { Product } from '../products/entities/product.entity';
 import { ProductSetItem } from '../products/entities/product-set-item.entity';
+import { ProductStore } from '../product-stores/entities/product-store.entity';
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([Order, OrderItem, FaultyOrder, Product, ProductSetItem]),
+        TypeOrmModule.forFeature([Order, OrderItem, FaultyOrder, Product, ProductSetItem, ProductStore]),
         CustomersModule,
         IntegrationsModule,
     ],

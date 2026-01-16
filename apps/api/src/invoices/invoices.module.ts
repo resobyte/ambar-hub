@@ -5,10 +5,11 @@ import { InvoicesController } from './invoices.controller';
 import { InvoicesService } from './invoices.service';
 import { Invoice } from './entities/invoice.entity';
 import { Order } from '../orders/entities/order.entity';
+import { Product } from '../products/entities/product.entity';
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([Invoice, Order]),
+        TypeOrmModule.forFeature([Invoice, Order, Product]),
         ConfigModule,
     ],
     controllers: [InvoicesController],
@@ -16,3 +17,4 @@ import { Order } from '../orders/entities/order.entity';
     exports: [InvoicesService],
 })
 export class InvoicesModule { }
+

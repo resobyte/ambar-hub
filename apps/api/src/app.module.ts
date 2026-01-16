@@ -18,6 +18,9 @@ import { InvoicesModule } from './invoices/invoices.module';
 import { ShelvesModule } from './shelves/shelves.module';
 import { SuppliersModule } from './suppliers/suppliers.module';
 import { PurchasesModule } from './purchases/purchases.module';
+import { RoutesModule } from './routes/routes.module';
+import { PackingModule } from './packing/packing.module';
+import { PickingModule } from './picking/picking.module';
 
 @Module({
   imports: [
@@ -57,6 +60,9 @@ import { PurchasesModule } from './purchases/purchases.module';
     ShelvesModule,
     SuppliersModule,
     PurchasesModule,
+    RoutesModule,
+    PackingModule,
+    PickingModule,
   ],
 })
 export class AppModule { }

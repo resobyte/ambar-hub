@@ -20,6 +20,8 @@ export interface StoreConfigData {
     storeSku: string;
     storeSalePrice: number;
     stockQuantity: number;
+    sellableQuantity?: number;
+    reservableQuantity?: number;
     isActive: boolean;
 }
 
@@ -214,14 +216,27 @@ export function ProductStoreList({
                                                 step="0.01"
                                                 placeholder="0.00"
                                             />
-                                            <Input
-                                                label="Stok Miktarı"
-                                                value={config.stockQuantity}
-                                                onChange={(e) => onStoreConfigChange(store.id, 'stockQuantity', parseInt(e.target.value) || 0)}
-                                                type="number"
-                                                min="0"
-                                                placeholder="0"
-                                            />
+
+                                            <div className="flex flex-col gap-1">
+                                                <Input
+                                                    label="Stok Miktarı"
+                                                    value={config.stockQuantity}
+                                                    onChange={(e) => onStoreConfigChange(store.id, 'stockQuantity', parseInt(e.target.value) || 0)}
+                                                    type="number"
+                                                    min="0"
+                                                    placeholder="0"
+                                                />
+                                                {(config.sellableQuantity !== undefined || config.reservableQuantity !== undefined) && (
+                                                    <div className="flex gap-2 text-xs mt-1">
+                                                        <span className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-0.5 rounded" title="Satılabilir Stok">
+                                                            Sat: {config.sellableQuantity || 0}
+                                                        </span>
+                                                        <span className="bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 px-2 py-0.5 rounded" title="Rezerve Edilebilir Stok">
+                                                            Rez: {config.reservableQuantity || 0}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
 

@@ -1,0 +1,28 @@
+# Ambar-Hub Cursor Rules
+
+## Overview
+E-commerce WMS monorepo: NestJS + Next.js 14
+
+## Stack
+- pnpm + Turborepo
+- Backend: NestJS 10, TypeORM, MySQL (port 3001)
+- Frontend: Next.js 14, React 18, TailwindCSS
+
+## Structure
+```
+apps/api/    → NestJS backend
+apps/web/    → Next.js frontend  
+packages/    → Shared types
+```
+
+## Backend
+- Entities extend BaseEntity, snake_case columns
+- @InjectRepository for services
+- Return { success: true, data }
+
+## Frontend
+- page.tsx (server) → PageClient.tsx (client)
+- AppLayout needs user={} currentPath=""
+- API functions in src/lib/api.ts
+
+## UI: Turkish labels, English code

@@ -16,40 +16,51 @@ import { ProductIntegration } from '../../product-integrations/entities/product-
 @Unique(['productId', 'storeId'])
 export class ProductStore extends BaseEntity {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ name: 'product_id', type: 'uuid' })
-  productId: string;
+  productId!: string;
 
   @Column({ name: 'store_id', type: 'uuid' })
-  storeId: string;
+  storeId!: string;
 
   @Column({ name: 'store_sku', type: 'varchar', length: 255, nullable: true })
-  storeSku: string;
+  storeSku!: string;
 
   @Column({ type: 'decimal', precision: 10, scale: 2, name: 'store_sale_price', nullable: true })
-  storeSalePrice: number;
+  storeSalePrice!: number;
 
   @Column({ type: 'int', name: 'stock_quantity', default: 0 })
-  stockQuantity: number;
+  stockQuantity!: number;
+
+  // Stock available for sale (e.g. in Normal shelves)
+  @Column({ type: 'int', name: 'sellable_quantity', default: 0 })
+  sellableQuantity!: number;
+
+  // Stock available for reservation (e.g. in Receiving shelves)
+  @Column({ type: 'int', name: 'reservable_quantity', default: 0 })
+  reservableQuantity!: number;
+
+  @Column({ type: 'int', name: 'committed_quantity', default: 0 })
+  committedQuantity!: number;
 
   @Column({ name: 'is_active', default: true })
-  isActive: boolean;
+  isActive!: boolean;
 
   @ManyToOne(() => Product, (product) => product.productStores, {
     onDelete: 'CASCADE',
   })
   @JoinColumn({ name: 'product_id' })
-  product: Product;
+  product!: Product;
 
   @ManyToOne(() => Store, (store) => store.productStores, {
     onDelete: 'CASCADE',
   })
   @JoinColumn({ name: 'store_id' })
-  store: Store;
+  store!: Store;
 
   @OneToMany(() => ProductIntegration, (pi) => pi.productStore, {
     onDelete: 'CASCADE',
   })
-  productIntegrations: ProductIntegration[];
+  productIntegrations!: ProductIntegration[];
 }

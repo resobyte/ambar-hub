@@ -1,0 +1,64 @@
+# Ambar-Hub Project Rules
+
+## Overview
+E-commerce WMS monorepo: NestJS backend + Next.js 14 frontend.
+
+## Tech Stack
+- pnpm + Turborepo monorepo
+- Backend: NestJS 10, TypeORM, MySQL
+- Frontend: Next.js 14, React 18, TailwindCSS
+- Shared: @repo/types, @repo/auth-config
+
+## Structure
+- `apps/api/` - NestJS backend (port 3001)
+- `apps/web/` - Next.js frontend
+- `packages/` - Shared packages
+- `integration-mist/` - Reference only, DO NOT MODIFY
+
+## Backend Patterns
+
+### Entities (TypeORM)
+- Extend BaseEntity from common/entities
+- Use snake_case column names: `@Column({ name: 'col_name' })`
+- UUID primary keys, soft delete with deletedAt
+
+### Services
+- @InjectRepository for repositories
+- Logger for each service
+- Return DTOs not raw entities
+
+### Controllers
+- ParseUUIDPipe for ID params
+- Return { success: true, data: ... }
+- Paginated: { data: [], meta: { page, limit, total, totalPages } }
+
+## Frontend Patterns
+
+### Page Structure
+```tsx
+// page.tsx - Server Component
+const user = await getServerUser();
+<AppLayout user={user} currentPath="/path">
+  <Suspense><PageClient /></Suspense>
+</AppLayout>
+
+// PageClient.tsx - Client Component
+'use client';
+export function PageClient() { ... }
+```
+
+### API
+- All functions in src/lib/api.ts
+- fetch with credentials: 'include'
+- Base URL from NEXT_PUBLIC_API_URL
+
+## UI Language
+- Turkish labels (Siparişler, Kaydet, İptal)
+- English code comments
+
+## Commands
+```
+pnpm dev      - Start all
+pnpm dev:api  - Backend only
+pnpm dev:web  - Frontend only
+```

@@ -11,6 +11,11 @@ export class OrdersController {
         return { success: true, message: 'Sync started' };
     }
 
+    @Post(':id/label')
+    async getLabel(@Param('id') id: string) {
+        return this.ordersService.fetchCargoLabel(id);
+    }
+
     @Get()
     async findAll(
         @Query('page') page = 1,

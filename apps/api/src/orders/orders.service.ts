@@ -11,6 +11,8 @@ import { IntegrationType } from '../integrations/entities/integration.entity';
 import { Product } from '../products/entities/product.entity';
 import { ProductSetItem } from '../products/entities/product-set-item.entity';
 import { ProductType } from '../products/enums/product-type.enum';
+import { ProductStore } from '../product-stores/entities/product-store.entity';
+import { ArasKargoService } from '../integrations/aras/aras-kargo.service';
 import axios from 'axios';
 
 @Injectable()
@@ -28,8 +30,11 @@ export class OrdersService {
         private readonly productRepository: Repository<Product>,
         @InjectRepository(ProductSetItem)
         private readonly productSetItemRepository: Repository<ProductSetItem>,
+        @InjectRepository(ProductStore)
+        private readonly productStoreRepository: Repository<ProductStore>,
         private readonly customersService: CustomersService,
         private readonly integrationsService: IntegrationsService,
+        private readonly arasKargoService: ArasKargoService,
     ) { }
 
     private mapStatus(status: string): OrderStatus {
@@ -219,9 +224,10 @@ export class OrdersService {
                 startDate: startDate.toString(),
                 endDate: endDate.toString(),
                 page: page.toString(),
-                size: '50',
+                size: '200',
                 orderByField: 'PackageLastModifiedDate',
-                orderByDirection: 'DESC'
+                orderByDirection: 'DESC',
+                status: "Created"
             });
 
             try {
@@ -452,9 +458,20 @@ export class OrdersService {
                 order.cargoTrackingNumber = pkg.cargoTrackingNumber?.toString() || order.cargoTrackingNumber;
                 order.cargoTrackingLink = pkg.cargoTrackingLink || order.cargoTrackingLink;
                 order.packageHistories = pkg.packageHistories || order.packageHistories;
+                order.packageHistories = pkg.packageHistories || order.packageHistories;
                 await this.orderRepository.save(order);
+
+                // Handle Status Change for Commitment
+                // If Cancelled or Shipped, release commitment
+                if ((status === OrderStatus.CANCELLED || status === OrderStatus.SHIPPED || status === OrderStatus.RETURNED) &&
+                    order.status !== OrderStatus.CANCELLED && order.status !== OrderStatus.SHIPPED && order.status !== OrderStatus.RETURNED) {
+                    await this.updateStockCommitment(order, 'release');
+                }
             }
         } else {
+            // Determine initial status based on stock availability
+            const initialStatus = await this.determineInitialStatus(status, lines, storeId);
+
             const newOrder = this.orderRepository.create({
                 // Identifiers
                 packageId,
@@ -464,7 +481,7 @@ export class OrdersService {
                 customer,
 
                 // Status
-                status,
+                status: initialStatus,
                 integrationStatus: pkg.status || pkg.shipmentPackageStatus,
 
                 // Pricing
@@ -520,6 +537,12 @@ export class OrdersService {
                 // Package History
                 packageHistories: pkg.packageHistories,
             } as any);
+
+            // Reserve stock for new non-cancelled/shipped orders
+            if (initialStatus !== OrderStatus.CANCELLED && initialStatus !== OrderStatus.SHIPPED && initialStatus !== OrderStatus.RETURNED && initialStatus !== OrderStatus.UNSUPPLIED) {
+                // We need to save items first to calculate commitment
+                // So we do it after saving items below
+            }
 
             const savedOrder = await this.orderRepository.save(newOrder) as unknown as Order;
 
@@ -595,6 +618,146 @@ export class OrdersService {
             if (items.length > 0) {
                 await this.orderItemRepository.save(items);
             }
+
+            // Reserve Stock for new active orders (only if we have stock - status is PICKING)
+            if (initialStatus !== OrderStatus.CANCELLED && initialStatus !== OrderStatus.SHIPPED && initialStatus !== OrderStatus.RETURNED && initialStatus !== OrderStatus.UNSUPPLIED) {
+                await this.updateStockCommitment(savedOrder, 'reserve');
+            }
+        }
+    }
+
+
+    /**
+     * Update committed stock for an order
+     * @param order The order to process
+     * @param action 'reserve' (increase commitment) or 'release' (decrease commitment)
+     */
+    private async updateStockCommitment(order: Order, action: 'reserve' | 'release') {
+        const factor = action === 'reserve' ? 1 : -1;
+
+        // Find items associated with this order
+        const items = await this.orderItemRepository.find({ where: { orderId: order.id } });
+
+        for (const item of items) {
+            // Find product store entry (assuming a default store or the order's store)
+            // If order doesn't have storeId, we might skip or use a default.
+            // Usually orders come with storeId.
+            const storeId = order.storeId;
+            if (!storeId) continue; // Cannot track stock without store context
+
+            // Resolve actual product ID (handle set components or regular items)
+            // OrderItem often has barcode or SKU. We need to map to Product entity to get ID.
+            // Optimization: OrderItem should ideally have productId, but if not we look up via barcode/sku
+
+            let productId = null;
+            // Check via barcode
+            if (item.barcode) {
+                const product = await this.productRepository.findOne({ where: { barcode: item.barcode } });
+                if (product) productId = product.id;
+            }
+
+            if (!productId && item.sku) {
+                const product = await this.productRepository.findOne({ where: { sku: item.sku } });
+                if (product) productId = product.id;
+            }
+
+            if (!productId) continue;
+
+            const productStore = await this.productStoreRepository.findOne({
+                where: { productId, storeId }
+            });
+
+            if (productStore) {
+                const change = item.quantity * factor;
+                productStore.committedQuantity = Math.max(0, (productStore.committedQuantity || 0) + change);
+                // Recalculate sellable
+                // Sellable = Total Sellable Physical - Committed
+                // Note: We don't have the "Total Sellable Physical" here easily without re-querying shelves.
+                // BUT, we can assume: committedQuantity affects sellable directly.
+                // Actually, syncProductStock calculates: sellable = physical_sellable - committed.
+                // So we should re-trigger syncProductStock logic? 
+                // Or just update sellable here assuming physical didn't change:
+                // New Sellable = Old Sellable - Change
+
+                // Simpler: Just update committed and let the formula work if we were to resync.
+                // But for immediate UI update, we update sellable too.
+                productStore.sellableQuantity = Math.max(0, productStore.sellableQuantity - change);
+
+                await this.productStoreRepository.save(productStore);
+            }
+        }
+    }
+
+    /**
+     * Check stock availability for order items
+     * Returns whether all items have sufficient stock and what type
+     */
+    private async checkStockAvailability(lines: any[], storeId: string): Promise<{
+        allItemsHaveStock: boolean;
+        insufficientProducts: string[];
+    }> {
+        const insufficientProducts: string[] = [];
+
+        for (const line of lines) {
+            const barcode = line.barcode;
+            const requiredQty = line.quantity || 1;
+
+            if (!barcode) continue;
+
+            // Find product by barcode
+            const product = await this.productRepository.findOne({ where: { barcode } });
+            if (!product) {
+                insufficientProducts.push(barcode);
+                continue;
+            }
+
+            // Check product store for stock quantities
+            const productStore = await this.productStoreRepository.findOne({
+                where: { productId: product.id, storeId }
+            });
+
+            if (!productStore) {
+                insufficientProducts.push(barcode);
+                continue;
+            }
+
+            // Check if sellable + reservable stock is enough
+            const availableStock = (productStore.sellableQuantity || 0) + (productStore.reservableQuantity || 0);
+
+            if (availableStock < requiredQty) {
+                insufficientProducts.push(barcode);
+            }
+        }
+
+        return {
+            allItemsHaveStock: insufficientProducts.length === 0,
+            insufficientProducts
+        };
+    }
+
+    /**
+     * Determine initial order status based on stock availability
+     * If stock is available -> PICKING (ready to pick)
+     * If no stock -> UNSUPPLIED (waiting for stock)
+     */
+    private async determineInitialStatus(
+        marketplaceStatus: OrderStatus,
+        lines: any[],
+        storeId: string
+    ): Promise<OrderStatus> {
+        // Only check stock for CREATED orders (new orders from marketplace)
+        if (marketplaceStatus !== OrderStatus.CREATED) {
+            return marketplaceStatus;
+        }
+
+        const { allItemsHaveStock, insufficientProducts } = await this.checkStockAvailability(lines, storeId);
+
+        if (allItemsHaveStock) {
+            this.logger.log(`Order has sufficient stock, setting status to PICKING`);
+            return OrderStatus.PICKING;
+        } else {
+            this.logger.log(`Order missing stock for: ${insufficientProducts.join(', ')}, status: UNSUPPLIED`);
+            return OrderStatus.UNSUPPLIED;
         }
     }
 
@@ -835,6 +998,28 @@ export class OrdersService {
 
     async deleteFaultyOrder(id: string): Promise<void> {
         await this.faultyOrderRepository.delete(id);
+    }
+
+    /**
+     * Fetch and save Aras Kargo ZPL Label for an order
+     */
+    async fetchCargoLabel(orderId: string): Promise<string | null> {
+        const order = await this.orderRepository.findOne({ where: { id: orderId } });
+        if (!order) throw new Error(`Order #${orderId} not found`);
+
+        if (!order.cargoTrackingNumber) {
+            throw new Error(`Order #${order.orderNumber} does not have a cargo tracking number`);
+        }
+
+        const zpl = await this.arasKargoService.getBarcode(order.cargoTrackingNumber);
+
+        if (zpl) {
+            order.cargoLabelZpl = zpl;
+            await this.orderRepository.save(order);
+            return zpl;
+        }
+
+        return null;
     }
 }
 

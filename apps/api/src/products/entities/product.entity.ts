@@ -3,10 +3,14 @@ import {
   Column,
   PrimaryGeneratedColumn,
   OneToMany,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { BaseEntity } from '../../common/entities/base.entity';
 import { ProductStore } from '../../product-stores/entities/product-store.entity';
 import { ProductType } from '../enums/product-type.enum';
+import { Brand } from './brand.entity';
+import { Category } from './category.entity';
 
 @Entity('products')
 export class Product extends BaseEntity {
@@ -16,11 +20,19 @@ export class Product extends BaseEntity {
   @Column({ type: 'varchar', length: 255 })
   name: string;
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  brand: string;
+  @Column({ name: 'brand_id', nullable: true })
+  brandId: string | null;
 
-  @Column({ type: 'varchar', length: 255 })
-  category: string;
+  @ManyToOne(() => Brand, { nullable: true, eager: true })
+  @JoinColumn({ name: 'brand_id' })
+  brand: Brand;
+
+  @Column({ name: 'category_id' })
+  categoryId: string;
+
+  @ManyToOne(() => Category, { eager: true })
+  @JoinColumn({ name: 'category_id' })
+  category: Category;
 
   @Column({ type: 'varchar', length: 255, nullable: true, unique: true })
   barcode: string;

@@ -12,10 +12,18 @@ export class ProductResponseDto {
   lastSalePrice: number | null;
   isActive: boolean;
   storeCount: number;
+  totalStockQuantity: number;
+  totalSellableQuantity: number;
+  totalReservableQuantity: number;
   createdAt: string;
   updatedAt: string;
 
   static fromEntity(entity: any, storeCount: number = 0): ProductResponseDto {
+    const productStores = entity.productStores || [];
+    const totalStockQuantity = productStores.reduce((sum: number, ps: any) => sum + (Number(ps.stockQuantity) || 0), 0);
+    const totalSellableQuantity = productStores.reduce((sum: number, ps: any) => sum + (Number(ps.sellableQuantity) || 0), 0);
+    const totalReservableQuantity = productStores.reduce((sum: number, ps: any) => sum + (Number(ps.reservableQuantity) || 0), 0);
+
     return {
       id: entity.id,
       name: entity.name,
@@ -29,7 +37,10 @@ export class ProductResponseDto {
       salePrice: Number(entity.salePrice) || 0,
       lastSalePrice: entity.lastSalePrice ? Number(entity.lastSalePrice) : null,
       isActive: entity.isActive,
-      storeCount,
+      storeCount: storeCount || productStores.length,
+      totalStockQuantity,
+      totalSellableQuantity,
+      totalReservableQuantity,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

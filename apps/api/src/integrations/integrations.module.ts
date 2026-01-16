@@ -5,10 +5,12 @@ import { IntegrationsController } from './integrations.controller';
 import { Integration } from './entities/integration.entity';
 import { IntegrationStore } from '../integration-stores/entities/integration-store.entity';
 
+import { ArasKargoService } from './aras/aras-kargo.service';
+
 @Module({
   imports: [TypeOrmModule.forFeature([Integration, IntegrationStore])],
   controllers: [IntegrationsController],
-  providers: [IntegrationsService],
-  exports: [IntegrationsService],
+  providers: [IntegrationsService, ArasKargoService],
+  exports: [IntegrationsService, ArasKargoService],
 })
-export class IntegrationsModule {}
+export class IntegrationsModule { }
