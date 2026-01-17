@@ -31,6 +31,15 @@ export class Customer extends BaseEntity {
     @Column({ name: 'trendyol_customer_id', nullable: true })
     trendyolCustomerId: string;
 
+    @Column({ nullable: true })
+    company: string;
+
+    @Column({ name: 'tax_office', nullable: true })
+    taxOffice: string;
+
+    @Column({ name: 'tax_number', nullable: true })
+    taxNumber: string;
+
     @OneToMany(() => Order, (order) => order.customer)
     orders: Order[];
 }

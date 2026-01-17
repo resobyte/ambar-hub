@@ -15,6 +15,8 @@ import { ProductStore } from '../product-stores/entities/product-store.entity';
 import { ArasKargoService } from '../integrations/aras/aras-kargo.service';
 import axios from 'axios';
 
+import { InvoicesService } from '../invoices/invoices.service';
+
 @Injectable()
 export class OrdersService {
     private readonly logger = new Logger(OrdersService.name);
@@ -35,6 +37,7 @@ export class OrdersService {
         private readonly customersService: CustomersService,
         private readonly integrationsService: IntegrationsService,
         private readonly arasKargoService: ArasKargoService,
+        private readonly invoicesService: InvoicesService,
     ) { }
 
     private mapStatus(status: string): OrderStatus {
@@ -213,21 +216,16 @@ export class OrdersService {
     private async syncTrendyolOrders(sellerId: string, apiKey: string, apiSecret: string, integrationId: string, storeId: string) {
         const url = `https://apigw.trendyol.com/integration/order/sellers/${sellerId}/orders`;
         const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
-        const startDate = Date.now() - 14 * 24 * 60 * 60 * 1000;
-        const endDate = Date.now();
 
         let page = 0;
         let totalPages = 1;
 
         do {
             const params = new URLSearchParams({
-                startDate: startDate.toString(),
-                endDate: endDate.toString(),
                 page: page.toString(),
                 size: '200',
                 orderByField: 'PackageLastModifiedDate',
-                orderByDirection: 'DESC',
-                status: "Created"
+                orderByDirection: 'DESC'
             });
 
             try {
@@ -362,6 +360,30 @@ export class OrdersService {
 
         const totalPrice = hbOrder.TotalPrice?.Amount || hbOrder.totalPrice?.amount || hbOrder.TotalPrice || hbOrder.totalPrice || 0;
 
+        // LOG: Verification Log
+        // Logic to extract best identifier
+        // Hepsiburada provides both turkishIdentityNumber (TCKN) and taxNumber (VKN)
+        // If one is dummy (11111111111) and the other is valid, prefer the valid one.
+        const hbId = items?.[0]?.invoice?.turkishIdentityNumber;
+        const hbTax = items?.[0]?.invoice?.taxNumber;
+
+        let validId = null;
+        const isDummy = (id: string) => !id || id === '11111111111' || id === '2222222222' || id.length < 10;
+
+        if (!isDummy(hbId)) {
+            validId = hbId;
+        } else if (!isDummy(hbTax)) {
+            validId = hbTax;
+        } else {
+            validId = hbId || hbTax || null;
+        }
+
+        // LOG: Verification Log
+        const logId = validId;
+        const logOffice = items?.[0]?.invoice?.taxOffice;
+        const logCompany = items?.[0]?.invoice?.address?.name;
+        this.logger.debug(`Hepsiburada Mapping - Order ${hbOrder.OrderNumber || hbOrder.orderNumber}: Identity=${logId} (Raw ID=${hbId}, Tax=${hbTax}), TaxOffice=${logOffice}, Company=${logCompany}`);
+
         return {
             orderNumber: hbOrder.OrderNumber || hbOrder.orderNumber || hbOrder.Id || hbOrder.id,
             orderDate: hbOrder.OrderDate || hbOrder.orderDate || hbOrder.DeliveredDate || new Date().toISOString(),
@@ -375,7 +397,9 @@ export class OrdersService {
             customerLastName: customer?.Name?.split(' ').slice(1).join(' ') || customer?.name?.split(' ').slice(1).join(' ') || 'Customer',
             customerEmail: customer?.Email || customer?.email,
             customerId: customer?.Id || customer?.id,
-            tcIdentityNumber: null,
+            tcIdentityNumber: validId,
+            taxOffice: items?.[0]?.invoice?.taxOffice || null,
+            company: items?.[0]?.invoice?.address?.name || null,
             billingAddress: {
                 phone: billingAddress?.PhoneNumber || billingAddress?.phoneNumber || customer?.PhoneNumber || customer?.phoneNumber
             },
@@ -405,7 +429,10 @@ export class OrdersService {
     private async processOrderPackage(pkg: any, integrationId: string, storeId: string) {
         const packageId = pkg.packageId || pkg.shipmentPackageId?.toString() || pkg.orderNumber;
         const orderNumber = pkg.orderNumber;
+        const lines = pkg.lines || []; // Redeclared here as it's used later
 
+
+        /*
         // 0. Check if this is already in faulty orders and products now exist
         const existingFaulty = await this.faultyOrderRepository.findOne({ where: { packageId } });
 
@@ -424,6 +451,7 @@ export class OrdersService {
             await this.faultyOrderRepository.delete({ id: existingFaulty.id });
             this.logger.log(`Resolved faulty order ${packageId} - all products now exist`);
         }
+        */
 
         // 2. Create/Update Customer
         const customerData = {
@@ -434,8 +462,11 @@ export class OrdersService {
             city: pkg.shipmentAddress?.city,
             district: pkg.shipmentAddress?.district,
             address: pkg.shipmentAddress?.fullAddress,
-            tcIdentityNumber: pkg.identityNumber || pkg.tcIdentityNumber,
+            tcIdentityNumber: pkg.tcIdentityNumber || pkg.identityNumber || pkg.invoiceAddress?.taxNumber || pkg.invoiceAddress?.identityNumber || pkg.taxNumber,
             trendyolCustomerId: pkg.customerId?.toString(),
+            company: pkg.invoiceAddress?.company || null,
+            taxOffice: pkg.invoiceAddress?.taxOffice || null,
+            taxNumber: pkg.taxNumber || pkg.invoiceAddress?.taxNumber || null,
         };
 
         if (!customerData.email) {
@@ -472,10 +503,39 @@ export class OrdersService {
             // Determine initial status based on stock availability
             const initialStatus = await this.determineInitialStatus(status, lines, storeId);
 
+            // Check if user is E-Invoice User
+            // Check if user is E-Invoice User
+            // Prioritize Valid Tax Number over Dummy TCKN
+            const tckn = pkg.tcIdentityNumber || customer?.tcIdentityNumber;
+            const taxNo = pkg.taxNumber || pkg.invoiceAddress?.taxNumber || customer?.taxNumber;
+
+            let idToCheck = tckn;
+            const isDummy = (id: string) => !id || id === '11111111111' || id === '2222222222' || id.length < 10;
+
+            if (isDummy(tckn) && !isDummy(taxNo)) {
+                idToCheck = taxNo;
+            } else if (!isDummy(tckn)) {
+                idToCheck = tckn;
+            } else {
+                idToCheck = taxNo || tckn;
+            }
+
+            const cleanTaxId = idToCheck?.replace(/\D/g, '');
+            const isEInvoiceUser = cleanTaxId && cleanTaxId.length >= 10
+                ? await this.invoicesService.checkEInvoiceUser(cleanTaxId)
+                : false;
+
+            if (cleanTaxId) {
+                this.logger.log(`E-Invoice Check for Order ${orderNumber}: TCKN=${cleanTaxId}, IsEInvoice=${isEInvoiceUser}`);
+            } else {
+                this.logger.debug(`Skipping E-Invoice Check for Order ${orderNumber}: No Valid TCKN`);
+            }
+
             const newOrder = this.orderRepository.create({
                 // Identifiers
                 packageId,
                 orderNumber,
+                isEInvoiceUser,
                 integrationId,
                 storeId,
                 customer,
@@ -902,6 +962,28 @@ export class OrdersService {
         );
         const grossAmount = (ikasOrder.totalPrice || 0) + totalDiscount;
 
+        // Logic for Ikas ID selection
+        const ikasId = ikasOrder.billingAddress?.identityNumber;
+        const ikasTax = ikasOrder.billingAddress?.taxNumber;
+
+        // Inline dummy check
+        let validIkasId = null;
+        const isDummyIkas = (id: string) => !id || id === '11111111111' || id === '2222222222' || id.length < 10;
+
+        if (!isDummyIkas(ikasId)) {
+            validIkasId = ikasId;
+        } else if (!isDummyIkas(ikasTax)) {
+            validIkasId = ikasTax;
+        } else {
+            validIkasId = ikasId || ikasTax || null;
+        }
+
+        // LOG: Verification Log
+        const logIdIkas = validIkasId;
+        const logOfficeIkas = ikasOrder.billingAddress?.taxOffice;
+        const logCompanyIkas = ikasOrder.billingAddress?.company;
+        this.logger.debug(`Ikas Mapping - Order ${ikasOrder.orderNumber}: Identity=${logIdIkas} (Raw ID=${ikasId}, Tax=${ikasTax}), TaxOffice=${logOfficeIkas}, Company=${logCompanyIkas}`);
+
         return {
             orderNumber: ikasOrder.orderNumber,
             orderDate: ikasOrder.orderedAt,
@@ -915,7 +997,9 @@ export class OrdersService {
             customerLastName: customer?.lastName || 'Customer',
             customerEmail: customer?.email,
             customerId: customer?.id,
-            tcIdentityNumber: null,
+            tcIdentityNumber: validIkasId,
+            taxOffice: ikasOrder.billingAddress?.taxOffice || null,
+            company: ikasOrder.billingAddress?.company || null,
             billingAddress: {
                 phone: ikasOrder.billingAddress?.phone || customer?.phone
             },

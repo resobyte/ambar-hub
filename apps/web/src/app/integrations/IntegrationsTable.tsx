@@ -49,6 +49,46 @@ interface IntegrationStore {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+
+  // Şirket Konfigürasyonu
+  brandCode?: string;
+  companyCode?: string;
+  branchCode?: string;
+  coCode?: string;
+
+  // Fatura Ayarları
+  invoiceTransactionCode?: string;
+  hasMicroExport?: boolean;
+  eArchiveBulkCustomer?: boolean;
+  eArchiveCardCode?: string;
+  eArchiveHavaleCardCode?: string;
+  eArchiveAccountCode?: string;
+  eArchiveHavaleAccountCode?: string;
+  eArchiveSerialNo?: string;
+  eArchiveSequenceNo?: string;
+  eInvoiceBulkCustomer?: boolean;
+  eInvoiceCardCode?: string;
+  eInvoiceAccountCode?: string;
+  eInvoiceHavaleAccountCode?: string;
+  eInvoiceSerialNo?: string;
+  eInvoiceSequenceNo?: string;
+  bulkEArchiveSerialNo?: string;
+  bulkEArchiveSequenceNo?: string;
+  bulkEInvoiceSerialNo?: string;
+  bulkEInvoiceSequenceNo?: string;
+  refundExpenseVoucherEArchiveSerialNo?: string;
+  refundExpenseVoucherEArchiveSequenceNo?: string;
+  refundExpenseVoucherEInvoiceSerialNo?: string;
+  refundExpenseVoucherEInvoiceSequenceNo?: string;
+  microExportTransactionCode?: string;
+  microExportAccountCode?: string;
+  microExportAzAccountCode?: string;
+  microExportEArchiveSerialNo?: string;
+  microExportEArchiveSequenceNo?: string;
+  microExportBulkSerialNo?: string;
+  microExportBulkSequenceNo?: string;
+  microExportRefundSerialNo?: string;
+  microExportRefundSequenceNo?: string;
 }
 
 interface Store {
@@ -81,6 +121,56 @@ interface StoreConfigData {
   sendPrice: boolean;
   sendOrderStatus: boolean;
   isActive: boolean;
+
+  // Şirket Konfigürasyonu
+  brandCode?: string;
+  companyCode?: string;
+  branchCode?: string;
+  coCode?: string;
+
+  // Fatura Ayarları (Invoice Settings)
+  invoiceTransactionCode?: string;
+  hasMicroExport?: boolean;
+
+  // E-Arşiv Ayarları
+  eArchiveBulkCustomer?: boolean;
+  eArchiveCardCode?: string;
+  eArchiveHavaleCardCode?: string;
+  eArchiveAccountCode?: string;
+  eArchiveHavaleAccountCode?: string;
+  eArchiveSerialNo?: string;
+  eArchiveSequenceNo?: string;
+
+  // E-Fatura Ayarları
+  eInvoiceBulkCustomer?: boolean;
+  eInvoiceCardCode?: string;
+  eInvoiceAccountCode?: string;
+  eInvoiceHavaleAccountCode?: string;
+  eInvoiceSerialNo?: string;
+  eInvoiceSequenceNo?: string;
+
+  // Toplu Faturalama Ayarları
+  bulkEArchiveSerialNo?: string;
+  bulkEArchiveSequenceNo?: string;
+  bulkEInvoiceSerialNo?: string;
+  bulkEInvoiceSequenceNo?: string;
+
+  // İade Gider Pusulası Ayarları
+  refundExpenseVoucherEArchiveSerialNo?: string;
+  refundExpenseVoucherEArchiveSequenceNo?: string;
+  refundExpenseVoucherEInvoiceSerialNo?: string;
+  refundExpenseVoucherEInvoiceSequenceNo?: string;
+
+  // Mikro İhracat Ayarları
+  microExportTransactionCode?: string;
+  microExportAccountCode?: string;
+  microExportAzAccountCode?: string;
+  microExportEArchiveSerialNo?: string;
+  microExportEArchiveSequenceNo?: string;
+  microExportBulkSerialNo?: string;
+  microExportBulkSequenceNo?: string;
+  microExportRefundSerialNo?: string;
+  microExportRefundSequenceNo?: string;
 }
 
 const keyExtractor = (item: Integration) => item.id;
@@ -232,6 +322,44 @@ export function IntegrationsTable() {
         sendPrice: is.sendPrice,
         sendOrderStatus: is.sendOrderStatus,
         isActive: is.isActive,
+        // Fatura Ayarları
+        invoiceTransactionCode: is.invoiceTransactionCode,
+        hasMicroExport: is.hasMicroExport,
+        eArchiveBulkCustomer: is.eArchiveBulkCustomer,
+        eArchiveCardCode: is.eArchiveCardCode,
+        eArchiveHavaleCardCode: is.eArchiveHavaleCardCode,
+        eArchiveAccountCode: is.eArchiveAccountCode,
+        eArchiveHavaleAccountCode: is.eArchiveHavaleAccountCode,
+        eArchiveSerialNo: is.eArchiveSerialNo,
+        eArchiveSequenceNo: is.eArchiveSequenceNo,
+        eInvoiceBulkCustomer: is.eInvoiceBulkCustomer,
+        eInvoiceCardCode: is.eInvoiceCardCode,
+        eInvoiceAccountCode: is.eInvoiceAccountCode,
+        eInvoiceHavaleAccountCode: is.eInvoiceHavaleAccountCode,
+        eInvoiceSerialNo: is.eInvoiceSerialNo,
+        eInvoiceSequenceNo: is.eInvoiceSequenceNo,
+        bulkEArchiveSerialNo: is.bulkEArchiveSerialNo,
+        bulkEArchiveSequenceNo: is.bulkEArchiveSequenceNo,
+        bulkEInvoiceSerialNo: is.bulkEInvoiceSerialNo,
+        bulkEInvoiceSequenceNo: is.bulkEInvoiceSequenceNo,
+        refundExpenseVoucherEArchiveSerialNo: is.refundExpenseVoucherEArchiveSerialNo,
+        refundExpenseVoucherEArchiveSequenceNo: is.refundExpenseVoucherEArchiveSequenceNo,
+        refundExpenseVoucherEInvoiceSerialNo: is.refundExpenseVoucherEInvoiceSerialNo,
+        refundExpenseVoucherEInvoiceSequenceNo: is.refundExpenseVoucherEInvoiceSequenceNo,
+        microExportTransactionCode: is.microExportTransactionCode,
+        microExportAccountCode: is.microExportAccountCode,
+        microExportAzAccountCode: is.microExportAzAccountCode,
+        microExportEArchiveSerialNo: is.microExportEArchiveSerialNo,
+        microExportEArchiveSequenceNo: is.microExportEArchiveSequenceNo,
+        microExportBulkSerialNo: is.microExportBulkSerialNo,
+        microExportBulkSequenceNo: is.microExportBulkSequenceNo,
+        microExportRefundSerialNo: is.microExportRefundSerialNo,
+        microExportRefundSequenceNo: is.microExportRefundSequenceNo,
+        // Şirket Konfigürasyonu
+        brandCode: is.brandCode,
+        companyCode: is.companyCode,
+        branchCode: is.branchCode,
+        coCode: is.coCode,
       });
     });
     setStoreConfigs(configsMap);
@@ -281,6 +409,44 @@ export function IntegrationsTable() {
             sendPrice: config.sendPrice,
             sendOrderStatus: config.sendOrderStatus,
             isActive: config.isActive,
+            // Şirket Konfigürasyonu
+            brandCode: config.brandCode,
+            companyCode: config.companyCode,
+            branchCode: config.branchCode,
+            coCode: config.coCode,
+            // Fatura Ayarları
+            invoiceTransactionCode: config.invoiceTransactionCode,
+            hasMicroExport: config.hasMicroExport,
+            eArchiveBulkCustomer: config.eArchiveBulkCustomer,
+            eArchiveCardCode: config.eArchiveCardCode,
+            eArchiveHavaleCardCode: config.eArchiveHavaleCardCode,
+            eArchiveAccountCode: config.eArchiveAccountCode,
+            eArchiveHavaleAccountCode: config.eArchiveHavaleAccountCode,
+            eArchiveSerialNo: config.eArchiveSerialNo,
+            eArchiveSequenceNo: config.eArchiveSequenceNo,
+            eInvoiceBulkCustomer: config.eInvoiceBulkCustomer,
+            eInvoiceCardCode: config.eInvoiceCardCode,
+            eInvoiceAccountCode: config.eInvoiceAccountCode,
+            eInvoiceHavaleAccountCode: config.eInvoiceHavaleAccountCode,
+            eInvoiceSerialNo: config.eInvoiceSerialNo,
+            eInvoiceSequenceNo: config.eInvoiceSequenceNo,
+            bulkEArchiveSerialNo: config.bulkEArchiveSerialNo,
+            bulkEArchiveSequenceNo: config.bulkEArchiveSequenceNo,
+            bulkEInvoiceSerialNo: config.bulkEInvoiceSerialNo,
+            bulkEInvoiceSequenceNo: config.bulkEInvoiceSequenceNo,
+            refundExpenseVoucherEArchiveSerialNo: config.refundExpenseVoucherEArchiveSerialNo,
+            refundExpenseVoucherEArchiveSequenceNo: config.refundExpenseVoucherEArchiveSequenceNo,
+            refundExpenseVoucherEInvoiceSerialNo: config.refundExpenseVoucherEInvoiceSerialNo,
+            refundExpenseVoucherEInvoiceSequenceNo: config.refundExpenseVoucherEInvoiceSequenceNo,
+            microExportTransactionCode: config.microExportTransactionCode,
+            microExportAccountCode: config.microExportAccountCode,
+            microExportAzAccountCode: config.microExportAzAccountCode,
+            microExportEArchiveSerialNo: config.microExportEArchiveSerialNo,
+            microExportEArchiveSequenceNo: config.microExportEArchiveSequenceNo,
+            microExportBulkSerialNo: config.microExportBulkSerialNo,
+            microExportBulkSequenceNo: config.microExportBulkSequenceNo,
+            microExportRefundSerialNo: config.microExportRefundSerialNo,
+            microExportRefundSequenceNo: config.microExportRefundSequenceNo,
           });
         } else {
           await createIntegrationStore({
@@ -295,6 +461,44 @@ export function IntegrationsTable() {
             sendPrice: config.sendPrice,
             sendOrderStatus: config.sendOrderStatus,
             isActive: config.isActive,
+            // Şirket Konfigürasyonu
+            brandCode: config.brandCode,
+            companyCode: config.companyCode,
+            branchCode: config.branchCode,
+            coCode: config.coCode,
+            // Fatura Ayarları
+            invoiceTransactionCode: config.invoiceTransactionCode,
+            hasMicroExport: config.hasMicroExport,
+            eArchiveBulkCustomer: config.eArchiveBulkCustomer,
+            eArchiveCardCode: config.eArchiveCardCode,
+            eArchiveHavaleCardCode: config.eArchiveHavaleCardCode,
+            eArchiveAccountCode: config.eArchiveAccountCode,
+            eArchiveHavaleAccountCode: config.eArchiveHavaleAccountCode,
+            eArchiveSerialNo: config.eArchiveSerialNo,
+            eArchiveSequenceNo: config.eArchiveSequenceNo,
+            eInvoiceBulkCustomer: config.eInvoiceBulkCustomer,
+            eInvoiceCardCode: config.eInvoiceCardCode,
+            eInvoiceAccountCode: config.eInvoiceAccountCode,
+            eInvoiceHavaleAccountCode: config.eInvoiceHavaleAccountCode,
+            eInvoiceSerialNo: config.eInvoiceSerialNo,
+            eInvoiceSequenceNo: config.eInvoiceSequenceNo,
+            bulkEArchiveSerialNo: config.bulkEArchiveSerialNo,
+            bulkEArchiveSequenceNo: config.bulkEArchiveSequenceNo,
+            bulkEInvoiceSerialNo: config.bulkEInvoiceSerialNo,
+            bulkEInvoiceSequenceNo: config.bulkEInvoiceSequenceNo,
+            refundExpenseVoucherEArchiveSerialNo: config.refundExpenseVoucherEArchiveSerialNo,
+            refundExpenseVoucherEArchiveSequenceNo: config.refundExpenseVoucherEArchiveSequenceNo,
+            refundExpenseVoucherEInvoiceSerialNo: config.refundExpenseVoucherEInvoiceSerialNo,
+            refundExpenseVoucherEInvoiceSequenceNo: config.refundExpenseVoucherEInvoiceSequenceNo,
+            microExportTransactionCode: config.microExportTransactionCode,
+            microExportAccountCode: config.microExportAccountCode,
+            microExportAzAccountCode: config.microExportAzAccountCode,
+            microExportEArchiveSerialNo: config.microExportEArchiveSerialNo,
+            microExportEArchiveSequenceNo: config.microExportEArchiveSequenceNo,
+            microExportBulkSerialNo: config.microExportBulkSerialNo,
+            microExportBulkSequenceNo: config.microExportBulkSequenceNo,
+            microExportRefundSerialNo: config.microExportRefundSerialNo,
+            microExportRefundSequenceNo: config.microExportRefundSequenceNo,
           });
         }
         existingStoreIds.delete(storeId);
@@ -434,7 +638,45 @@ export function IntegrationsTable() {
         current.sendStock !== initial.sendStock ||
         current.sendPrice !== initial.sendPrice ||
         current.sendOrderStatus !== initial.sendOrderStatus ||
-        current.isActive !== initial.isActive
+        current.isActive !== initial.isActive ||
+        current.brandCode !== initial.brandCode ||
+        current.companyCode !== initial.companyCode ||
+        current.branchCode !== initial.branchCode ||
+        current.coCode !== initial.coCode ||
+        current.invoiceTransactionCode !== initial.invoiceTransactionCode ||
+        current.hasMicroExport !== initial.hasMicroExport ||
+        current.hasMicroExport !== initial.hasMicroExport ||
+        current.eArchiveBulkCustomer !== initial.eArchiveBulkCustomer ||
+        current.eArchiveCardCode !== initial.eArchiveCardCode ||
+        current.eArchiveHavaleCardCode !== initial.eArchiveHavaleCardCode ||
+        current.eArchiveAccountCode !== initial.eArchiveAccountCode ||
+        current.eArchiveHavaleAccountCode !== initial.eArchiveHavaleAccountCode ||
+        current.eArchiveSerialNo !== initial.eArchiveSerialNo ||
+        current.eArchiveSequenceNo !== initial.eArchiveSequenceNo ||
+        current.eInvoiceBulkCustomer !== initial.eInvoiceBulkCustomer ||
+        current.eInvoiceCardCode !== initial.eInvoiceCardCode ||
+        current.eInvoiceAccountCode !== initial.eInvoiceAccountCode ||
+        current.eInvoiceAccountCode !== initial.eInvoiceAccountCode ||
+        current.eInvoiceHavaleAccountCode !== initial.eInvoiceHavaleAccountCode ||
+        current.eInvoiceSerialNo !== initial.eInvoiceSerialNo ||
+        current.eInvoiceSequenceNo !== initial.eInvoiceSequenceNo ||
+        current.bulkEArchiveSerialNo !== initial.bulkEArchiveSerialNo ||
+        current.bulkEArchiveSequenceNo !== initial.bulkEArchiveSequenceNo ||
+        current.bulkEInvoiceSerialNo !== initial.bulkEInvoiceSerialNo ||
+        current.bulkEInvoiceSequenceNo !== initial.bulkEInvoiceSequenceNo ||
+        current.refundExpenseVoucherEArchiveSerialNo !== initial.refundExpenseVoucherEArchiveSerialNo ||
+        current.refundExpenseVoucherEArchiveSequenceNo !== initial.refundExpenseVoucherEArchiveSequenceNo ||
+        current.refundExpenseVoucherEInvoiceSerialNo !== initial.refundExpenseVoucherEInvoiceSerialNo ||
+        current.refundExpenseVoucherEInvoiceSequenceNo !== initial.refundExpenseVoucherEInvoiceSequenceNo ||
+        current.microExportTransactionCode !== initial.microExportTransactionCode ||
+        current.microExportAccountCode !== initial.microExportAccountCode ||
+        current.microExportAzAccountCode !== initial.microExportAzAccountCode ||
+        current.microExportEArchiveSerialNo !== initial.microExportEArchiveSerialNo ||
+        current.microExportEArchiveSequenceNo !== initial.microExportEArchiveSequenceNo ||
+        current.microExportBulkSerialNo !== initial.microExportBulkSerialNo ||
+        current.microExportBulkSequenceNo !== initial.microExportBulkSequenceNo ||
+        current.microExportRefundSerialNo !== initial.microExportRefundSerialNo ||
+        current.microExportRefundSequenceNo !== initial.microExportRefundSequenceNo
       );
     });
 

@@ -37,16 +37,20 @@ export function InvoicesClient() {
                 { credentials: 'include' }
             );
             const data = await res.json();
-            setInvoices(data.data || []);
-            setTotal(data.total || 0);
+            // Ensure data is always an array
+            const invoicesList = Array.isArray(data.data) ? data.data : (Array.isArray(data) ? data : []);
+            setInvoices(invoicesList);
+            setTotal(data.total || invoicesList.length || 0);
         } catch (error) {
             console.error('Error fetching invoices:', error);
+            setInvoices([]); // Reset to empty array on error
         } finally {
             setLoading(false);
         }
     };
 
     const getStatusBadge = (status: string) => {
+        const normalizedStatus = status?.toLowerCase() || '';
         const styles: Record<string, string> = {
             'success': 'bg-green-100 text-green-800',
             'pending': 'bg-yellow-100 text-yellow-800',
@@ -58,8 +62,8 @@ export function InvoicesClient() {
             'error': 'Hata',
         };
         return (
-            <span className={`px-2 py-1 rounded-full text-xs font-medium ${styles[status] || 'bg-gray-100 text-gray-800'}`}>
-                {labels[status] || status}
+            <span className={`px-2 py-1 rounded-full text-xs font-medium ${styles[normalizedStatus] || 'bg-gray-100 text-gray-800'}`}>
+                {labels[normalizedStatus] || status}
             </span>
         );
     };
@@ -132,7 +136,7 @@ export function InvoicesClient() {
                                         </td>
                                         <td className="px-4 py-3 text-sm">
                                             {getStatusBadge(invoice.status)}
-                                            {invoice.status === 'error' && invoice.errorMessage && (
+                                            {invoice.status?.toLowerCase() === 'error' && invoice.errorMessage && (
                                                 <p className="text-xs text-red-500 mt-1 max-w-xs truncate" title={invoice.errorMessage}>
                                                     {invoice.errorMessage}
                                                 </p>

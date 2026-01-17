@@ -125,6 +125,46 @@ export interface IntegrationStore {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+
+  // Şirket Konfigürasyonu
+  brandCode?: string;
+  companyCode?: string;
+  branchCode?: string;
+  coCode?: string;
+
+  // Fatura Ayarları
+  invoiceTransactionCode?: string;
+  hasMicroExport?: boolean;
+  eArchiveBulkCustomer?: boolean;
+  eArchiveCardCode?: string;
+  eArchiveHavaleCardCode?: string;
+  eArchiveAccountCode?: string;
+  eArchiveHavaleAccountCode?: string;
+  eArchiveSerialNo?: string;
+  eArchiveSequenceNo?: string;
+  eInvoiceBulkCustomer?: boolean;
+  eInvoiceCardCode?: string;
+  eInvoiceAccountCode?: string;
+  eInvoiceHavaleAccountCode?: string;
+  eInvoiceSerialNo?: string;
+  eInvoiceSequenceNo?: string;
+  bulkEArchiveSerialNo?: string;
+  bulkEArchiveSequenceNo?: string;
+  bulkEInvoiceSerialNo?: string;
+  bulkEInvoiceSequenceNo?: string;
+  refundExpenseVoucherEArchiveSerialNo?: string;
+  refundExpenseVoucherEArchiveSequenceNo?: string;
+  refundExpenseVoucherEInvoiceSerialNo?: string;
+  refundExpenseVoucherEInvoiceSequenceNo?: string;
+  microExportTransactionCode?: string;
+  microExportAccountCode?: string;
+  microExportAzAccountCode?: string;
+  microExportEArchiveSerialNo?: string;
+  microExportEArchiveSequenceNo?: string;
+  microExportBulkSerialNo?: string;
+  microExportBulkSequenceNo?: string;
+  microExportRefundSerialNo?: string;
+  microExportRefundSequenceNo?: string;
 }
 
 export interface Product {
@@ -365,6 +405,44 @@ export async function createIntegrationStore(data: {
   sendPrice: boolean;
   sendOrderStatus: boolean;
   isActive?: boolean;
+  // Şirket Konfigürasyonu
+  brandCode?: string;
+  companyCode?: string;
+  branchCode?: string;
+  coCode?: string;
+  // Fatura Ayarları
+  invoiceTransactionCode?: string;
+  hasMicroExport?: boolean;
+  eArchiveBulkCustomer?: boolean;
+  eArchiveCardCode?: string;
+  eArchiveHavaleCardCode?: string;
+  eArchiveAccountCode?: string;
+  eArchiveHavaleAccountCode?: string;
+  eArchiveSerialNo?: string;
+  eArchiveSequenceNo?: string;
+  eInvoiceBulkCustomer?: boolean;
+  eInvoiceCardCode?: string;
+  eInvoiceAccountCode?: string;
+  eInvoiceHavaleAccountCode?: string;
+  eInvoiceSerialNo?: string;
+  eInvoiceSequenceNo?: string;
+  bulkEArchiveSerialNo?: string;
+  bulkEArchiveSequenceNo?: string;
+  bulkEInvoiceSerialNo?: string;
+  bulkEInvoiceSequenceNo?: string;
+  refundExpenseVoucherEArchiveSerialNo?: string;
+  refundExpenseVoucherEArchiveSequenceNo?: string;
+  refundExpenseVoucherEInvoiceSerialNo?: string;
+  refundExpenseVoucherEInvoiceSequenceNo?: string;
+  microExportTransactionCode?: string;
+  microExportAccountCode?: string;
+  microExportAzAccountCode?: string;
+  microExportEArchiveSerialNo?: string;
+  microExportEArchiveSequenceNo?: string;
+  microExportBulkSerialNo?: string;
+  microExportBulkSequenceNo?: string;
+  microExportRefundSerialNo?: string;
+  microExportRefundSequenceNo?: string;
 }): Promise<ApiResponse<IntegrationStore>> {
   const res = await fetch(`${API_URL}/integration-stores`, {
     method: 'POST',
@@ -389,6 +467,44 @@ export async function updateIntegrationStore(id: string, data: {
   sendPrice?: boolean;
   sendOrderStatus?: boolean;
   isActive?: boolean;
+  // Şirket Konfigürasyonu
+  brandCode?: string;
+  companyCode?: string;
+  branchCode?: string;
+  coCode?: string;
+  // Fatura Ayarları
+  invoiceTransactionCode?: string;
+  hasMicroExport?: boolean;
+  eArchiveBulkCustomer?: boolean;
+  eArchiveCardCode?: string;
+  eArchiveHavaleCardCode?: string;
+  eArchiveAccountCode?: string;
+  eArchiveHavaleAccountCode?: string;
+  eArchiveSerialNo?: string;
+  eArchiveSequenceNo?: string;
+  eInvoiceBulkCustomer?: boolean;
+  eInvoiceCardCode?: string;
+  eInvoiceAccountCode?: string;
+  eInvoiceHavaleAccountCode?: string;
+  eInvoiceSerialNo?: string;
+  eInvoiceSequenceNo?: string;
+  bulkEArchiveSerialNo?: string;
+  bulkEArchiveSequenceNo?: string;
+  bulkEInvoiceSerialNo?: string;
+  bulkEInvoiceSequenceNo?: string;
+  refundExpenseVoucherEArchiveSerialNo?: string;
+  refundExpenseVoucherEArchiveSequenceNo?: string;
+  refundExpenseVoucherEInvoiceSerialNo?: string;
+  refundExpenseVoucherEInvoiceSequenceNo?: string;
+  microExportTransactionCode?: string;
+  microExportAccountCode?: string;
+  microExportAzAccountCode?: string;
+  microExportEArchiveSerialNo?: string;
+  microExportEArchiveSequenceNo?: string;
+  microExportBulkSerialNo?: string;
+  microExportBulkSequenceNo?: string;
+  microExportRefundSerialNo?: string;
+  microExportRefundSequenceNo?: string;
 }): Promise<ApiResponse<IntegrationStore>> {
   const res = await fetch(`${API_URL}/integration-stores/${id}`, {
     method: 'PATCH',

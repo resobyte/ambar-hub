@@ -26,6 +26,57 @@ export interface StoreConfigData {
   sendPrice: boolean;
   sendOrderStatus: boolean;
   isActive: boolean;
+
+  // Şirket Konfigürasyonu
+  brandCode?: string;
+  companyCode?: string;
+  branchCode?: string;
+  coCode?: string;
+
+  // Fatura Ayarları (Invoice Settings)
+  invoiceTransactionCode?: string;
+  hasMicroExport?: boolean;
+
+  // E-Arşiv Ayarları
+  eArchiveBulkCustomer?: boolean;
+  eArchiveCardCode?: string;
+  eArchiveHavaleCardCode?: string;
+  eArchiveAccountCode?: string;
+  eArchiveHavaleAccountCode?: string;
+  eArchiveSerialNo?: string;
+  eArchiveSequenceNo?: string;
+
+
+  // E-Fatura Ayarları
+  eInvoiceBulkCustomer?: boolean;
+  eInvoiceCardCode?: string;
+  eInvoiceAccountCode?: string;
+  eInvoiceHavaleAccountCode?: string;
+  eInvoiceSerialNo?: string;
+  eInvoiceSequenceNo?: string;
+
+  // Toplu Faturalama Ayarları
+  bulkEArchiveSerialNo?: string;
+  bulkEArchiveSequenceNo?: string;
+  bulkEInvoiceSerialNo?: string;
+  bulkEInvoiceSequenceNo?: string;
+
+  // İade Gider Pusulası Ayarları
+  refundExpenseVoucherEArchiveSerialNo?: string;
+  refundExpenseVoucherEArchiveSequenceNo?: string;
+  refundExpenseVoucherEInvoiceSerialNo?: string;
+  refundExpenseVoucherEInvoiceSequenceNo?: string;
+
+  // Mikro İhracat Ayarları
+  microExportTransactionCode?: string;
+  microExportAccountCode?: string;
+  microExportAzAccountCode?: string;
+  microExportEArchiveSerialNo?: string;
+  microExportEArchiveSequenceNo?: string;
+  microExportBulkSerialNo?: string;
+  microExportBulkSequenceNo?: string;
+  microExportRefundSerialNo?: string;
+  microExportRefundSequenceNo?: string;
 }
 
 interface IntegrationStoreListProps {
@@ -304,6 +355,375 @@ export function IntegrationStoreList({
                             </label>
                           </div>
                         </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Şirket Konfigürasyonu */}
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                      </svg>
+                      Şirket Konfigürasyonu
+                    </div>
+                    <div className="bg-muted/30 rounded-lg p-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Input
+                          label="Marka Kodu"
+                          value={config.brandCode || ''}
+                          onChange={(e) => onConfigChange(store.id, 'brandCode', e.target.value)}
+                          placeholder="Marka kodu girin"
+                        />
+                        <Input
+                          label="Şirket Kodu"
+                          value={config.companyCode || ''}
+                          onChange={(e) => onConfigChange(store.id, 'companyCode', e.target.value)}
+                          placeholder="Şirket kodu girin"
+                        />
+                        <Input
+                          label="Şube Kodu"
+                          value={config.branchCode || ''}
+                          onChange={(e) => onConfigChange(store.id, 'branchCode', e.target.value)}
+                          placeholder="Şube kodu girin"
+                        />
+                        <Input
+                          label="Merkez Kodu (CoCode)"
+                          value={config.coCode || ''}
+                          onChange={(e) => onConfigChange(store.id, 'coCode', e.target.value)}
+                          placeholder="Merkez kodu girin"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Invoice Settings */}
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      Fatura Ayarları
+                    </div>
+                    <div className="bg-muted/30 rounded-lg p-4 space-y-4">
+                      {/* Genel Ayarlar */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Input
+                          label="Fatura Hareket Kodu"
+                          value={config.invoiceTransactionCode || ''}
+                          onChange={(e) => onConfigChange(store.id, 'invoiceTransactionCode', e.target.value)}
+                          placeholder="FTS-101"
+                        />
+                        {integrationType === 'TRENDYOL' && (
+                          <div className="flex items-center">
+                            <label className="flex items-center space-x-2 cursor-pointer mt-6">
+                              <input
+                                type="checkbox"
+                                checked={config.hasMicroExport || false}
+                                onChange={(e) => onConfigChange(store.id, 'hasMicroExport', e.target.checked)}
+                                className="w-4 h-4 rounded border-border"
+                              />
+                              <span className="text-sm">Mikro İhracat</span>
+                            </label>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Mikro İhracat Ayarları - Sadece mikro ihracat açıksa göster */}
+                      {config.hasMicroExport && (
+                        <div className="border-t border-border pt-4">
+                          <h5 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
+                            <span className="px-2 py-0.5 text-xs bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400 rounded">Mikro İhracat</span>
+                            Ayarları
+                          </h5>
+                          {/* Genel */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <Input
+                              label="Fatura Hareket Kodu"
+                              value={config.microExportTransactionCode || ''}
+                              onChange={(e) => onConfigChange(store.id, 'microExportTransactionCode', e.target.value)}
+                              placeholder="FTS-102"
+                            />
+                            <Input
+                              label="Muhasebe Hesap Kodu"
+                              value={config.microExportAccountCode || ''}
+                              onChange={(e) => onConfigChange(store.id, 'microExportAccountCode', e.target.value)}
+                              placeholder="120.05.001"
+                            />
+                            <Input
+                              label="Azerbaycan Hesap Kodu"
+                              value={config.microExportAzAccountCode || ''}
+                              onChange={(e) => onConfigChange(store.id, 'microExportAzAccountCode', e.target.value)}
+                              placeholder="120.05.002"
+                            />
+                          </div>
+
+                          {/* E-Arşiv */}
+                          <div className="mt-3">
+                            <span className="text-xs text-muted-foreground">E-Arşiv</span>
+                            <div className="grid grid-cols-2 gap-2 mt-1">
+                              <Input
+                                label="Seri No"
+                                value={config.microExportEArchiveSerialNo || ''}
+                                onChange={(e) => onConfigChange(store.id, 'microExportEArchiveSerialNo', e.target.value)}
+                                placeholder="MEA"
+                              />
+                              <Input
+                                label="Sıra No"
+                                value={config.microExportEArchiveSequenceNo || ''}
+                                onChange={(e) => onConfigChange(store.id, 'microExportEArchiveSequenceNo', e.target.value)}
+                                placeholder="000000001"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Toplu Faturalama */}
+                          <div className="mt-3">
+                            <span className="text-xs text-muted-foreground">Toplu Faturalama</span>
+                            <div className="grid grid-cols-2 gap-2 mt-1">
+                              <Input
+                                label="Seri No"
+                                value={config.microExportBulkSerialNo || ''}
+                                onChange={(e) => onConfigChange(store.id, 'microExportBulkSerialNo', e.target.value)}
+                                placeholder="MTF"
+                              />
+                              <Input
+                                label="Sıra No"
+                                value={config.microExportBulkSequenceNo || ''}
+                                onChange={(e) => onConfigChange(store.id, 'microExportBulkSequenceNo', e.target.value)}
+                                placeholder="000000001"
+                              />
+                            </div>
+                          </div>
+
+                          {/* İade Gider Pusulası */}
+                          <div className="mt-3">
+                            <span className="text-xs text-muted-foreground">İade Gider Pusulası</span>
+                            <div className="grid grid-cols-2 gap-2 mt-1">
+                              <Input
+                                label="Seri No"
+                                value={config.microExportRefundSerialNo || ''}
+                                onChange={(e) => onConfigChange(store.id, 'microExportRefundSerialNo', e.target.value)}
+                                placeholder="MGP"
+                              />
+                              <Input
+                                label="Sıra No"
+                                value={config.microExportRefundSequenceNo || ''}
+                                onChange={(e) => onConfigChange(store.id, 'microExportRefundSequenceNo', e.target.value)}
+                                placeholder="000000001"
+                              />
+                            </div>
+                          </div>
+
+                          <p className="text-xs text-muted-foreground mt-3 italic">
+                            Not: Mikro ihracat siparişlerinde bu ayarlar kullanılır. Cari kart kodu dinamik olarak belirlenir.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* E-Arşiv Ayarları */}
+                      <div className="border-t border-border pt-4">
+                        <h5 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
+                          <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 rounded">E-Arşiv</span>
+                          Ayarları
+                        </h5>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                          <div className="flex items-center">
+                            <label className="flex items-center space-x-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={config.eArchiveBulkCustomer || false}
+                                onChange={(e) => onConfigChange(store.id, 'eArchiveBulkCustomer', e.target.checked)}
+                                className="w-4 h-4 rounded border-border"
+                              />
+                              <span className="text-sm">Torba Cari</span>
+                            </label>
+                          </div>
+                          <Input
+                            label="Cari Kart Kodu"
+                            value={config.eArchiveCardCode || ''}
+                            onChange={(e) => onConfigChange(store.id, 'eArchiveCardCode', e.target.value)}
+                            placeholder="HepsiBurada"
+                          />
+                          {integrationType === 'IKAS' && (
+                            <Input
+                              label="E-Arşiv Havale Cari Kodu"
+                              value={config.eArchiveHavaleCardCode || ''}
+                              onChange={(e) => onConfigChange(store.id, 'eArchiveHavaleCardCode', e.target.value)}
+                              placeholder="HavaleKodu"
+                            />
+                          )}
+                          <Input
+                            label="Muhasebe Hesap Kodu"
+                            value={config.eArchiveAccountCode || ''}
+                            onChange={(e) => onConfigChange(store.id, 'eArchiveAccountCode', e.target.value)}
+                            placeholder="120.03.002"
+                          />
+                          {integrationType === 'IKAS' && (
+                            <Input
+                              label="E-Arşiv Havale Muhasebe Kodu"
+                              value={config.eArchiveHavaleAccountCode || ''}
+                              onChange={(e) => onConfigChange(store.id, 'eArchiveHavaleAccountCode', e.target.value)}
+                              placeholder="120.03.XXX"
+                            />
+                          )}
+                          <Input
+                            label="Seri No"
+                            value={config.eArchiveSerialNo || ''}
+                            onChange={(e) => onConfigChange(store.id, 'eArchiveSerialNo', e.target.value)}
+                            placeholder="EEA"
+                          />
+                          <Input
+                            label="Sıra No (Sayaç)"
+                            value={config.eArchiveSequenceNo || ''}
+                            onChange={(e) => onConfigChange(store.id, 'eArchiveSequenceNo', e.target.value)}
+                            placeholder="000000001"
+                          />
+                        </div>
+                      </div>
+
+                      {/* E-Fatura Ayarları */}
+                      <div className="border-t border-border pt-4">
+                        <h5 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
+                          <span className="px-2 py-0.5 text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded">E-Fatura</span>
+                          Ayarları
+                        </h5>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                          <div className="flex items-center">
+                            <label className="flex items-center space-x-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={config.eInvoiceBulkCustomer || false}
+                                onChange={(e) => onConfigChange(store.id, 'eInvoiceBulkCustomer', e.target.checked)}
+                                className="w-4 h-4 rounded border-border"
+                              />
+                              <span className="text-sm">Torba Cari</span>
+                            </label>
+                          </div>
+                          <Input
+                            label="Cari Kart Kodu"
+                            value={config.eInvoiceCardCode || ''}
+                            onChange={(e) => onConfigChange(store.id, 'eInvoiceCardCode', e.target.value)}
+                            placeholder="HPSB00001"
+                          />
+                          <Input
+                            label="Muhasebe Hesap Kodu"
+                            value={config.eInvoiceAccountCode || ''}
+                            onChange={(e) => onConfigChange(store.id, 'eInvoiceAccountCode', e.target.value)}
+                            placeholder="120.03.002"
+                          />
+                          {integrationType === 'IKAS' && (
+                            <Input
+                              label="E-Fatura Havale Muhasebe Kodu"
+                              value={config.eInvoiceHavaleAccountCode || ''}
+                              onChange={(e) => onConfigChange(store.id, 'eInvoiceHavaleAccountCode', e.target.value)}
+                              placeholder="120.03.XXX"
+                            />
+                          )}
+                          <Input
+                            label="Seri No"
+                            value={config.eInvoiceSerialNo || ''}
+                            onChange={(e) => onConfigChange(store.id, 'eInvoiceSerialNo', e.target.value)}
+                            placeholder="EEF"
+                          />
+                          <Input
+                            label="Sıra No (Sayaç)"
+                            value={config.eInvoiceSequenceNo || ''}
+                            onChange={(e) => onConfigChange(store.id, 'eInvoiceSequenceNo', e.target.value)}
+                            placeholder="000000001"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Toplu Faturalama Ayarları */}
+                      <div className="border-t border-border pt-4">
+                        <h5 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
+                          <span className="px-2 py-0.5 text-xs bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 rounded">Toplu Faturalama</span>
+                          Ayarları
+                        </h5>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-3">
+                            <span className="text-xs text-muted-foreground">E-Arşiv</span>
+                            <div className="grid grid-cols-2 gap-2">
+                              <Input
+                                label="Seri No"
+                                value={config.bulkEArchiveSerialNo || ''}
+                                onChange={(e) => onConfigChange(store.id, 'bulkEArchiveSerialNo', e.target.value)}
+                                placeholder="TEA"
+                              />
+                              <Input
+                                label="Sıra No"
+                                value={config.bulkEArchiveSequenceNo || ''}
+                                onChange={(e) => onConfigChange(store.id, 'bulkEArchiveSequenceNo', e.target.value)}
+                                placeholder="000000001"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-3">
+                            <span className="text-xs text-muted-foreground">E-Fatura</span>
+                            <div className="grid grid-cols-2 gap-2">
+                              <Input
+                                label="Seri No"
+                                value={config.bulkEInvoiceSerialNo || ''}
+                                onChange={(e) => onConfigChange(store.id, 'bulkEInvoiceSerialNo', e.target.value)}
+                                placeholder="TEF"
+                              />
+                              <Input
+                                label="Sıra No"
+                                value={config.bulkEInvoiceSequenceNo || ''}
+                                onChange={(e) => onConfigChange(store.id, 'bulkEInvoiceSequenceNo', e.target.value)}
+                                placeholder="000000001"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* İade Gider Pusulası Ayarları */}
+                      <div className="border-t border-border pt-4">
+                        <h5 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
+                          <span className="px-2 py-0.5 text-xs bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 rounded">İade Gider Pusulası</span>
+                          Ayarları
+                        </h5>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-3">
+                            <span className="text-xs text-muted-foreground">E-Arşiv</span>
+                            <div className="grid grid-cols-2 gap-2">
+                              <Input
+                                label="Seri No"
+                                value={config.refundExpenseVoucherEArchiveSerialNo || ''}
+                                onChange={(e) => onConfigChange(store.id, 'refundExpenseVoucherEArchiveSerialNo', e.target.value)}
+                                placeholder="GEF"
+                              />
+                              <Input
+                                label="Sıra No"
+                                value={config.refundExpenseVoucherEArchiveSequenceNo || ''}
+                                onChange={(e) => onConfigChange(store.id, 'refundExpenseVoucherEArchiveSequenceNo', e.target.value)}
+                                placeholder="000000001"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-3">
+                            <span className="text-xs text-muted-foreground">E-Fatura</span>
+                            <div className="grid grid-cols-2 gap-2">
+                              <Input
+                                label="Seri No"
+                                value={config.refundExpenseVoucherEInvoiceSerialNo || ''}
+                                onChange={(e) => onConfigChange(store.id, 'refundExpenseVoucherEInvoiceSerialNo', e.target.value)}
+                                placeholder="GEA"
+                              />
+                              <Input
+                                label="Sıra No"
+                                value={config.refundExpenseVoucherEInvoiceSequenceNo || ''}
+                                onChange={(e) => onConfigChange(store.id, 'refundExpenseVoucherEInvoiceSequenceNo', e.target.value)}
+                                placeholder="000000001"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-2 italic">
+                          Not: E-Fatura iade gider pusulası Uyumsoft&apos;a gönderilmez, sadece sistemde kayıt oluşturulur.
+                        </p>
                       </div>
                     </div>
                   </div>

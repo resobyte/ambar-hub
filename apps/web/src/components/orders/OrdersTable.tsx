@@ -6,7 +6,7 @@ import { Badge } from '@/components/common/Badge';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import { Select } from '@/components/common/Select';
-import { ChevronRight, ChevronDown } from 'lucide-react';
+import { ChevronRight, ChevronDown, FileStack } from 'lucide-react';
 
 interface OrdersTableProps {
     orders: Order[];
@@ -39,9 +39,29 @@ export function OrdersTable({
     onFilterChange,
 }: OrdersTableProps) {
     const [invoiceLoading, setInvoiceLoading] = useState<string | null>(null);
+    const [bulkLoading, setBulkLoading] = useState(false);
     const [pdfHtml, setPdfHtml] = useState<string | null>(null);
     const [showPdfModal, setShowPdfModal] = useState(false);
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+    const toggleSelect = (id: string) => {
+        const newSelected = new Set(selectedIds);
+        if (newSelected.has(id)) {
+            newSelected.delete(id);
+        } else {
+            newSelected.add(id);
+        }
+        setSelectedIds(newSelected);
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedIds.size === orders.length) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(orders.map(o => o.id)));
+        }
+    };
 
     const toggleExpand = (id: string) => {
         const newExpanded = new Set(expandedIds);
@@ -81,6 +101,38 @@ export function OrdersTable({
             alert(`Fatura oluşturma hatası: ${error.message}`);
         } finally {
             setInvoiceLoading(null);
+        }
+    };
+
+    const handleBulkInvoice = async () => {
+        if (selectedIds.size === 0) {
+            alert('Lütfen en az bir sipariş seçin');
+            return;
+        }
+
+        setBulkLoading(true);
+        try {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/invoices/create-bulk`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ orderIds: Array.from(selectedIds) }),
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                const successCount = data.success?.length || 0;
+                const failedCount = data.failed?.length || 0;
+                alert(`Toplu fatura tamamlandı!\nBaşarılı: ${successCount}\nBaşarısız: ${failedCount}`);
+                setSelectedIds(new Set());
+            } else {
+                alert(`Hata: ${data.message || 'Toplu fatura oluşturulamadı'}`);
+            }
+        } catch (error: any) {
+            alert(`Hata: ${error.message}`);
+        } finally {
+            setBulkLoading(false);
         }
     };
 
@@ -155,9 +207,33 @@ export function OrdersTable({
                 ) : (
                     <>
                         <div className="rounded-md border">
+                            {/* Bulk Actions Bar */}
+                            {selectedIds.size > 0 && (
+                                <div className="bg-primary/10 p-3 flex items-center justify-between border-b">
+                                    <span className="text-sm font-medium">
+                                        {selectedIds.size} sipariş seçildi
+                                    </span>
+                                    <Button
+                                        size="sm"
+                                        onClick={handleBulkInvoice}
+                                        disabled={bulkLoading}
+                                    >
+                                        <FileStack className="w-4 h-4 mr-2" />
+                                        {bulkLoading ? 'İşleniyor...' : 'Toplu Fatura Kes'}
+                                    </Button>
+                                </div>
+                            )}
                             <table className="w-full text-sm text-left">
                                 <thead className="bg-muted/50 text-muted-foreground uppercase text-xs">
                                     <tr>
+                                        <th className="w-10 px-4 py-3">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedIds.size === orders.length && orders.length > 0}
+                                                onChange={toggleSelectAll}
+                                                className="w-4 h-4 rounded border-gray-300"
+                                            />
+                                        </th>
                                         <th className="w-10"></th>
                                         <th className="px-4 py-3 font-medium">Sipariş No</th>
                                         <th className="px-4 py-3 font-medium">Kaynak</th>
@@ -172,6 +248,14 @@ export function OrdersTable({
                                     {orders.map((order) => (
                                         <>
                                             <tr key={order.id} className="hover:bg-muted/20 transaction-colors">
+                                                <td className="px-4 py-3 text-center">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedIds.has(order.id)}
+                                                        onChange={() => toggleSelect(order.id)}
+                                                        className="w-4 h-4 rounded border-gray-300"
+                                                    />
+                                                </td>
                                                 <td className="px-4 py-3 text-center">
                                                     <button
                                                         onClick={() => toggleExpand(order.id)}
@@ -245,7 +329,7 @@ export function OrdersTable({
                                             </tr>
                                             {expandedIds.has(order.id) && (
                                                 <tr key={`${order.id}-detail`} className="bg-muted/10">
-                                                    <td colSpan={8} className="p-4 pl-14">
+                                                    <td colSpan={9} className="p-4 pl-14">
                                                         <div className="rounded border bg-background overflow-hidden">
                                                             <div className="bg-muted px-4 py-2 text-xs font-semibold text-muted-foreground uppercase">
                                                                 Sipariş İçeriği

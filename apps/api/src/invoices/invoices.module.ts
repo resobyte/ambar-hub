@@ -6,10 +6,11 @@ import { InvoicesService } from './invoices.service';
 import { Invoice } from './entities/invoice.entity';
 import { Order } from '../orders/entities/order.entity';
 import { Product } from '../products/entities/product.entity';
+import { IntegrationStore } from '../integration-stores/entities/integration-store.entity';
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([Invoice, Order, Product]),
+        TypeOrmModule.forFeature([Invoice, Order, Product, IntegrationStore]),
         ConfigModule,
     ],
     controllers: [InvoicesController],

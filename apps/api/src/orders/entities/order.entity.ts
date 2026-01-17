@@ -138,6 +138,12 @@ export class Order extends BaseEntity {
     @Column({ name: 'commercial', default: false })
     commercial: boolean;
 
+    @Column({ name: 'payment_method', nullable: true })
+    paymentMethod: string;
+
+    @Column({ name: 'is_e_invoice_user', default: false })
+    isEInvoiceUser: boolean;
+
     // ─────────────────────────────────────────────────────────────
     // Micro Export (Mikro İhracat)
     // ─────────────────────────────────────────────────────────────

@@ -25,6 +25,25 @@ export class InvoicesController {
     }
 
     /**
+     * Create bulk invoices from multiple orders and send to Uyumsoft
+     * Uses InsertInvoiceMulti endpoint
+     */
+    @Post('create-bulk')
+    async createBulk(
+        @Body() body: {
+            orderIds: string[];
+            options?: {
+                branchCode?: string;
+                docTraCode?: string;
+                costCenterCode?: string;
+                whouseCode?: string;
+            };
+        },
+    ) {
+        return this.invoicesService.createBulkInvoices(body.orderIds, body.options);
+    }
+
+    /**
      * Retry failed invoice
      */
     @Post(':id/retry')

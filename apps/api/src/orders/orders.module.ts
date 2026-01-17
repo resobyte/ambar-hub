@@ -11,11 +11,14 @@ import { Product } from '../products/entities/product.entity';
 import { ProductSetItem } from '../products/entities/product-set-item.entity';
 import { ProductStore } from '../product-stores/entities/product-store.entity';
 
+import { InvoicesModule } from '../invoices/invoices.module';
+
 @Module({
     imports: [
         TypeOrmModule.forFeature([Order, OrderItem, FaultyOrder, Product, ProductSetItem, ProductStore]),
         CustomersModule,
         IntegrationsModule,
+        InvoicesModule,
     ],
     controllers: [OrdersController],
     providers: [OrdersService],
