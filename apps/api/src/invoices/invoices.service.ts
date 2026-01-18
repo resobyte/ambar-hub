@@ -88,7 +88,7 @@ export class InvoicesService {
 
             // Card Code: TRENDYOL{CountryCode}
             const countryCode = this.getCountryCode(order);
-            invoiceSettings.cardCode = `TRENDYOL${countryCode}`;
+            invoiceSettings.cardCode = `TRENDYOL ${countryCode}`;
 
             // Account Code: Check for AZ special case
             if ((countryCode === 'AZ' || countryCode === 'AZERBAIJAN') && storeConfig.microExportAzAccountCode) {
@@ -430,7 +430,7 @@ export class InvoicesService {
                 if (integrationType === 'TRENDYOL' && isMicroExport && storeConfig.hasMicroExport) {
                     // Mikro İhracat Toplu - always E-Archive (foreign customers)
                     invoiceSettings.vknTckn = '11111111111';
-                    invoiceSettings.cardCode = `TRENDYOL${this.getCountryCode(order)}`;
+                    invoiceSettings.cardCode = `TRENDYOL ${this.getCountryCode(order)}`;
                     invoiceSettings.accountCode = storeConfig.microExportAccountCode;
                     invoiceSettings.serialNo = storeConfig.microExportBulkSerialNo || storeConfig.microExportEArchiveSerialNo;
                     invoiceSettings.edocNo = await getNextBulkInvoiceNumber(invoiceSettings.serialNo);
@@ -745,8 +745,20 @@ export class InvoicesService {
                 curRateTypeCode: '',
                 transportTypeId: '57',
                 transporterId: null,
-                firstName: (order.customer?.company || order.customer?.firstName || '').substring(0, 100),
-                familyName: (order.customer?.company ? '' : (order.customer?.lastName || '')).substring(0, 100),
+                firstName: (() => {
+                    if (order.micro) {
+                        const addr = (order.invoiceAddress as any) || (order.shippingAddress as any);
+                        return (addr?.firstName || order.customer?.firstName || '').substring(0, 100);
+                    }
+                    return (order.customer?.company || order.customer?.firstName || '').substring(0, 100);
+                })(),
+                familyName: (() => {
+                    if (order.micro) {
+                        const addr = (order.invoiceAddress as any) || (order.shippingAddress as any);
+                        return (addr?.lastName || order.customer?.lastName || '').substring(0, 100);
+                    }
+                    return (order.customer?.company ? '' : (order.customer?.lastName || '')).substring(0, 100);
+                })(),
                 address1: this.formatAddress(order.shippingAddress).substring(0, 100),
                 address2: order.customer?.taxOffice ? `V.D.: ${order.customer.taxOffice}` : ' ',
                 address3: '',
