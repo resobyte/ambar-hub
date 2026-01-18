@@ -1040,6 +1040,8 @@ export interface Invoice {
   currencyCode: string;
   invoiceDate: string;
   createdAt: string;
+  customerFirstName?: string;
+  customerLastName?: string;
   requestPayload?: any;
   responsePayload?: any;
 }
