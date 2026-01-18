@@ -602,19 +602,27 @@ export class InvoicesService {
 
         const { token, secretKey } = await this.getAccessToken();
 
-        const response = await axios.post(
-            `${apiUrl}/UyumApi/v1/PSM/InsertInvoiceMulti`,
-            payload,
-            {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                    'UyumSecretKey': secretKey,
-                },
-            }
-        );
+        try {
+            this.logger.log(`[Uyumsoft Multi Request] Payload: ${JSON.stringify(payload)}`);
 
-        return response.data;
+            const response = await axios.post(
+                `${apiUrl}/UyumApi/v1/PSM/InsertInvoiceMulti`,
+                payload,
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                        'UyumSecretKey': secretKey,
+                    },
+                }
+            );
+
+            this.logger.log(`[Uyumsoft Multi Response] Success: ${JSON.stringify(response.data)}`);
+            return response.data;
+        } catch (error) {
+            this.logger.error(`[Uyumsoft Multi Response] Error: ${JSON.stringify(error.response?.data || error.message)}`);
+            throw error;
+        }
     }
 
     private getCountryCode(order: Order): string {
@@ -723,18 +731,18 @@ export class InvoicesService {
                 note3: '',
                 sourceApp: 'Fatura',
                 lineType: 'S',
-                vatRate: 20,
+                vatRate: order.micro ? 0 : 20,
                 priceListCode: '',
                 curRateTra: 0,
                 costCenterCode: options.costCenterCode || EMBEAUTY_CONFIG.costCenterCode,
                 whouseCode: options.whouseCode || EMBEAUTY_CONFIG.whouseCode,
                 sourceApp2: 'Fatura',
-                vatCode: 20,
+                vatCode: order.micro ? 0 : 20,
                 unitPrice: discountedUnitPrice,
                 itemNameManual: item.productName?.substring(0, 100) || '',
                 qtyPrm: quantity,
                 amtVat: '',
-                vatStatus: 'Dahil',
+                vatStatus: 'Dahil', // Valid values usually 'Dahil' or 'Haric', keeping default
                 sourceApp3: 'Fatura',
             };
         }));
@@ -871,19 +879,27 @@ export class InvoicesService {
         // Get fresh token and secret key
         const { token, secretKey } = await this.getAccessToken();
 
-        const response = await axios.post(
-            `${apiUrl}/UyumApi/v1/PSM/InsertInvoice`,
-            payload,
-            {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                    'UyumSecretKey': secretKey,
-                },
-            }
-        );
+        try {
+            this.logger.log(`[Uyumsoft Request] Payload: ${JSON.stringify(payload)}`);
 
-        return response.data;
+            const response = await axios.post(
+                `${apiUrl}/UyumApi/v1/PSM/InsertInvoice`,
+                payload,
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                        'UyumSecretKey': secretKey,
+                    },
+                }
+            );
+
+            this.logger.log(`[Uyumsoft Response] Success: ${JSON.stringify(response.data)}`);
+            return response.data;
+        } catch (error) {
+            this.logger.error(`[Uyumsoft Response] Error: ${JSON.stringify(error.response?.data || error.message)}`);
+            throw error;
+        }
     }
 
     /**

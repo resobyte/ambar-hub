@@ -16,6 +16,7 @@ interface Invoice {
     invoiceDate: string;
     createdAt: string;
     errorMessage?: string;
+    responsePayload?: any;
 }
 
 export function InvoicesClient() {
@@ -136,10 +137,13 @@ export function InvoicesClient() {
                                         </td>
                                         <td className="px-4 py-3 text-sm">
                                             {getStatusBadge(invoice.status)}
-                                            {invoice.status?.toLowerCase() === 'error' && invoice.errorMessage && (
-                                                <p className="text-xs text-red-500 mt-1 max-w-xs truncate" title={invoice.errorMessage}>
-                                                    {invoice.errorMessage}
-                                                </p>
+                                            {invoice.status?.toLowerCase() === 'error' && (
+                                                <button
+                                                    onClick={() => alert(`Hata Detayı:\n${invoice.errorMessage}\n\nTeknik Detay:\n${JSON.stringify(invoice.responsePayload || {}, null, 2)}`)}
+                                                    className="text-xs text-red-500 mt-1 hover:underline text-left block"
+                                                >
+                                                    {invoice.errorMessage || 'Hata detayını gör'}
+                                                </button>
                                             )}
                                         </td>
                                         <td className="px-4 py-3 text-sm text-muted-foreground">
