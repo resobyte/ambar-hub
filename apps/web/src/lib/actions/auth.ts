@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { AuthUser } from '@/types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+const API_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
 interface LoginResult {
   success: boolean;
@@ -42,7 +42,7 @@ export async function login(
       const [nameValue] = parts;
       const [name, ...valueParts] = nameValue.split('=');
       const value = valueParts.join('=');
-      
+
       if (name && value) {
         const isRefresh = name.trim().includes('refresh');
         cookieStore.set(name.trim(), value.trim(), {
@@ -119,7 +119,7 @@ export async function refreshAccessToken(): Promise<boolean> {
       const [nameValue] = parts;
       const [name, ...valueParts] = nameValue.split('=');
       const value = valueParts.join('=');
-      
+
       if (name && value) {
         const isRefresh = name.trim().includes('refresh');
         cookieStore.set(name.trim(), value.trim(), {
