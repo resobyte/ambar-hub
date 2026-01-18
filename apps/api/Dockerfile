@@ -43,4 +43,4 @@ EXPOSE 3001
 
 ENV NODE_ENV=production
 
-CMD sh -c "ls -la /app/apps/api/dist && node /app/apps/api/dist/main.js"
+CMD ["node", "/app/apps/api/dist/src/main.js"]
