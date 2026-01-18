@@ -1,8 +1,26 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import { Modal } from '@/components/common/Modal';
 import { apiGetPaginated } from '@/lib/api';
 
-// ... interface ...
+interface Invoice {
+    id: string;
+    invoiceNumber: string;
+    invoiceSerial: string;
+    edocNo: string;
+    status: string;
+    cardCode: string;
+    customerFirstName: string;
+    customerLastName: string;
+    totalAmount: number;
+    currencyCode: string;
+    invoiceDate: string;
+    createdAt: string;
+    errorMessage?: string;
+    responsePayload?: any;
+    requestPayload?: any;
+}
 
 export function InvoicesClient() {
     const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -23,8 +41,7 @@ export function InvoicesClient() {
                 params: { page, limit }
             });
 
-            // apiGetPaginated already returns json, no need to await .json()
-            // It returns { success: boolean, data: Invoice[], meta: ... }
+            // apiGetPaginated returns { success: boolean, data: Invoice[], meta: ... }
             if (res.success && Array.isArray(res.data)) {
                 setInvoices(res.data);
                 setTotal(res.meta?.total || res.data.length || 0);
