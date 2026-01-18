@@ -58,8 +58,23 @@ export class InvoicesController {
     async findAll(
         @Query('page') page = 1,
         @Query('limit') limit = 10,
+        @Query('status') status?: string,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('customerName') customerName?: string,
+        @Query('cardCode') cardCode?: string,
+        @Query('invoiceNumber') invoiceNumber?: string,
+        @Query('edocNo') edocNo?: string,
     ) {
-        return this.invoicesService.findAll(+page, +limit);
+        return this.invoicesService.findAll(+page, +limit, {
+            status,
+            startDate,
+            endDate,
+            customerName,
+            cardCode,
+            invoiceNumber,
+            edocNo
+        });
     }
 
     /**

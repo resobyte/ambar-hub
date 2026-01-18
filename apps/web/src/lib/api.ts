@@ -981,13 +981,34 @@ export interface FaultyOrder {
   store?: { name: string };
 }
 
-export async function getFaultyOrders(page = 1, limit = 10): Promise<PaginationResponse<FaultyOrder>> {
-  const res = await fetch(`${API_URL}/orders/faulty?page=${page}&limit=${limit}`, {
+export async function getFaultyOrders(
+  page = 1,
+  limit = 10,
+  filters?: {
+    barcode?: string;
+    startDate?: string;
+    endDate?: string;
+    customerName?: string;
+    orderNumber?: string;
+  }
+): Promise<PaginationResponse<FaultyOrder>> {
+  const url = new URL(`${API_URL}/orders/faulty`, BASE_URL);
+  url.searchParams.append('page', String(page));
+  url.searchParams.append('limit', String(limit));
+
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value) url.searchParams.append(key, String(value));
+    });
+  }
+
+  const res = await fetch(url.toString(), {
     cache: 'no-store',
     credentials: 'include',
   });
   if (!res.ok) {
-    return { success: true, data: [], meta: { page, limit, total: 0, totalPages: 0 } };
+    const error = await res.json();
+    throw new Error(error.message || 'Request failed');
   }
   return res.json();
 }
@@ -1019,6 +1040,8 @@ export interface Invoice {
   currencyCode: string;
   invoiceDate: string;
   createdAt: string;
+  requestPayload?: any;
+  responsePayload?: any;
 }
 
 export async function createInvoiceFromOrder(orderId: string, options?: {

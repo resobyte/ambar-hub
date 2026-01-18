@@ -71,8 +71,19 @@ export class OrdersController {
     async findFaultyOrders(
         @Query('page') page = 1,
         @Query('limit') limit = 10,
+        @Query('barcode') barcode?: string,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('customerName') customerName?: string,
+        @Query('orderNumber') orderNumber?: string,
     ) {
-        return this.ordersService.findFaultyOrders(Number(page), Number(limit));
+        return this.ordersService.findFaultyOrders(Number(page), Number(limit), {
+            barcode,
+            startDate,
+            endDate,
+            customerName,
+            orderNumber
+        });
     }
 
     @Delete('faulty/:id')

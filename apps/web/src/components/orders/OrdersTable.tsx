@@ -194,7 +194,11 @@ export function OrdersTable({
 
     const handleBulkInvoice = async () => {
         if (selectedIds.size === 0) {
-            alert('Lütfen en az bir sipariş seçin');
+            toast({
+                variant: "destructive",
+                title: "Hata",
+                description: "Lütfen en az bir sipariş seçin"
+            });
             return;
         }
 

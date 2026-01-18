@@ -46,12 +46,13 @@ export class InvoicesService {
         }
 
         // Check if invoice already exists
+        // Check if invoice already exists
         const existingInvoice = await this.invoiceRepository.findOne({
-            where: { orderId },
+            where: { orderId, status: InvoiceStatus.SUCCESS },
         });
 
-        if (existingInvoice && existingInvoice.status === InvoiceStatus.SUCCESS) {
-            throw new BadRequestException(`Invoice already exists for order ${orderId}`);
+        if (existingInvoice) {
+            throw new BadRequestException(`Bu sipariş için zaten başarıyla oluşturulmuş bir fatura mevcut! (Fatura No: ${existingInvoice.invoiceNumber})`);
         }
 
         // 2. Get IntegrationStore settings
@@ -963,16 +964,71 @@ export class InvoicesService {
     }
 
     /**
-     * Find all invoices with pagination
+     * Find all invoices with pagination and filters
      */
-    async findAll(page = 1, limit = 10): Promise<Invoice[]> {
-        const [invoices] = await this.invoiceRepository.findAndCount({
-            skip: (page - 1) * limit,
-            take: limit,
-            relations: ['order', 'store'],
-            order: { createdAt: 'DESC' },
-        });
-        return invoices;
+    async findAll(
+        page = 1,
+        limit = 10,
+        filters?: {
+            status?: string;
+            startDate?: string;
+            endDate?: string;
+            customerName?: string;
+            cardCode?: string;
+            invoiceNumber?: string;
+            edocNo?: string;
+        }
+    ): Promise<{ success: boolean; data: Invoice[]; meta: { total: number; page: number; totalPages: number } }> {
+        const query = this.invoiceRepository.createQueryBuilder('invoice')
+            .leftJoinAndSelect('invoice.order', 'order')
+            .leftJoinAndSelect('invoice.store', 'store')
+            .orderBy('invoice.createdAt', 'DESC');
+
+        if (filters?.status) {
+            query.andWhere('invoice.status = :status', { status: filters.status });
+        }
+
+        if (filters?.startDate) {
+            query.andWhere('invoice.createdAt >= :startDate', { startDate: filters.startDate });
+        }
+
+        if (filters?.endDate) {
+            query.andWhere('invoice.createdAt <= :endDate', { endDate: filters.endDate });
+        }
+
+        if (filters?.customerName) {
+            query.andWhere(
+                '(LOWER(invoice.customerFirstName) LIKE LOWER(:name) OR LOWER(invoice.customerLastName) LIKE LOWER(:name))',
+                { name: `%${filters.customerName}%` }
+            );
+        }
+
+        if (filters?.cardCode) {
+            query.andWhere('invoice.cardCode LIKE :cardCode', { cardCode: `%${filters.cardCode}%` });
+        }
+
+        if (filters?.invoiceNumber) {
+            query.andWhere('invoice.invoiceNumber LIKE :invoiceNumber', { invoiceNumber: `%${filters.invoiceNumber}%` });
+        }
+
+        if (filters?.edocNo) {
+            query.andWhere('invoice.edocNo LIKE :edocNo', { edocNo: `%${filters.edocNo}%` });
+        }
+
+        const [data, total] = await query
+            .skip((page - 1) * limit)
+            .take(limit)
+            .getManyAndCount();
+
+        return {
+            success: true,
+            data,
+            meta: {
+                total,
+                page,
+                totalPages: Math.ceil(total / limit),
+            },
+        };
     }
 
     /**

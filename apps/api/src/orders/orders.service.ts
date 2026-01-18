@@ -1233,13 +1233,47 @@ export class OrdersService {
         return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
     }
 
-    async findFaultyOrders(page: number = 1, limit: number = 10) {
-        const [data, total] = await this.faultyOrderRepository.findAndCount({
-            order: { createdAt: 'DESC' },
-            skip: (page - 1) * limit,
-            take: limit,
-            relations: ['integration', 'store'],
-        });
+    async findFaultyOrders(
+        page: number = 1,
+        limit: number = 10,
+        filters?: {
+            barcode?: string;
+            startDate?: string;
+            endDate?: string;
+            customerName?: string;
+            orderNumber?: string;
+        }
+    ) {
+        const query = this.faultyOrderRepository.createQueryBuilder('faulty')
+            .leftJoinAndSelect('faulty.integration', 'integration')
+            .leftJoinAndSelect('faulty.store', 'store')
+            .orderBy('faulty.createdAt', 'DESC');
+
+        if (filters?.barcode) {
+            // Simple text search in the JSON string for now
+            query.andWhere('faulty.missingBarcodes LIKE :barcode', { barcode: `%${filters.barcode}%` });
+        }
+
+        if (filters?.startDate) {
+            query.andWhere('faulty.createdAt >= :startDate', { startDate: filters.startDate });
+        }
+
+        if (filters?.endDate) {
+            query.andWhere('faulty.createdAt <= :endDate', { endDate: filters.endDate });
+        }
+
+        if (filters?.customerName) {
+            query.andWhere('LOWER(faulty.customerName) LIKE LOWER(:customerName)', { customerName: `%${filters.customerName}%` });
+        }
+
+        if (filters?.orderNumber) {
+            query.andWhere('faulty.orderNumber LIKE :orderNumber', { orderNumber: `%${filters.orderNumber}%` });
+        }
+
+        const [data, total] = await query
+            .skip((page - 1) * limit)
+            .take(limit)
+            .getManyAndCount();
 
         return {
             success: true,
