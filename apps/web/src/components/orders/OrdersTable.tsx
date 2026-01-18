@@ -248,7 +248,7 @@ export function OrdersTable({
                                 }
                             }}
                         >
-                            Trendyol'dan Çek
+                            Trendyol&apos;dan Çek
                         </Button>
                     </div>
                 </div >

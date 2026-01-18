@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Modal } from '@/components/common/Modal';
 
 interface Invoice {
     id: string;
@@ -17,6 +18,7 @@ interface Invoice {
     createdAt: string;
     errorMessage?: string;
     responsePayload?: any;
+    requestPayload?: any;
 }
 
 export function InvoicesClient() {
@@ -24,6 +26,7 @@ export function InvoicesClient() {
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
     const [total, setTotal] = useState(0);
+    const [viewPayload, setViewPayload] = useState<{ title: string; content: any } | null>(null);
     const limit = 20;
 
     useEffect(() => {
@@ -113,6 +116,12 @@ export function InvoicesClient() {
                                         Durum
                                     </th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                                        Req. Payload
+                                    </th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                                        Res. Payload
+                                    </th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                         Tarih
                                     </th>
                                 </tr>
@@ -136,15 +145,33 @@ export function InvoicesClient() {
                                             {Number(invoice.totalAmount).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {invoice.currencyCode}
                                         </td>
                                         <td className="px-4 py-3 text-sm">
-                                            {getStatusBadge(invoice.status)}
-                                            {invoice.status?.toLowerCase() === 'error' && (
-                                                <button
-                                                    onClick={() => alert(`Hata Detayı:\n${invoice.errorMessage}\n\nTeknik Detay:\n${JSON.stringify(invoice.responsePayload || {}, null, 2)}`)}
-                                                    className="text-xs text-red-500 mt-1 hover:underline text-left block"
-                                                >
-                                                    {invoice.errorMessage || 'Hata detayını gör'}
-                                                </button>
-                                            )}
+                                            <div className="flex flex-col gap-1 items-start">
+                                                {getStatusBadge(invoice.status)}
+                                                {invoice.status?.toLowerCase() === 'error' && (
+                                                    <button
+                                                        onClick={() => setViewPayload({ title: 'Hata Detayı', content: invoice.errorMessage })}
+                                                        className="text-xs text-red-500 hover:underline text-left block"
+                                                    >
+                                                        Hata Detayı
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-3 text-sm">
+                                            <button
+                                                onClick={() => setViewPayload({ title: `Request Payload (${invoice.invoiceNumber})`, content: invoice.requestPayload })}
+                                                className="text-xs text-blue-600 hover:text-blue-800 font-medium underline"
+                                            >
+                                                Göster
+                                            </button>
+                                        </td>
+                                        <td className="px-4 py-3 text-sm">
+                                            <button
+                                                onClick={() => setViewPayload({ title: `Response Payload (${invoice.invoiceNumber})`, content: invoice.responsePayload })}
+                                                className="text-xs text-blue-600 hover:text-blue-800 font-medium underline"
+                                            >
+                                                Göster
+                                            </button>
                                         </td>
                                         <td className="px-4 py-3 text-sm text-muted-foreground">
                                             {new Date(invoice.createdAt).toLocaleDateString('tr-TR')}
@@ -179,6 +206,21 @@ export function InvoicesClient() {
                     )}
                 </div>
             )}
+
+            <Modal
+                isOpen={!!viewPayload}
+                onClose={() => setViewPayload(null)}
+                title={viewPayload?.title || 'Payload'}
+                size="lg"
+            >
+                <div className="relative">
+                    <pre className="bg-muted p-4 rounded-lg overflow-auto max-h-[60vh] text-xs font-mono whitespace-pre-wrap break-all">
+                        {typeof viewPayload?.content === 'string'
+                            ? viewPayload.content
+                            : JSON.stringify(viewPayload?.content || {}, null, 2)}
+                    </pre>
+                </div>
+            </Modal>
         </div>
     );
 }
