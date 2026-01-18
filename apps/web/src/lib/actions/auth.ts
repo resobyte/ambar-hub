@@ -48,7 +48,7 @@ export async function login(
         cookieStore.set(name.trim(), value.trim(), {
           httpOnly: true,
           secure: process.env.NODE_ENV === 'production',
-          sameSite: 'lax',
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Allow cross-site cookies in production
           path: '/',
           maxAge: isRefresh ? 7 * 24 * 60 * 60 : 15 * 60,
         });
@@ -125,7 +125,7 @@ export async function refreshAccessToken(): Promise<boolean> {
         cookieStore.set(name.trim(), value.trim(), {
           httpOnly: true,
           secure: process.env.NODE_ENV === 'production',
-          sameSite: 'lax',
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Allow cross-site cookies in production
           path: '/',
           maxAge: isRefresh ? 7 * 24 * 60 * 60 : 15 * 60,
         });
