@@ -1,4 +1,7 @@
-const API_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+const isServer = typeof window === 'undefined';
+const API_URL = isServer
+  ? (process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api')
+  : '/api';
 
 export interface ApiResponse<T> {
   success: boolean;
