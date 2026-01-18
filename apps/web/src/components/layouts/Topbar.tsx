@@ -11,7 +11,7 @@ export function Topbar({ user, onMobileMenuOpen }: TopbarProps) {
 
   return (
     <header className="h-16 bg-card border-b border-border flex items-center justify-between px-4 md:px-6 shadow-sm">
-      <button 
+      <button
         className="md:hidden text-muted-foreground hover:text-foreground"
         onClick={onMobileMenuOpen}
         aria-label="Open menu"

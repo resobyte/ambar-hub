@@ -1,4 +1,5 @@
-import { Controller, Post, Param, Get, Query, Delete } from '@nestjs/common';
+import { Controller, Post, Param, Get, Query, Delete, Res } from '@nestjs/common';
+import { Response } from 'express';
 import { OrdersService } from './orders.service';
 
 @Controller('orders')
@@ -31,9 +32,28 @@ export class OrdersController {
         @Query('orderNumber') orderNumber?: string,
         @Query('packageId') packageId?: string,
         @Query('integrationId') integrationId?: string,
+        @Query('storeId') storeId?: string,
         @Query('status') status?: string,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('customerName') customerName?: string,
+        @Query('micro') micro?: string,
+        @Query('startDeliveryDate') startDeliveryDate?: string,
+        @Query('endDeliveryDate') endDeliveryDate?: string,
     ) {
-        const filters = { orderNumber, packageId, integrationId, status };
+        const filters = {
+            orderNumber,
+            packageId,
+            integrationId,
+            storeId,
+            status,
+            startDate,
+            endDate,
+            customerName,
+            micro: micro === 'true' ? true : micro === 'false' ? false : undefined,
+            startDeliveryDate,
+            endDeliveryDate
+        };
         const { data, total } = await this.ordersService.findAll(Number(page), Number(limit), filters);
         return {
             success: true,
@@ -59,6 +79,44 @@ export class OrdersController {
     async deleteFaultyOrder(@Param('id') id: string) {
         await this.ordersService.deleteFaultyOrder(id);
         return { success: true };
+    }
+    @Get('export')
+    async exportOrders(
+        @Res() res: Response,
+        @Query('orderNumber') orderNumber?: string,
+        @Query('packageId') packageId?: string,
+        @Query('integrationId') integrationId?: string,
+        @Query('storeId') storeId?: string,
+        @Query('status') status?: string,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('customerName') customerName?: string,
+        @Query('micro') micro?: string,
+        @Query('startDeliveryDate') startDeliveryDate?: string,
+        @Query('endDeliveryDate') endDeliveryDate?: string,
+    ) {
+        const filters = {
+            orderNumber,
+            packageId,
+            integrationId,
+            storeId,
+            status,
+            startDate,
+            endDate,
+            customerName,
+            micro: micro === 'true' ? true : micro === 'false' ? false : undefined,
+            startDeliveryDate,
+            endDeliveryDate
+        };
+        const buffer = await this.ordersService.exportOrders(filters);
+
+        res.set({
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition': 'attachment; filename=siparisler.xlsx',
+            'Content-Length': buffer.length,
+        });
+
+        res.end(buffer);
     }
 }
 

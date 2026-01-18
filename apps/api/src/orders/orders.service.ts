@@ -9,6 +9,7 @@ import { IntegrationsService } from '../integrations/integrations.service';
 import { OrderStatus } from './enums/order-status.enum';
 import { IntegrationType } from '../integrations/entities/integration.entity';
 import { Product } from '../products/entities/product.entity';
+import * as XLSX from 'xlsx';
 import { ProductSetItem } from '../products/entities/product-set-item.entity';
 import { ProductType } from '../products/enums/product-type.enum';
 import { ProductStore } from '../product-stores/entities/product-store.entity';
@@ -226,7 +227,7 @@ export class OrdersService {
                 size: '200',
                 orderByField: 'PackageLastModifiedDate',
                 orderByDirection: 'DESC',
-                status: 'CREATED'
+                startDate: '1767214800000',
             });
 
             try {
@@ -529,13 +530,13 @@ export class OrdersService {
 
         // 2. Create/Update Customer
         const customerData = {
-            firstName: pkg.customerFirstName,
-            lastName: pkg.customerLastName,
+            firstName: pkg.invoiceAddress?.firstName || pkg.customerFirstName,
+            lastName: pkg.invoiceAddress?.lastName || pkg.customerLastName,
             email: pkg.customerEmail,
             phone: pkg.invoiceAddress?.phone || pkg.shipmentAddress?.phone,
-            city: pkg.shipmentAddress?.city,
-            district: pkg.shipmentAddress?.district,
-            address: pkg.shipmentAddress?.fullAddress,
+            city: pkg.invoiceAddress?.city || pkg.shipmentAddress?.city,
+            district: pkg.invoiceAddress?.district || pkg.shipmentAddress?.district,
+            address: pkg.invoiceAddress?.fullAddress || pkg.invoiceAddress?.address1 || pkg.shipmentAddress?.fullAddress,
             tcIdentityNumber: pkg.tcIdentityNumber || pkg.identityNumber || pkg.invoiceAddress?.taxNumber || pkg.invoiceAddress?.identityNumber || pkg.taxNumber,
             trendyolCustomerId: pkg.customerId?.toString(),
             company: pkg.invoiceAddress?.company || null,
@@ -1105,7 +1106,14 @@ export class OrdersService {
         orderNumber?: string;
         packageId?: string;
         integrationId?: string;
+        storeId?: string;
         status?: string;
+        startDate?: string;
+        endDate?: string;
+        customerName?: string;
+        micro?: boolean;
+        startDeliveryDate?: string;
+        endDeliveryDate?: string;
     }): Promise<{ data: Order[], total: number }> {
         const queryBuilder = this.orderRepository.createQueryBuilder('order')
             .leftJoinAndSelect('order.customer', 'customer')
@@ -1122,8 +1130,32 @@ export class OrdersService {
         if (filters?.integrationId) {
             queryBuilder.andWhere('order.integrationId = :integrationId', { integrationId: filters.integrationId });
         }
+        if (filters?.storeId) {
+            queryBuilder.andWhere('order.storeId = :storeId', { storeId: filters.storeId });
+        }
         if (filters?.status) {
             queryBuilder.andWhere('order.status = :status', { status: filters.status });
+        }
+        if (filters?.startDate) {
+            queryBuilder.andWhere('order.orderDate >= :startDate', { startDate: new Date(filters.startDate) });
+        }
+        if (filters?.endDate) {
+            queryBuilder.andWhere('order.orderDate <= :endDate', { endDate: new Date(filters.endDate) });
+        }
+        if (filters?.customerName) {
+            queryBuilder.andWhere(
+                "(CONCAT(customer.firstName, ' ', customer.lastName) LIKE :customerName OR customer.firstName LIKE :customerName OR customer.lastName LIKE :customerName)",
+                { customerName: `%${filters.customerName}%` }
+            );
+        }
+        if (filters?.micro !== undefined) {
+            queryBuilder.andWhere('order.micro = :micro', { micro: filters.micro });
+        }
+        if (filters?.startDeliveryDate) {
+            queryBuilder.andWhere('order.agreedDeliveryDate >= :startDeliveryDate', { startDeliveryDate: new Date(filters.startDeliveryDate) });
+        }
+        if (filters?.endDeliveryDate) {
+            queryBuilder.andWhere('order.agreedDeliveryDate <= :endDeliveryDate', { endDeliveryDate: new Date(filters.endDeliveryDate) });
         }
 
         queryBuilder.orderBy('order.orderDate', 'DESC')
@@ -1132,6 +1164,73 @@ export class OrdersService {
 
         const [data, total] = await queryBuilder.getManyAndCount();
         return { data, total };
+    }
+
+    async exportOrders(filters?: {
+        orderNumber?: string;
+        packageId?: string;
+        integrationId?: string;
+        storeId?: string;
+        status?: string;
+        startDate?: string;
+        endDate?: string;
+        customerName?: string;
+        micro?: boolean;
+        startDeliveryDate?: string;
+        endDeliveryDate?: string;
+    }): Promise<Buffer> {
+        const queryBuilder = this.orderRepository.createQueryBuilder('order')
+            .leftJoinAndSelect('order.customer', 'customer')
+            .leftJoinAndSelect('order.items', 'items')
+            .leftJoinAndSelect('order.store', 'store')
+            .leftJoinAndSelect('order.integration', 'integration');
+
+        if (filters?.orderNumber) queryBuilder.andWhere('order.orderNumber LIKE :orderNumber', { orderNumber: `%${filters.orderNumber}%` });
+        if (filters?.packageId) queryBuilder.andWhere('order.packageId LIKE :packageId', { packageId: `%${filters.packageId}%` });
+        if (filters?.integrationId) queryBuilder.andWhere('order.integrationId = :integrationId', { integrationId: filters.integrationId });
+        if (filters?.storeId) queryBuilder.andWhere('order.storeId = :storeId', { storeId: filters.storeId });
+        if (filters?.status) queryBuilder.andWhere('order.status = :status', { status: filters.status });
+        if (filters?.startDate) queryBuilder.andWhere('order.orderDate >= :startDate', { startDate: new Date(filters.startDate) });
+        if (filters?.endDate) queryBuilder.andWhere('order.orderDate <= :endDate', { endDate: new Date(filters.endDate) });
+        if (filters?.customerName) {
+            queryBuilder.andWhere(
+                "(CONCAT(customer.firstName, ' ', customer.lastName) LIKE :customerName OR customer.firstName LIKE :customerName OR customer.lastName LIKE :customerName)",
+                { customerName: `%${filters.customerName}%` }
+            );
+        }
+        if (filters?.micro !== undefined) {
+            queryBuilder.andWhere('order.micro = :micro', { micro: filters.micro });
+        }
+        if (filters?.startDeliveryDate) {
+            queryBuilder.andWhere('order.agreedDeliveryDate >= :startDeliveryDate', { startDeliveryDate: new Date(filters.startDeliveryDate) });
+        }
+        if (filters?.endDeliveryDate) {
+            queryBuilder.andWhere('order.agreedDeliveryDate <= :endDeliveryDate', { endDeliveryDate: new Date(filters.endDeliveryDate) });
+        }
+
+        queryBuilder.orderBy('order.orderDate', 'DESC');
+
+        const orders = await queryBuilder.getMany();
+
+        const data = orders.map(order => ({
+            'Sipariş No': order.orderNumber,
+            'Paket No': order.packageId || '',
+            'Entegrasyon': order.integration?.name || '',
+            'Mağaza': order.store?.name || '',
+            'Müşteri': order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : 'Misafir',
+            'Tarih': new Date(order.orderDate).toLocaleString('tr-TR'),
+            'Beklenen Kargolama': order.agreedDeliveryDate ? new Date(order.agreedDeliveryDate).toLocaleString('tr-TR') : '',
+            'Tutar': order.totalPrice,
+            'Durum': order.status,
+            'Kargo Takip No': order.cargoTrackingNumber || '',
+            'Mikro İhracat': order.micro ? 'Evet' : 'Hayır'
+        }));
+
+        const worksheet = XLSX.utils.json_to_sheet(data);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Siparişler');
+
+        return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
     }
 
     async findFaultyOrders(page: number = 1, limit: number = 10) {

@@ -18,9 +18,9 @@ export function AppLayout({ children, user, currentPath }: AppLayoutProps) {
 
   return (
     <div className="flex h-screen bg-muted/30">
-      <Sidebar 
-        routes={routes} 
-        currentPath={currentPath} 
+      <Sidebar
+        routes={routes}
+        currentPath={currentPath}
         isMobileMenuOpen={isMobileMenuOpen}
         onMobileMenuClose={closeMobileMenu}
       />

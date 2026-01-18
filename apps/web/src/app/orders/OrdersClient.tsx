@@ -1,17 +1,34 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Button } from '@/components/common/Button';
+import { Button } from '@/components/ui/button';
 import { OrdersTable } from '@/components/orders/OrdersTable';
 import { SyncOrdersDialog } from '@/components/orders/SyncOrdersDialog';
-import { getIntegrations, Order, Integration } from '@/lib/api';
-import { RefreshCw, Download } from 'lucide-react';
+import { getIntegrations, getStores, Order, Integration, Store } from '@/lib/api';
+import { RefreshCw, Download, Plus, MoreHorizontal } from 'lucide-react';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { FetchOrderDialog } from '@/components/orders/FetchOrderDialog';
+import {
+    Breadcrumb,
+    BreadcrumbItem,
+    BreadcrumbLink,
+    BreadcrumbList,
+    BreadcrumbPage,
+    BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb"
 
 export function OrdersClient() {
     const [orders, setOrders] = useState<Order[]>([]);
     const [integrations, setIntegrations] = useState<Integration[]>([]);
+    const [stores, setStores] = useState<Store[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSyncDialogOpen, setIsSyncDialogOpen] = useState(false);
+    const [isFetchDialogOpen, setIsFetchDialogOpen] = useState(false);
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
     const [totalPages, setTotalPages] = useState(1);
@@ -19,12 +36,20 @@ export function OrdersClient() {
         orderNumber?: string;
         packageId?: string;
         integrationId?: string;
+        storeId?: string;
         status?: string;
+        startDate?: string;
+        endDate?: string;
+        customerName?: string;
+        micro?: boolean;
+        startDeliveryDate?: string;
+        endDeliveryDate?: string;
     }>({});
 
-    // Fetch integrations once
+    // Fetch integrations and stores once
     useEffect(() => {
         getIntegrations(1, 100).then(res => setIntegrations(res.data)).catch(console.error);
+        getStores(1, 100).then(res => setStores(res.data)).catch(console.error);
     }, []);
 
     const fetchOrders = useCallback(async () => {
@@ -37,7 +62,14 @@ export function OrdersClient() {
             if (filters.orderNumber) params.append('orderNumber', filters.orderNumber);
             if (filters.packageId) params.append('packageId', filters.packageId);
             if (filters.integrationId) params.append('integrationId', filters.integrationId);
+            if (filters.storeId) params.append('storeId', filters.storeId);
             if (filters.status) params.append('status', filters.status);
+            if (filters.startDate) params.append('startDate', filters.startDate);
+            if (filters.endDate) params.append('endDate', filters.endDate);
+            if (filters.customerName) params.append('customerName', filters.customerName);
+            if (filters.micro !== undefined) params.append('micro', String(filters.micro));
+            if (filters.startDeliveryDate) params.append('startDeliveryDate', filters.startDeliveryDate);
+            if (filters.endDeliveryDate) params.append('endDeliveryDate', filters.endDeliveryDate);
 
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/orders?${params}`, {
                 credentials: 'include',
@@ -68,31 +100,97 @@ export function OrdersClient() {
         setPage(1); // Reset to first page on filter change
     };
 
+    const handleExportExcel = async () => {
+        try {
+            const params = new URLSearchParams();
+            if (filters.orderNumber) params.append('orderNumber', filters.orderNumber);
+            if (filters.packageId) params.append('packageId', filters.packageId);
+            if (filters.integrationId) params.append('integrationId', filters.integrationId);
+            if (filters.storeId) params.append('storeId', filters.storeId);
+            if (filters.status) params.append('status', filters.status);
+            if (filters.startDate) params.append('startDate', filters.startDate);
+            if (filters.endDate) params.append('endDate', filters.endDate);
+            if (filters.customerName) params.append('customerName', filters.customerName);
+            if (filters.micro !== undefined) params.append('micro', String(filters.micro));
+            if (filters.startDeliveryDate) params.append('startDeliveryDate', filters.startDeliveryDate);
+            if (filters.endDeliveryDate) params.append('endDeliveryDate', filters.endDeliveryDate);
+
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/orders/export?${params}`, {
+                credentials: 'include',
+            });
+
+            if (!res.ok) throw new Error('Export failed');
+
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `siparisler-${new Date().toISOString().split('T')[0]}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (error) {
+            console.error('Export failed', error);
+        }
+    };
+
     return (
-        <div className="p-8 space-y-6">
+        <div className="space-y-4">
             <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold tracking-tight text-foreground">Siparişler</h1>
-                    <p className="text-muted-foreground mt-1">
-                        Pazaryerlerinden gelen siparişleri görüntüleyin ve yönetin.
-                    </p>
-                </div>
-                <div className="flex items-center gap-3">
-                    <Button variant="outline" onClick={fetchOrders} disabled={isLoading}>
-                        <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-                        Yenile
+                <Breadcrumb>
+                    <BreadcrumbList>
+                        <BreadcrumbItem>
+                            <BreadcrumbLink href="/dashboard">AmbarHUB</BreadcrumbLink>
+                        </BreadcrumbItem>
+                        <BreadcrumbSeparator />
+                        <BreadcrumbItem>
+                            <BreadcrumbPage>Siparişler</BreadcrumbPage>
+                        </BreadcrumbItem>
+                    </BreadcrumbList>
+                </Breadcrumb>
+                <div className="flex items-center gap-2">
+                    <Button
+                        size="sm"
+                        onClick={() => { }} // Placeholder for Create Order
+                    >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Sipariş Oluştur
                     </Button>
-                    <Button onClick={() => setIsSyncDialogOpen(true)}>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsFetchDialogOpen(true)}
+                    >
                         <Download className="w-4 h-4 mr-2" />
-                        Sipariş Eşitle
+                        Sipariş Çek
                     </Button>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="icon" className="h-9 w-9">
+                                <MoreHorizontal className="w-4 h-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={fetchOrders} disabled={isLoading}>
+                                <RefreshCw className="w-4 h-4 mr-2" />
+                                Yenile
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setIsSyncDialogOpen(true)}>
+                                <Download className="w-4 h-4 mr-2" />
+                                Sipariş Eşitle
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                 </div>
             </div>
+
 
             <div className="border border-border rounded-xl bg-card p-4">
                 <OrdersTable
                     orders={orders}
                     integrations={integrations}
+                    stores={stores}
                     isLoading={isLoading}
                     currentPage={page}
                     totalPages={totalPages}
@@ -101,12 +199,21 @@ export function OrdersClient() {
                     onPageSizeChange={handlePageSizeChange}
                     filters={filters}
                     onFilterChange={handleFilterChange}
+                    onExport={handleExportExcel}
                 />
             </div>
 
             <SyncOrdersDialog
                 open={isSyncDialogOpen}
                 onClose={() => setIsSyncDialogOpen(false)}
+                onSuccess={() => {
+                    setTimeout(fetchOrders, 1000);
+                }}
+            />
+
+            <FetchOrderDialog
+                open={isFetchDialogOpen}
+                onClose={() => setIsFetchDialogOpen(false)}
                 onSuccess={() => {
                     setTimeout(fetchOrders, 1000);
                 }}

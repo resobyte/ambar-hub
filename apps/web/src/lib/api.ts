@@ -935,6 +935,7 @@ export interface Order {
   items?: OrderItem[];
   cargoTrackingNumber?: string;
   cargoLabelZpl?: string;
+  agreedDeliveryDate?: string;
 }
 
 export async function getOrders(page = 1, limit = 10): Promise<PaginationResponse<Order>> {

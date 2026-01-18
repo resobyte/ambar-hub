@@ -1,16 +1,55 @@
 'use client';
 
 import { useState } from 'react';
-import { Order, OrderStatus, createInvoiceFromOrder, getInvoicePdf, Integration } from '@/lib/api';
-import { Badge } from '@/components/common/Badge';
-import { Button } from '@/components/common/Button';
-import { Input } from '@/components/common/Input';
-import { Select } from '@/components/common/Select';
-import { ChevronRight, ChevronDown, FileStack } from 'lucide-react';
+import { Order, OrderStatus, createInvoiceFromOrder, getInvoicePdf, Integration, Store } from '@/lib/api';
+import { useToast } from '@/components/ui/use-toast';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table"
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
+import { Combobox } from '@/components/ui/combobox';
+import { DatePickerWithRange } from '@/components/ui/date-range-picker';
+import {
+    ChevronRight,
+    ChevronDown,
+    FileStack,
+    Filter,
+    FileSpreadsheet,
+    Download,
+    RefreshCw,
+    Loader2,
+    Package,
+    Truck,
+    Eye,
+    ChevronLeft,
+    X,
+    FileText
+} from 'lucide-react';
+
+import { cn } from '@/lib/utils';
+import { DateRange } from 'react-day-picker';
 
 interface OrdersTableProps {
     orders: Order[];
     integrations: Integration[];
+    stores: Store[];
     isLoading: boolean;
     currentPage: number;
     totalPages: number;
@@ -21,14 +60,19 @@ interface OrdersTableProps {
         orderNumber?: string;
         packageId?: string;
         integrationId?: string;
+        storeId?: string;
         status?: string;
+        // Expanded filters support - assuming parent will handle or ignore extra fields
+        [key: string]: any;
     };
     onFilterChange: (filters: any) => void;
+    onExport: () => void;
 }
 
 export function OrdersTable({
     orders,
     integrations,
+    stores,
     isLoading,
     currentPage,
     totalPages,
@@ -37,13 +81,18 @@ export function OrdersTable({
     onPageSizeChange,
     filters,
     onFilterChange,
+    onExport,
 }: OrdersTableProps) {
+    const { toast } = useToast();
     const [invoiceLoading, setInvoiceLoading] = useState<string | null>(null);
     const [bulkLoading, setBulkLoading] = useState(false);
     const [pdfHtml, setPdfHtml] = useState<string | null>(null);
     const [showPdfModal, setShowPdfModal] = useState(false);
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [dateRange, setDateRange] = useState<DateRange | undefined>();
+    const [deliveryDateRange, setDeliveryDateRange] = useState<DateRange | undefined>();
+
 
     const toggleSelect = (id: string) => {
         const newSelected = new Set(selectedIds);
@@ -73,32 +122,71 @@ export function OrdersTable({
         setExpandedIds(newExpanded);
     };
 
-    const getStatusColor = (status: OrderStatus) => {
+    const getStatusVariant = (status: OrderStatus) => {
         switch (status) {
-            case OrderStatus.DELIVERED: return 'success';
-            case OrderStatus.SHIPPED: return 'info';
+            case OrderStatus.DELIVERED: return 'default'; // dark/success looking
+            case OrderStatus.SHIPPED: return 'secondary';
             case OrderStatus.CANCELLED:
-            case OrderStatus.UNSUPPLIED: return 'error';
+            case OrderStatus.UNSUPPLIED: return 'destructive';
             case OrderStatus.CREATED:
-            case OrderStatus.PICKING: return 'warning';
-            default: return 'default';
+            case OrderStatus.PICKING: return 'outline';
+            default: return 'outline';
         }
     };
+
+    const getStatusColorClass = (status: OrderStatus) => {
+        switch (status) {
+            case OrderStatus.DELIVERED: return 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200';
+            case OrderStatus.SHIPPED: return 'bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-200';
+            case OrderStatus.CANCELLED:
+            case OrderStatus.UNSUPPLIED: return 'bg-red-100 text-red-800 border-red-200 hover:bg-red-200';
+            case OrderStatus.CREATED: return 'bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-200';
+            case OrderStatus.PICKING: return 'bg-orange-100 text-orange-800 border-orange-200 hover:bg-orange-200';
+            case OrderStatus.INVOICED: return 'bg-purple-100 text-purple-800 border-purple-200 hover:bg-purple-200';
+            case OrderStatus.RETURNED: return 'bg-pink-100 text-pink-800 border-pink-200 hover:bg-pink-200';
+            case OrderStatus.REPACK: return 'bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-200';
+            case OrderStatus.UNDELIVERED: return 'bg-gray-100 text-gray-800 border-gray-200 hover:bg-gray-200';
+            default: return '';
+        }
+    }
+
+    const getStatusLabel = (status: OrderStatus) => {
+        switch (status) {
+            case OrderStatus.CREATED: return 'Oluşturuldu';
+            case OrderStatus.PICKING: return 'Toplama';
+            case OrderStatus.INVOICED: return 'Faturalandı';
+            case OrderStatus.SHIPPED: return 'Kargoya Verildi';
+            case OrderStatus.DELIVERED: return 'Teslim Edildi';
+            case OrderStatus.CANCELLED: return 'İptal Edildi';
+            case OrderStatus.RETURNED: return 'İade Edildi';
+            case OrderStatus.UNSUPPLIED: return 'Tedarik Edilemedi';
+            case OrderStatus.REPACK: return 'Yeniden Paketle';
+            case OrderStatus.UNDELIVERED: return 'Teslim Edilemedi';
+            default: return status;
+        }
+    }
 
     const handleCreateInvoice = async (orderId: string) => {
         setInvoiceLoading(orderId);
         try {
             const invoice = await createInvoiceFromOrder(orderId);
             if (invoice.status === 'SUCCESS') {
-                // Get PDF after successful creation
                 const pdf = await getInvoicePdf(invoice.id);
                 setPdfHtml(pdf.html);
                 setShowPdfModal(true);
             } else {
-                alert(`Fatura oluşturuldu ama hata var: ${invoice.errorMessage}`);
+                toast({
+                    variant: "destructive",
+                    title: "Hata",
+                    description: `Fatura oluşturulamadı: ${invoice.errorMessage || 'Bilinmeyen hata'}`
+                });
             }
         } catch (error: any) {
-            alert(`Fatura oluşturma hatası: ${error.message}`);
+            toast({
+                variant: "destructive",
+                title: "İşlem Başarısız",
+                description: `Fatura oluşturma hatası: ${error.message}`
+            });
         } finally {
             setInvoiceLoading(null);
         }
@@ -118,383 +206,551 @@ export function OrdersTable({
                 credentials: 'include',
                 body: JSON.stringify({ orderIds: Array.from(selectedIds) }),
             });
-
             const data = await res.json();
-
             if (res.ok) {
-                const successCount = data.success?.length || 0;
-                const failedCount = data.failed?.length || 0;
-                alert(`Toplu fatura tamamlandı!\nBaşarılı: ${successCount}\nBaşarısız: ${failedCount}`);
+                toast({
+                    title: "İşlem Tamamlandı",
+                    description: `Başarılı: ${data.success?.length || 0}, Başarısız: ${data.failed?.length || 0}`,
+                    duration: 5000,
+                });
                 setSelectedIds(new Set());
             } else {
-                alert(`Hata: ${data.message || 'Toplu fatura oluşturulamadı'}`);
+                toast({
+                    variant: "destructive",
+                    title: "Toplu Fatura Hatası",
+                    description: data.message || 'Toplu fatura oluşturulamadı',
+                });
             }
         } catch (error: any) {
-            alert(`Hata: ${error.message}`);
+            toast({
+                variant: "destructive",
+                title: "İşlem Başarısız",
+                description: error.message,
+            });
         } finally {
             setBulkLoading(false);
         }
     };
 
     return (
-        <div className="flex gap-4 w-full">
-            {/* Sidebar Filters */}
-            <div className="w-64 shrink-0 space-y-4 p-4 border rounded-lg bg-card">
-                <h3 className="font-semibold text-sm uppercase text-muted-foreground">Filtreler</h3>
+        <div className="space-y-4 animate-in fade-in duration-500">
+            {/* Filter Section */}
+            <Card className="shadow-sm border-muted">
+                <CardHeader className="pb-3 border-b bg-muted/30 px-4 py-3">
+                    <div className="flex items-center gap-2">
+                        <Filter className="w-4 h-4 text-primary" />
+                        <CardTitle className="text-base font-medium">Sipariş Filtreleri</CardTitle>
+                    </div>
+                </CardHeader>
+                <CardContent className="p-4">
+                    {/* Row 1: Comboboxes */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                        {/* Mağaza (Store) */}
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-muted-foreground">Mağaza</label>
+                            <Combobox
+                                options={[
+                                    { value: "", label: "Tümü" },
+                                    ...stores.map(s => ({ value: s.id, label: s.name }))
+                                ]}
+                                value={filters.storeId || ""}
+                                onValueChange={(val) => onFilterChange({ ...filters, storeId: val })}
+                                placeholder="Mağaza Seç..."
+                                searchPlaceholder="Mağaza ara..."
+                                emptyMessage="Mağaza bulunamadı."
+                                className="h-9"
+                            />
+                        </div>
 
-                <div className="space-y-2">
-                    <label className="text-xs text-muted-foreground">Sipariş No</label>
-                    <Input
-                        placeholder="Ara..."
-                        value={filters.orderNumber || ''}
-                        onChange={(e) => onFilterChange({ ...filters, orderNumber: e.target.value })}
-                        className="h-8"
-                    />
-                </div>
+                        {/* Entegrasyon */}
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-muted-foreground">Entegrasyon</label>
+                            <Combobox
+                                options={[
+                                    { value: "", label: "Tümü" },
+                                    ...integrations.map(i => ({ value: i.id, label: i.name }))
+                                ]}
+                                value={filters.integrationId || ""}
+                                onValueChange={(val) => onFilterChange({ ...filters, integrationId: val })}
+                                placeholder="Entegrasyon Seç..."
+                                searchPlaceholder="Entegrasyon ara..."
+                                emptyMessage="Entegrasyon bulunamadı."
+                                className="h-9"
+                            />
+                        </div>
 
-                <div className="space-y-2">
-                    <label className="text-xs text-muted-foreground">Package ID</label>
-                    <Input
-                        placeholder="Ara..."
-                        value={filters.packageId || ''}
-                        onChange={(e) => onFilterChange({ ...filters, packageId: e.target.value })}
-                        className="h-8"
-                    />
-                </div>
+                        {/* Sipariş Durumu */}
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-muted-foreground">Sipariş Durumu</label>
+                            <Combobox
+                                options={[
+                                    { value: "", label: "Tümü" },
+                                    { value: "CREATED", label: "Oluşturuldu" },
+                                    { value: "PICKING", label: "Toplama" },
+                                    { value: "INVOICED", label: "Faturalandı" },
+                                    { value: "SHIPPED", label: "Kargoya Verildi" },
+                                    { value: "DELIVERED", label: "Teslim Edildi" },
+                                    { value: "CANCELLED", label: "İptal Edildi" },
+                                    { value: "RETURNED", label: "İade Edildi" },
+                                    { value: "UNSUPPLIED", label: "Tedarik Edilemedi" },
+                                    { value: "REPACK", label: "Yeniden Paketle" },
+                                    { value: "UNDELIVERED", label: "Teslim Edilemedi" },
+                                ]}
+                                value={filters.status || ""}
+                                onValueChange={(val) => onFilterChange({ ...filters, status: val })}
+                                placeholder="Durum Seç..."
+                                searchPlaceholder="Durum ara..."
+                                emptyMessage="Durum bulunamadı."
+                                className="h-9"
+                            />
+                        </div>
 
-                <div className="space-y-2">
-                    <label className="text-xs text-muted-foreground">Entegrasyon</label>
-                    <Select
-                        className="h-8"
-                        value={filters.integrationId || ''}
-                        onChange={(e) => onFilterChange({ ...filters, integrationId: e.target.value })}
-                        options={[
-                            { value: '', label: 'Tümü' },
-                            ...integrations.map(i => ({ value: i.id, label: i.name }))
-                        ]}
-                    />
-                </div>
+                        {/* Tarih Aralığı */}
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-muted-foreground">Sipariş Tarihi</label>
+                            <DatePickerWithRange
+                                date={dateRange}
+                                setDate={(val) => {
+                                    setDateRange(val);
+                                    if (val?.from) {
+                                        const startDate = new Date(val.from);
+                                        startDate.setHours(0, 0, 0, 0);
+                                        const endDate = val.to ? new Date(val.to) : new Date(val.from);
+                                        endDate.setHours(23, 59, 59, 999);
 
-                <div className="space-y-2">
-                    <label className="text-xs text-muted-foreground">Durum</label>
-                    <Select
-                        className="h-8"
-                        value={filters.status || ''}
-                        onChange={(e) => onFilterChange({ ...filters, status: e.target.value })}
-                        options={[
-                            { value: '', label: 'Tümü' },
-                            ...Object.values(OrderStatus).map(s => ({ value: s, label: s }))
-                        ]}
-                    />
-                </div>
-
-                <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    onClick={() => onFilterChange({})}
-                >
-                    Filtreleri Temizle
-                </Button>
-            </div>
-
-            {/* Main Table */}
-            < div className="flex-1" >
-                {/* Single Fetch Toolbar */}
-                < div className="bg-card border rounded-lg p-4 mb-4 flex items-center gap-4" >
-                    <div className="flex-1 max-w-sm flex gap-2">
-                        <Input
-                            placeholder="Trendyol Sipariş No (örn: 927492934)"
-                            className="h-9"
-                            id="single-order-input"
-                        />
-                        <Button
-                            className="whitespace-nowrap bg-orange-600 hover:bg-orange-700 text-white"
-                            size="sm"
-                            onClick={async () => {
-                                const input = document.getElementById('single-order-input') as HTMLInputElement;
-                                const val = input.value?.trim();
-                                if (!val) {
-                                    alert('Lütfen bir sipariş numarası girin');
-                                    return;
-                                }
-
-                                try {
-                                    const btn = document.activeElement as HTMLButtonElement;
-                                    const originalText = btn.innerText;
-                                    btn.innerText = 'Çekiliyor...';
-                                    btn.disabled = true;
-
-                                    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/orders/fetch-trendyol?orderNumber=${val}`, {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                    });
-                                    const data = await res.json();
-
-                                    if (data.success) {
-                                        alert(`Başarılı: ${data.message}`);
-                                        input.value = '';
-                                        // Refresh list logic usually via parent but here we rely on manual reload or if we had a reload trigger
-                                        // Ideally we call onFilterChange to trigger reload if we modify parent
-                                        window.location.reload();
+                                        onFilterChange({
+                                            ...filters,
+                                            startDate: startDate.toISOString(),
+                                            endDate: endDate.toISOString()
+                                        });
                                     } else {
-                                        alert(`Hata: ${data.message}`);
+                                        const newFilters = { ...filters };
+                                        delete newFilters.startDate;
+                                        delete newFilters.endDate;
+                                        onFilterChange(newFilters);
                                     }
+                                }}
+                                className="h-9"
+                            />
+                        </div>
 
-                                    btn.innerText = originalText;
-                                    btn.disabled = false;
-                                } catch (err: any) {
-                                    alert('Bir hata oluştu: ' + err.message);
-                                }
-                            }}
-                        >
-                            Trendyol&apos;dan Çek
+                        {/* Beklenen Kargolama Tarihi */}
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-muted-foreground">Beklenen Kargolama</label>
+                            <DatePickerWithRange
+                                date={deliveryDateRange}
+                                setDate={(val) => {
+                                    setDeliveryDateRange(val);
+                                    if (val?.from) {
+                                        const startDate = new Date(val.from);
+                                        startDate.setHours(0, 0, 0, 0);
+                                        const endDate = val.to ? new Date(val.to) : new Date(val.from);
+                                        endDate.setHours(23, 59, 59, 999);
+
+                                        onFilterChange({
+                                            ...filters,
+                                            startDeliveryDate: startDate.toISOString(),
+                                            endDeliveryDate: endDate.toISOString()
+                                        });
+                                    } else {
+                                        const newFilters = { ...filters };
+                                        delete newFilters.startDeliveryDate;
+                                        delete newFilters.endDeliveryDate;
+                                        onFilterChange(newFilters);
+                                    }
+                                }}
+                                className="h-9"
+                            />
+                        </div>
+
+                        {/* Sipariş No */}
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-muted-foreground">Sipariş No</label>
+                            <Input
+                                className="h-9"
+                                placeholder="Sipariş No..."
+                                value={filters.orderNumber || ''}
+                                onChange={(e) => onFilterChange({ ...filters, orderNumber: e.target.value })}
+                            />
+                        </div>
+
+                        {/* Paket Numarası */}
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-muted-foreground">Paket Numarası</label>
+                            <Input
+                                className="h-9"
+                                placeholder="Paket No..."
+                                value={filters.packageId || ''}
+                                onChange={(e) => onFilterChange({ ...filters, packageId: e.target.value })}
+                            />
+                        </div>
+
+                        {/* Müşteri Adı Soyadı */}
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-muted-foreground">Müşteri Adı Soyadı</label>
+                            <Input
+                                className="h-9"
+                                placeholder="Müşteri Ara..."
+                                value={filters.customerName || ''}
+                                onChange={(e) => onFilterChange({ ...filters, customerName: e.target.value })}
+                            />
+                        </div>
+
+                        {/* Mikro İhracat */}
+                        <div className="space-y-1.5 flex flex-col justify-end">
+                            <label className="text-xs font-medium text-muted-foreground">Mikro İhracat</label>
+                            <div className="flex items-center space-x-2 h-9 px-1">
+                                <Switch
+                                    checked={filters.micro === true}
+                                    onCheckedChange={(checked) => onFilterChange({ ...filters, micro: checked ? true : undefined })}
+                                    className="scale-90"
+                                />
+                                <span className="text-sm text-foreground">
+                                    {filters.micro === true ? 'Evet' : 'Tümü'}
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Filtreleri Temizle */}
+                        <div className="space-y-1.5 flex flex-col justify-end">
+                            <label className="text-xs font-medium text-muted-foreground opacity-0">İşlem</label>
+                            <Button
+                                variant="outline"
+                                className="h-9 w-full text-muted-foreground hover:text-foreground border-dashed"
+                                onClick={() => {
+                                    onFilterChange({});
+                                    setDateRange(undefined);
+                                    setDeliveryDateRange(undefined);
+                                }}
+                            >
+                                <X className="w-4 h-4 mr-2" />
+                                Filtreleri Temizle
+                            </Button>
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+
+
+
+            {/* Data Table */}
+            <Card className="shadow-md border-muted">
+                <CardHeader className="pb-3 flex flex-row items-center justify-between px-4 py-3 border-b bg-muted/30">
+                    <CardTitle className="text-base font-medium">Siparişler</CardTitle>
+                    <div className="flex items-center gap-2">
+                        {selectedIds.size > 0 && (
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                                onClick={handleBulkInvoice}
+                                disabled={bulkLoading}
+                            >
+                                {bulkLoading ? (
+                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                ) : (
+                                    <FileText className="w-4 h-4 mr-2" />
+                                )}
+                                Toplu Fatura Kes ({selectedIds.size})
+                            </Button>
+                        )}
+                        <Button size="sm" variant="outline" className="text-green-600 border-green-200 hover:bg-green-50" onClick={onExport}>
+                            <FileSpreadsheet className="w-4 h-4 mr-2" />
+                            Excele Aktar
                         </Button>
                     </div>
-                </div >
-
-                {
-                    isLoading ? (
-                        <div className="p-4 text-center" > Yükleniyor...</div>
-                    ) : orders.length === 0 ? (
-                        <div className="p-4 text-center text-muted-foreground">Sipariş bulunamadı.</div>
-                    ) : (
-                        <>
-                            <div className="rounded-md border">
-                                {/* Bulk Actions Bar */}
-                                {selectedIds.size > 0 && (
-                                    <div className="bg-primary/10 p-3 flex items-center justify-between border-b">
-                                        <span className="text-sm font-medium">
-                                            {selectedIds.size} sipariş seçildi
-                                        </span>
-                                        <Button
-                                            size="sm"
-                                            onClick={handleBulkInvoice}
-                                            disabled={bulkLoading}
-                                        >
-                                            <FileStack className="w-4 h-4 mr-2" />
-                                            {bulkLoading ? 'İşleniyor...' : 'Toplu Fatura Kes'}
-                                        </Button>
-                                    </div>
-                                )}
-                                <table className="w-full text-sm text-left">
-                                    <thead className="bg-muted/50 text-muted-foreground uppercase text-xs">
-                                        <tr>
-                                            <th className="w-10 px-4 py-3">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={selectedIds.size === orders.length && orders.length > 0}
-                                                    onChange={toggleSelectAll}
-                                                    className="w-4 h-4 rounded border-gray-300"
-                                                />
-                                            </th>
-                                            <th className="w-10"></th>
-                                            <th className="px-4 py-3 font-medium">Sipariş No</th>
-                                            <th className="px-4 py-3 font-medium">Kaynak</th>
-                                            <th className="px-4 py-3 font-medium">Müşteri</th>
-                                            <th className="px-4 py-3 font-medium">Tarih</th>
-                                            <th className="px-4 py-3 font-medium">Toplam</th>
-                                            <th className="px-4 py-3 font-medium">Durum</th>
-                                            <th className="px-4 py-3 font-medium">İşlemler</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-border">
-                                        {orders.map((order) => (
-                                            <>
-                                                <tr key={order.id} className="hover:bg-muted/20 transaction-colors">
-                                                    <td className="px-4 py-3 text-center">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={selectedIds.has(order.id)}
-                                                            onChange={() => toggleSelect(order.id)}
-                                                            className="w-4 h-4 rounded border-gray-300"
-                                                        />
-                                                    </td>
-                                                    <td className="px-4 py-3 text-center">
-                                                        <button
-                                                            onClick={() => toggleExpand(order.id)}
-                                                            className="p-1 hover:bg-muted rounded text-muted-foreground"
-                                                        >
-                                                            {expandedIds.has(order.id) ? (
-                                                                <ChevronDown className="w-4 h-4" />
-                                                            ) : (
-                                                                <ChevronRight className="w-4 h-4" />
-                                                            )}
-                                                        </button>
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        <div className="font-medium">{order.orderNumber}</div>
-                                                        {/* @ts-ignore */}
-                                                        <div className="text-xs text-muted-foreground">{order.packageId}</div>
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        <Badge variant="outline">
-                                                            {order.integration?.name || '-'}
-                                                        </Badge>
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        {order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : 'Misafir'}
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        {new Date(order.orderDate).toLocaleDateString('tr-TR')}
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        {new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(order.totalPrice)}
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        <Badge variant={getStatusColor(order.status)}>{order.status}</Badge>
-                                                    </td>
-                                                    <td className="px-4 py-3 space-x-2">
+                </CardHeader>
+                <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                        <Table>
+                            <TableHeader className="bg-muted/50">
+                                <TableRow>
+                                    <TableHead className="w-[50px] text-center">
+                                        <Checkbox
+                                            checked={selectedIds.size === orders.length && orders.length > 0}
+                                            onCheckedChange={toggleSelectAll}
+                                        />
+                                    </TableHead>
+                                    <TableHead className="w-[50px]"></TableHead>
+                                    <TableHead className="font-semibold">Sipariş No</TableHead>
+                                    <TableHead className="font-semibold">Kaynak</TableHead>
+                                    <TableHead className="font-semibold">Müşteri</TableHead>
+                                    <TableHead className="font-semibold">Tarih</TableHead>
+                                    <TableHead className="font-semibold">Beklenen Kargolama</TableHead>
+                                    <TableHead className="font-semibold">Tutar</TableHead>
+                                    <TableHead className="font-semibold">Durum</TableHead>
+                                    <TableHead className="text-right font-semibold">İşlemler</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {isLoading ? (
+                                    <TableRow>
+                                        <TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
+                                            <div className="flex flex-col items-center justify-center gap-2">
+                                                <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                                                Loading data...
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                ) : orders.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
+                                            Kayıt bulunamadı.
+                                        </TableCell>
+                                    </TableRow>
+                                ) : (
+                                    orders.map((order) => (
+                                        <>
+                                            <TableRow key={order.id} className="hover:bg-muted/30 group transition-colors data-[state=selected]:bg-muted" data-state={selectedIds.has(order.id) ? "selected" : ""}>
+                                                <TableCell className="text-center">
+                                                    <Checkbox
+                                                        checked={selectedIds.has(order.id)}
+                                                        onCheckedChange={() => toggleSelect(order.id)}
+                                                    />
+                                                </TableCell>
+                                                <TableCell className="text-center">
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={() => toggleExpand(order.id)}>
+                                                        {expandedIds.has(order.id) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                                    </Button>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <div className="flex flex-col">
+                                                        <span className="font-medium text-foreground">{order.orderNumber}</span>
+                                                        <span className="text-xs text-muted-foreground font-mono">{
+                                                            // @ts-ignore
+                                                            order.packageId
+                                                        }</span>
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Badge variant="outline" className="font-normal bg-background">
+                                                        {order.integration?.name || '-'}
+                                                    </Badge>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary">
+                                                            {order.customer?.firstName?.charAt(0) || 'M'}
+                                                        </div>
+                                                        <span className="text-sm">
+                                                            {order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : 'Misafir'}
+                                                        </span>
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
+                                                    {new Date(order.orderDate).toLocaleString('tr-TR', {
+                                                        day: '2-digit',
+                                                        month: '2-digit',
+                                                        year: 'numeric',
+                                                        hour: '2-digit',
+                                                        minute: '2-digit'
+                                                    })}
+                                                </TableCell>
+                                                <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
+                                                    {order.agreedDeliveryDate
+                                                        ? new Date(order.agreedDeliveryDate).toLocaleString('tr-TR', {
+                                                            day: '2-digit',
+                                                            month: '2-digit',
+                                                            year: 'numeric',
+                                                            hour: '2-digit',
+                                                            minute: '2-digit'
+                                                        })
+                                                        : '-'}
+                                                </TableCell>
+                                                <TableCell className="font-medium">
+                                                    {new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(order.totalPrice)}
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Badge className={cn("font-medium shadow-none", getStatusColorClass(order.status))} variant="outline">
+                                                        {getStatusLabel(order.status)}
+                                                    </Badge>
+                                                </TableCell>
+                                                <TableCell className="text-right">
+                                                    <div className="flex items-center justify-end gap-2">
                                                         <Button
-                                                            size="sm"
-                                                            variant="outline"
+                                                            size="icon"
+                                                            variant="ghost"
+                                                            className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                                                             onClick={() => handleCreateInvoice(order.id)}
                                                             disabled={invoiceLoading === order.id}
+                                                            title="Fatura Oluştur"
                                                         >
-                                                            {invoiceLoading === order.id ? '...' : '📄 Fatura'}
+                                                            {invoiceLoading === order.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
                                                         </Button>
+
                                                         {order.cargoTrackingNumber && (
                                                             <Button
-                                                                size="sm"
-                                                                variant="outline"
+                                                                size="icon"
+                                                                variant="ghost"
+                                                                className="h-8 w-8 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                                                                title="Aras Kargo Barkodu"
                                                                 onClick={async () => {
+                                                                    // Same logic as before
                                                                     try {
                                                                         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/orders/${order.id}/label`, {
                                                                             method: 'POST',
                                                                             headers: { 'Content-Type': 'application/json' },
                                                                         });
                                                                         if (res.ok) {
-                                                                            alert('Aras Kargo barkodu başarıyla oluşturuldu.');
-                                                                            // Optionally reload orders to show updated status if we displayed it
-                                                                            // For now just alert is fine
+                                                                            toast({
+                                                                                title: "Başarılı",
+                                                                                description: "Barkod başarıyla oluşturuldu",
+                                                                                variant: 'success',
+                                                                                duration: 3000,
+                                                                            });
                                                                         } else {
-                                                                            const err = await res.json();
-                                                                            alert(`Hata: ${err.message || 'Barkod alınamadı'}`);
+                                                                            const d = await res.json();
+                                                                            toast({
+                                                                                variant: "destructive",
+                                                                                title: "Hata",
+                                                                                description: d.message || "Barkod oluşturulamadı",
+                                                                            });
                                                                         }
                                                                     } catch (e: any) {
-                                                                        alert(`Hata: ${e.message}`);
+                                                                        toast({
+                                                                            variant: "destructive",
+                                                                            title: "Hata",
+                                                                            description: e.message || "Bir hata oluştu",
+                                                                        });
                                                                     }
                                                                 }}
                                                             >
-                                                                📦 Aras
+                                                                <Truck className="w-4 h-4" />
                                                             </Button>
                                                         )}
-                                                    </td>
-                                                </tr>
-                                                {expandedIds.has(order.id) && (
-                                                    <tr key={`${order.id}-detail`} className="bg-muted/10">
-                                                        <td colSpan={9} className="p-4 pl-14">
-                                                            <div className="rounded border bg-background overflow-hidden">
-                                                                <div className="bg-muted px-4 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                                                                    Sipariş İçeriği
+                                                        <Button
+                                                            size="icon"
+                                                            variant="ghost"
+                                                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                                            title="Detay Görüntüle"
+                                                        >
+                                                            <Eye className="w-4 h-4" />
+                                                        </Button>
+                                                    </div>
+                                                </TableCell>
+                                            </TableRow>
+
+                                            {/* Expanded View */}
+                                            {expandedIds.has(order.id) && (
+                                                <TableRow className="bg-muted/5 hover:bg-muted/5">
+                                                    <TableCell colSpan={9} className="p-0">
+                                                        <div className="p-4 pl-12 bg-muted/20 border-b shadow-inner">
+                                                            <div className="bg-background rounded-md border overflow-hidden">
+                                                                <div className="bg-muted/50 px-4 py-2 border-b flex justify-between items-center">
+                                                                    <span className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">Sipariş İçeriği</span>
+                                                                    <span className="text-xs text-muted-foreground">ID: {order.id}</span>
                                                                 </div>
                                                                 {order.items && order.items.length > 0 ? (
-                                                                    <table className="w-full text-sm">
-                                                                        <thead className="text-muted-foreground text-xs uppercase bg-muted/30">
-                                                                            <tr>
-                                                                                <th className="px-4 py-2 font-medium text-left">Ürün Adı</th>
-                                                                                <th className="px-4 py-2 font-medium text-left">SKU</th>
-                                                                                <th className="px-4 py-2 font-medium text-center">Adet</th>
-                                                                                <th className="px-4 py-2 font-medium text-right">Birim Fiyat</th>
-                                                                                <th className="px-4 py-2 font-medium text-right">Toplam</th>
-                                                                            </tr>
-                                                                        </thead>
-                                                                        <tbody className="divide-y divide-border">
+                                                                    <Table>
+                                                                        <TableHeader>
+                                                                            <TableRow className="hover:bg-transparent">
+                                                                                <TableHead className="h-8 text-xs">Ürün Adı</TableHead>
+                                                                                <TableHead className="h-8 text-xs">SKU</TableHead>
+                                                                                <TableHead className="h-8 text-xs text-center">Adet</TableHead>
+                                                                                <TableHead className="h-8 text-xs text-right">Birim Fiyat</TableHead>
+                                                                                <TableHead className="h-8 text-xs text-right">Toplam</TableHead>
+                                                                            </TableRow>
+                                                                        </TableHeader>
+                                                                        <TableBody>
                                                                             {order.items.map((item) => (
-                                                                                <tr key={item.id}>
-                                                                                    <td className="px-4 py-2">{item.productName}</td>
-                                                                                    <td className="px-4 py-2 font-mono text-xs">{item.sku || '-'}</td>
-                                                                                    <td className="px-4 py-2 text-center">{item.quantity}</td>
-                                                                                    <td className="px-4 py-2 text-right">
+                                                                                <TableRow key={item.id} className="hover:bg-muted/20">
+                                                                                    <TableCell className="py-2 text-sm">{item.productName}</TableCell>
+                                                                                    <TableCell className="py-2 text-xs font-mono text-muted-foreground">{item.sku || '-'}</TableCell>
+                                                                                    <TableCell className="py-2 text-center">{item.quantity}</TableCell>
+                                                                                    <TableCell className="py-2 text-right">
                                                                                         {new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(item.unitPrice)}
-                                                                                    </td>
-                                                                                    <td className="px-4 py-2 text-right">
+                                                                                    </TableCell>
+                                                                                    <TableCell className="py-2 text-right font-medium">
                                                                                         {new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(item.unitPrice * item.quantity)}
-                                                                                    </td>
-                                                                                </tr>
+                                                                                    </TableCell>
+                                                                                </TableRow>
                                                                             ))}
-                                                                        </tbody>
-                                                                    </table>
+                                                                        </TableBody>
+                                                                    </Table>
                                                                 ) : (
-                                                                    <div className="p-4 text-center text-muted-foreground">
-                                                                        Ürün bilgisi yok
-                                                                    </div>
+                                                                    <div className="p-8 text-center text-muted-foreground text-sm">Ürün bilgisi bulunamadı.</div>
                                                                 )}
                                                             </div>
-                                                        </td>
-                                                    </tr>
-                                                )}
-                                            </>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                                                        </div>
+                                                    </TableCell>
+                                                </TableRow>
+                                            )}
+                                        </>
+                                    ))
+                                )}
+                            </TableBody>
+                        </Table>
+                    </div>
+                </CardContent>
+            </Card>
 
-                            {/* Pagination */}
-                            <div className="flex items-center justify-between py-4">
-                                <div className="flex items-center space-x-2">
-                                    <span className="text-sm text-muted-foreground">Satır sayısı:</span>
-                                    <Select
-                                        className="h-8 w-[70px]"
-                                        value={String(pageSize)}
-                                        onChange={(e) => onPageSizeChange(Number(e.target.value))}
-                                        options={[
-                                            { value: '20', label: '20' },
-                                            { value: '50', label: '50' },
-                                            { value: '100', label: '100' },
-                                        ]}
-                                    />
-                                </div>
+            {/* Pagination settings */}
+            <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-muted-foreground">Sayfa başına:</span>
+                    <Select
+                        value={String(pageSize)}
+                        onValueChange={(val) => onPageSizeChange(Number(val))}
+                    >
+                        <SelectTrigger className="h-8 w-[70px]">
+                            <SelectValue placeholder={String(pageSize)} />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="20">20</SelectItem>
+                            <SelectItem value="50">50</SelectItem>
+                            <SelectItem value="100">100</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
 
-                                <div className="flex items-center space-x-6">
-                                    <span className="text-sm text-muted-foreground">Sayfa {currentPage} / {totalPages}</span>
-                                    <div className="space-x-2">
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => onPageChange(currentPage - 1)}
-                                            disabled={currentPage <= 1}
-                                        >
-                                            Önceki
-                                        </Button>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => onPageChange(currentPage + 1)}
-                                            disabled={currentPage >= totalPages}
-                                        >
-                                            Sonraki
-                                        </Button>
-                                    </div>
-                                </div>
-                            </div>
-                        </>
-                    )
-                }
-            </div >
+                <div className="flex items-center gap-4">
+                    <span className="text-sm font-medium text-muted-foreground">
+                        Sayfa {currentPage} / {totalPages}
+                    </span>
+                    <div className="flex gap-1">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => onPageChange(currentPage - 1)}
+                            disabled={currentPage <= 1}
+                            className="h-8 px-2"
+                        >
+                            <ChevronLeft className="h-4 w-4 mr-1" /> Önceki
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => onPageChange(currentPage + 1)}
+                            disabled={currentPage >= totalPages}
+                            className="h-8 px-2"
+                        >
+                            Sonraki <ChevronRight className="h-4 w-4 ml-1" />
+                        </Button>
+                    </div>
+                </div>
+            </div>
 
             {/* PDF Modal */}
-            {
-                showPdfModal && pdfHtml && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                        <div className="bg-background rounded-lg w-[90vw] h-[90vh] flex flex-col">
-                            <div className="p-4 border-b flex justify-between items-center">
-                                <h2 className="text-lg font-semibold">Fatura Önizleme</h2>
-                                <Button variant="outline" size="sm" onClick={() => setShowPdfModal(false)}>
-                                    Kapat
-                                </Button>
-                            </div>
-                            <div className="flex-1 overflow-auto p-4">
-                                <iframe
-                                    srcDoc={pdfHtml}
-                                    className="w-full h-full border-0"
-                                    title="Fatura"
-                                />
-                            </div>
+            {showPdfModal && pdfHtml && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-background rounded-xl w-full max-w-4xl h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-4 border-b flex justify-between items-center bg-muted/30">
+                            <h2 className="text-lg font-semibold flex items-center gap-2">
+                                <FileText className="w-5 h-5" /> Fatura Önizleme
+                            </h2>
+                            <Button variant="ghost" size="icon" onClick={() => setShowPdfModal(false)}>
+                                <X className="w-5 h-5" />
+                            </Button>
                         </div>
+                        <iframe
+                            srcDoc={pdfHtml}
+                            className="flex-1 w-full border-0 bg-white"
+                            title="Fatura"
+                        />
                     </div>
-                )
-            }
-        </div >
+                </div>
+            )}
+        </div>
     );
 }
+
