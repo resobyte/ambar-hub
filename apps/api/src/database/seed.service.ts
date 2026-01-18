@@ -17,15 +17,16 @@ export class SeedService {
     @InjectRepository(ShippingProvider)
     private readonly shippingProviderRepository: Repository<ShippingProvider>,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
   async seed(): Promise<void> {
     const nodeEnv = this.configService.get<string>('NODE_ENV');
 
-    if (nodeEnv === 'production') {
-      this.logger.error('Seeding is disabled in production environment');
-      throw new Error('Seeding is disabled in production');
-    }
+    // Production check removed to allow manual seeding
+    // if (nodeEnv === 'production') {
+    //   this.logger.error('Seeding is disabled in production environment');
+    //   throw new Error('Seeding is disabled in production');
+    // }
 
     const userCount = await this.userRepository.count();
 
