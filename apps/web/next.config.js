@@ -4,9 +4,9 @@ const path = require('path');
 const nextConfig = {
   reactStrictMode: true,
   output: 'standalone',
-  // experimental: {
-  //   outputFileTracingRoot: path.join(__dirname, '../../'),
-  // },
+  experimental: {
+    outputFileTracingRoot: path.join(__dirname, '../../'),
+  },
   async rewrites() {
     return [
       {
