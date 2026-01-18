@@ -1,0 +1,15 @@
+[phases.setup]
+nixPkgs = ["nodejs_20", "pnpm"]
+
+[phases.install]
+cmds = ["pnpm install"]
+
+[phases.build]
+cmds = ["cd apps/web && pnpm run build"]
+
+[start]
+cmd = "cd apps/web && node .next/standalone/server.js"
+
+[variables]
+NODE_ENV = "production"
+PORT = "3000"
