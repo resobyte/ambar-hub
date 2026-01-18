@@ -18,8 +18,8 @@ services:
 
   api:
     build:
-      context: ./apps/api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/api/Dockerfile
     container_name: ambarhub-api
     restart: unless-stopped
     ports:
@@ -44,8 +44,8 @@ services:
 
   web:
     build:
-      context: ./apps/web
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/web/Dockerfile
     container_name: ambarhub-web
     restart: unless-stopped
     ports:
