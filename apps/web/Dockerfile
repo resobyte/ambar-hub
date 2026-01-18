@@ -45,4 +45,4 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-CMD sh -c "find /app -name 'server.js' -maxdepth 4 && node apps/web/server.js"
+CMD ["node", "apps/web/server.js"]
