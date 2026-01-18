@@ -45,4 +45,4 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-CMD sh -c "cat apps/web/next.config.js && find /app -name server.js && node apps/web/server.js"
+CMD sh -c "find /app -name server.js; ls -R /app/apps/web; node apps/web/server.js"
