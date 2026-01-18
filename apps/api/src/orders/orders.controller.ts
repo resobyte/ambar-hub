@@ -11,6 +11,14 @@ export class OrdersController {
         return { success: true, message: 'Sync started' };
     }
 
+    @Post('fetch-trendyol')
+    async fetchTrendyolOrder(@Query('orderNumber') orderNumber: string) {
+        if (!orderNumber) {
+            return { success: false, message: 'Order number is required' };
+        }
+        return this.ordersService.fetchSingleTrendyolOrder(orderNumber);
+    }
+
     @Post(':id/label')
     async getLabel(@Param('id') id: string) {
         return this.ordersService.fetchCargoLabel(id);

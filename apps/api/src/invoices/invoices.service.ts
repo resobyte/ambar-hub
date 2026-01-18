@@ -755,15 +755,15 @@ export class InvoicesService {
                 transporterId: null,
                 firstName: (() => {
                     if (order.micro) {
-                        const addr = (order.invoiceAddress as any) || (order.shippingAddress as any);
-                        return (addr?.firstName || order.customer?.firstName || '').substring(0, 100);
+                        const invAddr = order.invoiceAddress as any;
+                        if (invAddr?.firstName) return invAddr.firstName.substring(0, 100);
                     }
                     return (order.customer?.company || order.customer?.firstName || '').substring(0, 100);
                 })(),
                 familyName: (() => {
                     if (order.micro) {
-                        const addr = (order.invoiceAddress as any) || (order.shippingAddress as any);
-                        return (addr?.lastName || order.customer?.lastName || '').substring(0, 100);
+                        const invAddr = order.invoiceAddress as any;
+                        if (invAddr?.lastName) return invAddr.lastName.substring(0, 100);
                     }
                     return (order.customer?.company ? '' : (order.customer?.lastName || '')).substring(0, 100);
                 })(),

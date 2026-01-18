@@ -107,6 +107,13 @@ export class IntegrationsService {
     return IntegrationResponseDto.fromEntity(updatedIntegration, storeCount);
   }
 
+  async findActiveByType(type: import('./entities/integration.entity').IntegrationType): Promise<Integration[]> {
+    return this.integrationRepository.find({
+      where: { type, isActive: true },
+      relations: ['integrationStores', 'integrationStores.store'],
+    });
+  }
+
   async findWithStores(id: string): Promise<Integration | null> {
     return this.integrationRepository.findOne({
       where: { id },

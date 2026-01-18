@@ -225,7 +225,8 @@ export class OrdersService {
                 page: page.toString(),
                 size: '200',
                 orderByField: 'PackageLastModifiedDate',
-                orderByDirection: 'DESC'
+                orderByDirection: 'DESC',
+                status: 'CREATED'
             });
 
             try {
@@ -255,6 +256,79 @@ export class OrdersService {
                 break;
             }
         } while (page < totalPages);
+    }
+
+    async fetchSingleTrendyolOrder(orderNumber: string): Promise<{ success: boolean; message: string; order?: Order }> {
+        // 1. Get all active Trendyol integrations
+        const integrations = await this.integrationsService.findActiveByType(IntegrationType.TRENDYOL);
+
+        if (!integrations || integrations.length === 0) {
+            return { success: false, message: 'Aktif Trendyol entegrasyonu bulunamadı.' };
+        }
+
+        let found = false;
+        let processedOrder: Order | null = null;
+
+        for (const integration of integrations) {
+            for (const storeConfig of integration.integrationStores) {
+                if (!storeConfig.isActive) continue;
+
+                try {
+                    const url = `https://apigw.trendyol.com/integration/order/sellers/${storeConfig.sellerId}/orders`;
+                    const auth = Buffer.from(`${storeConfig.apiKey}:${storeConfig.apiSecret}`).toString('base64');
+
+                    const params = new URLSearchParams({
+                        orderNumber: orderNumber,
+                        size: '10' // We expect 1 but API requires page/size usually or just returns list
+                    });
+
+                    this.logger.log(`Checking Trendyol store ${storeConfig.store?.name} for order ${orderNumber}`);
+
+                    const response = await fetch(`${url}?${params}`, {
+                        method: 'GET',
+                        headers: { Authorization: `Basic ${auth}` },
+                    });
+
+                    if (!response.ok) {
+                        continue;
+                    }
+
+                    const data: any = await response.json();
+                    const packages = data.content;
+
+                    if (packages && packages.length > 0) {
+                        // Found the order!
+                        this.logger.log(`Order ${orderNumber} found in store ${storeConfig.store?.name}`);
+
+                        // Process it
+                        for (const pkg of packages) {
+                            // Only process the specific order number to be safe (though API filtering should have handled it)
+                            if (pkg.orderNumber === orderNumber) {
+                                await this.processOrderPackage(pkg, integration.id, storeConfig.storeId);
+
+                                // Fetch the newly created/updated order to return it
+                                processedOrder = await this.orderRepository.findOne({
+                                    where: { orderNumber },
+                                    relations: ['items', 'customer', 'integration', 'store']
+                                });
+                                found = true;
+                            }
+                        }
+                    }
+                } catch (error) {
+                    this.logger.error(`Error checking Trendyol store ${storeConfig.storeId}`, error);
+                }
+
+                if (found) break;
+            }
+            if (found) break;
+        }
+
+        if (found && processedOrder) {
+            return { success: true, message: 'Sipariş başarıyla çekildi.', order: processedOrder };
+        } else {
+            return { success: false, message: 'Sipariş hiçbir Trendyol mağazasında bulunamadı.' };
+        }
     }
 
     private async syncHepsiburadaOrders(merchantId: string, username: string, password: string, integrationId: string, storeId: string, storeName: string) {
