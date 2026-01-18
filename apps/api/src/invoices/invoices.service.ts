@@ -88,7 +88,7 @@ export class InvoicesService {
 
             // Card Code: TRENDYOL{CountryCode}
             const countryCode = this.getCountryCode(order);
-            invoiceSettings.cardCode = `TRENDYOL${countryCode}`;
+            invoiceSettings.cardCode = `TRENDYOL ${countryCode}`;
 
             // Account Code: Check for AZ special case
             if ((countryCode === 'AZ' || countryCode === 'AZERBAIJAN') && storeConfig.microExportAzAccountCode) {
@@ -430,7 +430,7 @@ export class InvoicesService {
                 if (integrationType === 'TRENDYOL' && isMicroExport && storeConfig.hasMicroExport) {
                     // Mikro İhracat Toplu - always E-Archive (foreign customers)
                     invoiceSettings.vknTckn = '11111111111';
-                    invoiceSettings.cardCode = `TRENDYOL${this.getCountryCode(order)}`;
+                    invoiceSettings.cardCode = `TRENDYOL ${this.getCountryCode(order)}`;
                     invoiceSettings.accountCode = storeConfig.microExportAccountCode;
                     invoiceSettings.serialNo = storeConfig.microExportBulkSerialNo || storeConfig.microExportEArchiveSerialNo;
                     invoiceSettings.edocNo = await getNextBulkInvoiceNumber(invoiceSettings.serialNo);

@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { getBrands, createBrand, updateBrand, deleteBrand, Brand } from '@/lib/api';
-import { Button } from '@/components/common/Button';
-import { Table, Column } from '@/components/common/Table';
-import { Modal } from '@/components/common/Modal';
-import { Input } from '@/components/common/Input';
+import { Button } from '@/components/ui';
+import { DataTable, DataTableColumn } from '@/components/ui';
+import { Modal } from '@/components/ui';
+import { Input } from '@/components/ui';
 import { Badge } from '@/components/common/Badge';
 
 export default function BrandsPage() {
@@ -74,7 +74,7 @@ export default function BrandsPage() {
         setIsModalOpen(true);
     };
 
-    const columns: Column<Brand>[] = [
+    const columns: DataTableColumn<Brand>[] = [
         { key: 'name', header: 'Marka Adı', sortable: true },
         {
             key: 'isActive',
@@ -107,7 +107,7 @@ export default function BrandsPage() {
                 </Button>
             </div>
 
-            <Table
+            <DataTable
                 columns={columns}
                 data={brands}
                 isLoading={loading}

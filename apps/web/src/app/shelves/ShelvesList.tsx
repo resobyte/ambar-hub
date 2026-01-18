@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Button } from '@/components/common/Button';
-import { Input } from '@/components/common/Input';
-import { Select } from '@/components/common/Select';
-import { Modal } from '@/components/common/Modal';
+import { Button } from '@/components/ui';
+import { Input } from '@/components/ui';
+import { Select } from '@/components/ui';
+import { Modal } from '@/components/ui';
 import { useToast } from '@/components/common/ToastContext';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';

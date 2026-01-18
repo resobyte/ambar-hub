@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Modal, Input, Select, Table, Column, Button, ConfirmModal } from '@/components/common';
+import { Modal, Input, Select, DataTable, DataTableColumn, Button, ConfirmModal } from '@/components/ui';
 import { useToast } from '@/components/common/ToastContext';
 import { apiGetPaginated, apiPost, apiPatch, apiDelete } from '@/lib/api';
 import { User, Role, PaginationMeta, SortConfig } from '@/types';
@@ -221,7 +221,7 @@ export function UsersTable() {
     );
   });
 
-  const columns: Column<User>[] = [
+  const columns: DataTableColumn<User>[] = [
     {
       key: 'firstName',
       header: 'Kullanıcı',
@@ -324,7 +324,7 @@ export function UsersTable() {
         </div>
       </div>
 
-      <Table<User>
+      <DataTable<User>
         columns={columns}
         data={filteredUsers}
         keyExtractor={(user) => user.id}

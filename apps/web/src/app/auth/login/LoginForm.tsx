@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { getDefaultRouteByRole } from '@/config/routes';
 import { useToast } from '@/components/common/ToastContext';
-import { Button, Input } from '@/components/common';
+import { Button, Input } from '@/components/ui';
 
 export function LoginForm() {
   const searchParams = useSearchParams();

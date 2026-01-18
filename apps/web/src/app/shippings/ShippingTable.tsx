@@ -1,12 +1,12 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Button } from '@/components/common/Button';
-import { Table, Column } from '@/components/common/Table';
-import { Modal } from '@/components/common/Modal';
-import { Input } from '@/components/common/Input';
-import { Select } from '@/components/common/Select';
-import { ConfirmModal } from '@/components/common/ConfirmModal';
+import { Button } from '@/components/ui';
+import { DataTable, DataTableColumn } from '@/components/ui';
+import { Modal } from '@/components/ui';
+import { Input } from '@/components/ui';
+import { Select } from '@/components/ui';
+import { ConfirmModal } from '@/components/ui';
 import {
   getShippingProviders,
   createShippingProvider,
@@ -172,7 +172,7 @@ export function ShippingTable() {
     [editingProvider]
   );
 
-  const columns = useMemo<Column<ShippingProvider>[]>(() => [
+  const columns = useMemo<DataTableColumn<ShippingProvider>[]>(() => [
     { key: 'name', header: 'Ad' },
     {
       key: 'type',
@@ -249,7 +249,7 @@ export function ShippingTable() {
         </Button>
       </div>
 
-      <Table
+      <DataTable
         columns={columns}
         data={shippingProviders}
         keyExtractor={keyExtractor}

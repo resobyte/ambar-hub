@@ -1,12 +1,12 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Button } from '@/components/common/Button';
-import { Table, Column } from '@/components/common/Table';
-import { Modal } from '@/components/common/Modal';
-import { Input } from '@/components/common/Input';
-import { Select } from '@/components/common/Select';
-import { ConfirmModal } from '@/components/common/ConfirmModal';
+import { Button } from '@/components/ui';
+import { DataTable, DataTableColumn } from '@/components/ui';
+import { Modal } from '@/components/ui';
+import { Input } from '@/components/ui';
+import { Select } from '@/components/ui';
+import { ConfirmModal } from '@/components/ui';
 import {
   getProducts,
   importProducts,
@@ -730,7 +730,7 @@ export function ProductsTable() {
     [editingProduct]
   );
 
-  const columns = useMemo<Column<Product>[]>(() => [
+  const columns = useMemo<DataTableColumn<Product>[]>(() => [
     { key: 'name', header: 'Ürün Adı' },
     {
       key: 'brand',
@@ -853,7 +853,7 @@ export function ProductsTable() {
         </div>
       </div>
 
-      <Table
+      <DataTable
         columns={columns}
         data={products}
         keyExtractor={keyExtractor}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Button } from '@/components/common/Button';
+import { Button } from '@/components/ui';
 import { OrdersTable } from '@/components/orders/OrdersTable';
 import { SyncOrdersDialog } from '@/components/orders/SyncOrdersDialog';
 import { getIntegrations, Order, Integration } from '@/lib/api';

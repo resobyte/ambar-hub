@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Table, Column } from '@/components/common/Table';
+import { DataTable, DataTableColumn } from '@/components/ui';
 import { getFaultyOrders, deleteFaultyOrder, FaultyOrder } from '@/lib/api';
 import { useToast } from '@/components/common/ToastContext';
-import { Button } from '@/components/common/Button';
+import { Button } from '@/components/ui';
 
 export function FaultyOrdersTable() {
     const [faultyOrders, setFaultyOrders] = useState<FaultyOrder[]>([]);
@@ -40,7 +40,7 @@ export function FaultyOrdersTable() {
         }
     };
 
-    const columns: Column<FaultyOrder>[] = [
+    const columns: DataTableColumn<FaultyOrder>[] = [
         { key: 'orderNumber', header: 'Sipariş No' },
         { key: 'customerName', header: 'Müşteri' },
         {
@@ -101,7 +101,7 @@ export function FaultyOrdersTable() {
                 </p>
             </div>
 
-            <Table
+            <DataTable
                 columns={columns}
                 data={faultyOrders}
                 keyExtractor={(item) => item.id}

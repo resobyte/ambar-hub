@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Table, Column } from '@/components/common/Table';
-import { Button } from '@/components/common/Button';
-import { Input } from '@/components/common/Input';
-import { Select } from '@/components/common/Select';
-import { Modal } from '@/components/common/Modal';
+import { DataTable, DataTableColumn } from '@/components/ui';
+import { Button } from '@/components/ui';
+import { Input } from '@/components/ui';
+import { Select } from '@/components/ui';
+import { Modal } from '@/components/ui';
 import { useToast } from '@/components/common/ToastContext';
 import Link from 'next/link';
 
@@ -142,7 +142,7 @@ export function PurchasesList() {
         }
     };
 
-    const columns: Column<PurchaseOrder>[] = [
+    const columns: DataTableColumn<PurchaseOrder>[] = [
         { key: 'orderNumber', header: 'Sipariş No' },
         { key: 'supplier', header: 'Tedarikçi', render: (row) => row.supplier?.name || '-' },
         {
@@ -188,7 +188,7 @@ export function PurchasesList() {
                 <Button onClick={handleCreate}>+ Yeni Satın Alma</Button>
             </div>
 
-            <Table
+            <DataTable
                 columns={columns}
                 data={purchases}
                 keyExtractor={(item) => item.id}

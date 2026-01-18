@@ -1,6 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useCallback, Suspense } from 'react';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
+import { DataTable, DataTableColumn, Badge, Spinner } from '@/components/ui';
 
 interface Invoice {
     id: string;
@@ -18,163 +20,203 @@ interface Invoice {
     errorMessage?: string;
 }
 
-export function InvoicesClient() {
+function InvoicesContent() {
+    const searchParams = useSearchParams();
+    const router = useRouter();
+    const pathname = usePathname();
+
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [loading, setLoading] = useState(true);
-    const [page, setPage] = useState(1);
     const [total, setTotal] = useState(0);
-    const limit = 20;
 
-    useEffect(() => {
-        fetchInvoices();
-    }, [page]);
+    // Get params from URL
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const limit = parseInt(searchParams.get('limit') || '20', 10);
+    const sortBy = searchParams.get('sortBy') || 'createdAt';
+    const sortOrder = (searchParams.get('sortOrder') as 'ASC' | 'DESC') || 'DESC';
 
-    const fetchInvoices = async () => {
+    const totalPages = Math.ceil(total / limit);
+
+    // Update URL
+    const updateURL = useCallback((updates: Record<string, string | number | undefined>) => {
+        const params = new URLSearchParams(searchParams.toString());
+
+        Object.entries(updates).forEach(([key, value]) => {
+            if (value !== undefined && value !== '' && value !== 1 && !(key === 'limit' && value === 20)) {
+                params.set(key, String(value));
+            } else {
+                params.delete(key);
+            }
+        });
+
+        const query = params.toString();
+        router.push(`${pathname}${query ? `?${query}` : ''}`, { scroll: false });
+    }, [searchParams, router, pathname]);
+
+    const setPage = useCallback((newPage: number) => {
+        updateURL({ page: newPage });
+    }, [updateURL]);
+
+    const setLimit = useCallback((newLimit: number) => {
+        updateURL({ page: 1, limit: newLimit });
+    }, [updateURL]);
+
+    const setSort = useCallback((column: string) => {
+        const newOrder = sortBy === column && sortOrder === 'ASC' ? 'DESC' : 'ASC';
+        updateURL({ sortBy: column, sortOrder: newOrder, page: 1 });
+    }, [updateURL, sortBy, sortOrder]);
+
+    const fetchInvoices = useCallback(async () => {
         setLoading(true);
         try {
             const res = await fetch(
-                `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/invoices?page=${page}&limit=${limit}`,
+                `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/invoices?page=${page}&limit=${limit}&sortBy=${sortBy}&sortOrder=${sortOrder}`,
                 { credentials: 'include' }
             );
             const data = await res.json();
-            // Ensure data is always an array
             const invoicesList = Array.isArray(data.data) ? data.data : (Array.isArray(data) ? data : []);
             setInvoices(invoicesList);
             setTotal(data.total || invoicesList.length || 0);
         } catch (error) {
             console.error('Error fetching invoices:', error);
-            setInvoices([]); // Reset to empty array on error
+            setInvoices([]);
         } finally {
             setLoading(false);
         }
+    }, [page, limit, sortBy, sortOrder]);
+
+    useEffect(() => {
+        fetchInvoices();
+    }, [fetchInvoices]);
+
+    const getStatusVariant = (status: string): 'success' | 'warning' | 'danger' | 'neutral' => {
+        switch (status?.toLowerCase()) {
+            case 'success': return 'success';
+            case 'pending': return 'warning';
+            case 'error': return 'danger';
+            default: return 'neutral';
+        }
     };
 
-    const getStatusBadge = (status: string) => {
-        const normalizedStatus = status?.toLowerCase() || '';
-        const styles: Record<string, string> = {
-            'success': 'bg-green-100 text-green-800',
-            'pending': 'bg-yellow-100 text-yellow-800',
-            'error': 'bg-red-100 text-red-800',
-        };
-        const labels: Record<string, string> = {
-            'success': 'Başarılı',
-            'pending': 'Beklemede',
-            'error': 'Hata',
-        };
-        return (
-            <span className={`px-2 py-1 rounded-full text-xs font-medium ${styles[normalizedStatus] || 'bg-gray-100 text-gray-800'}`}>
-                {labels[normalizedStatus] || status}
-            </span>
-        );
+    const getStatusLabel = (status: string): string => {
+        switch (status?.toLowerCase()) {
+            case 'success': return 'Başarılı';
+            case 'pending': return 'Beklemede';
+            case 'error': return 'Hata';
+            default: return status;
+        }
     };
 
-    const totalPages = Math.ceil(total / limit);
+    const columns = useMemo<DataTableColumn<Invoice>[]>(() => [
+        {
+            key: 'invoiceNumber',
+            header: 'Fatura No',
+            sortable: true
+        },
+        {
+            key: 'edocNo',
+            header: 'E-Belge No',
+            render: (row) => (
+                <span className="text-muted-foreground">{row.edocNo}</span>
+            )
+        },
+        {
+            key: 'customer',
+            header: 'Müşteri',
+            render: (row) => `${row.customerFirstName} ${row.customerLastName}`
+        },
+        {
+            key: 'cardCode',
+            header: 'Kart Kodu',
+            render: (row) => (
+                <span className="text-muted-foreground">{row.cardCode}</span>
+            )
+        },
+        {
+            key: 'totalAmount',
+            header: 'Tutar',
+            align: 'right',
+            sortable: true,
+            render: (row) => (
+                <span className="font-medium">
+                    {Number(row.totalAmount).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {row.currencyCode}
+                </span>
+            )
+        },
+        {
+            key: 'status',
+            header: 'Durum',
+            render: (row) => (
+                <div>
+                    <Badge variant={getStatusVariant(row.status)}>
+                        {getStatusLabel(row.status)}
+                    </Badge>
+                    {row.status?.toLowerCase() === 'error' && row.errorMessage && (
+                        <p className="text-xs text-red-500 mt-1 max-w-xs truncate" title={row.errorMessage}>
+                            {row.errorMessage}
+                        </p>
+                    )}
+                </div>
+            )
+        },
+        {
+            key: 'createdAt',
+            header: 'Tarih',
+            sortable: true,
+            render: (row) => (
+                <span className="text-muted-foreground">
+                    {new Date(row.createdAt).toLocaleDateString('tr-TR')}
+                </span>
+            )
+        },
+    ], []);
+
+    const pagination = useMemo(() => ({
+        page,
+        limit,
+        total,
+        totalPages,
+    }), [page, limit, total, totalPages]);
+
+    const sortConfig = useMemo(() => ({
+        sortBy,
+        sortOrder,
+    }), [sortBy, sortOrder]);
 
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-center">
-                <h1 className="text-2xl font-bold">Faturalar</h1>
+                <div>
+                    <h1 className="text-2xl font-bold">Faturalar</h1>
+                    <p className="text-sm text-muted-foreground mt-1">
+                        E-fatura kayıtlarını görüntüleyin
+                    </p>
+                </div>
                 <span className="text-sm text-muted-foreground">
                     Toplam: {total} fatura
                 </span>
             </div>
 
-            {loading ? (
-                <div className="flex justify-center py-12">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                </div>
-            ) : invoices.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                    Henüz fatura bulunmuyor
-                </div>
-            ) : (
-                <div className="bg-card rounded-lg border shadow-sm overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <table className="w-full">
-                            <thead className="bg-muted/50">
-                                <tr>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                                        Fatura No
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                                        E-Belge No
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                                        Müşteri
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                                        Kart Kodu
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                                        Tutar
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                                        Durum
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                                        Tarih
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border">
-                                {invoices.map((invoice) => (
-                                    <tr key={invoice.id} className="hover:bg-muted/30">
-                                        <td className="px-4 py-3 text-sm font-medium">
-                                            {invoice.invoiceNumber}
-                                        </td>
-                                        <td className="px-4 py-3 text-sm text-muted-foreground">
-                                            {invoice.edocNo}
-                                        </td>
-                                        <td className="px-4 py-3 text-sm">
-                                            {invoice.customerFirstName} {invoice.customerLastName}
-                                        </td>
-                                        <td className="px-4 py-3 text-sm text-muted-foreground">
-                                            {invoice.cardCode}
-                                        </td>
-                                        <td className="px-4 py-3 text-sm font-medium">
-                                            {Number(invoice.totalAmount).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {invoice.currencyCode}
-                                        </td>
-                                        <td className="px-4 py-3 text-sm">
-                                            {getStatusBadge(invoice.status)}
-                                            {invoice.status?.toLowerCase() === 'error' && invoice.errorMessage && (
-                                                <p className="text-xs text-red-500 mt-1 max-w-xs truncate" title={invoice.errorMessage}>
-                                                    {invoice.errorMessage}
-                                                </p>
-                                            )}
-                                        </td>
-                                        <td className="px-4 py-3 text-sm text-muted-foreground">
-                                            {new Date(invoice.createdAt).toLocaleDateString('tr-TR')}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {/* Pagination */}
-                    {totalPages > 1 && (
-                        <div className="flex justify-between items-center px-4 py-3 border-t">
-                            <button
-                                onClick={() => setPage(p => Math.max(1, p - 1))}
-                                disabled={page === 1}
-                                className="px-3 py-1 text-sm border rounded disabled:opacity-50"
-                            >
-                                Önceki
-                            </button>
-                            <span className="text-sm text-muted-foreground">
-                                Sayfa {page} / {totalPages}
-                            </span>
-                            <button
-                                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                                disabled={page === totalPages}
-                                className="px-3 py-1 text-sm border rounded disabled:opacity-50"
-                            >
-                                Sonraki
-                            </button>
-                        </div>
-                    )}
-                </div>
-            )}
+            <DataTable
+                columns={columns}
+                data={invoices}
+                keyExtractor={(item) => item.id}
+                isLoading={loading}
+                pagination={pagination}
+                sortConfig={sortConfig}
+                onPageChange={setPage}
+                onLimitChange={setLimit}
+                onSort={setSort}
+                emptyMessage="Henüz fatura bulunmuyor"
+            />
         </div>
+    );
+}
+
+export function InvoicesClient() {
+    return (
+        <Suspense fallback={<div className="flex justify-center py-12"><Spinner size="medium" /></div>}>
+            <InvoicesContent />
+        </Suspense>
     );
 }

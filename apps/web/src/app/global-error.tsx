@@ -1,6 +1,6 @@
 'use client';
 
-import { Button } from '@/components/common/Button';
+import { Button } from '@/components/ui';
 
 interface GlobalErrorProps {
   error: Error & { digest?: string };

@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/common/ToastContext';
-import { ConfirmModal } from '@/components/common';
+import { ConfirmModal } from '@/components/ui';
 import { apiPatch } from '@/lib/api';
 import { AuthUser } from '@/types';
 

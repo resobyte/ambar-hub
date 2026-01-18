@@ -2,11 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { getPackingMaterials, createPackingMaterial, updatePackingMaterial, deletePackingMaterial, PackingMaterial, PackingMaterialType } from '@/lib/api';
-import { Button } from '@/components/common/Button';
-import { Table, Column } from '@/components/common/Table';
-import { Modal } from '@/components/common/Modal';
-import { Input } from '@/components/common/Input';
-import { Select } from '@/components/common/Select';
+import { Button } from '@/components/ui';
+import { DataTable, DataTableColumn } from '@/components/ui';
+import { Modal } from '@/components/ui';
+import { Input } from '@/components/ui';
+import { Select } from '@/components/ui';
 import { Badge } from '@/components/common/Badge';
 
 export default function PackingMaterialsPage() {
@@ -112,7 +112,7 @@ export default function PackingMaterialsPage() {
         label: typeLabels[key]
     }));
 
-    const columns: Column<PackingMaterial>[] = [
+    const columns: DataTableColumn<PackingMaterial>[] = [
         { key: 'name', header: 'Malzeme Adı', sortable: true },
         {
             key: 'type',
@@ -160,7 +160,7 @@ export default function PackingMaterialsPage() {
                 </Button>
             </div>
 
-            <Table
+            <DataTable
                 columns={columns}
                 data={materials}
                 isLoading={loading}

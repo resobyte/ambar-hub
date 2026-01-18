@@ -1,12 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Button } from '@/components/common/Button';
-import { Table, Column } from '@/components/common/Table';
-import { Modal } from '@/components/common/Modal';
-import { Input } from '@/components/common/Input';
-import { Select } from '@/components/common/Select';
-import { ConfirmModal } from '@/components/common/ConfirmModal';
+import { Button, Input, Select, Modal, Badge, DataTable, DataTableColumn } from '@/components/ui';
 import { getWarehouses, createWarehouse, updateWarehouse, deleteWarehouse } from '@/lib/api';
 import { useToast } from '@/components/common/ToastContext';
 
@@ -151,8 +146,8 @@ export function WarehousesTable() {
     [editingWarehouse]
   );
 
-  const columns = useMemo<Column<Warehouse>[]>(() => [
-    { key: 'name', header: 'Ad' },
+  const columns = useMemo<DataTableColumn<Warehouse>[]>(() => [
+    { key: 'name', header: 'Ad', sortable: true },
     {
       key: 'storeCount',
       header: 'Mağazalar',
@@ -164,12 +159,9 @@ export function WarehousesTable() {
       key: 'isActive',
       header: 'Durum',
       render: (row: Warehouse) => (
-        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${row.isActive
-            ? 'bg-success/10 text-success border-success/20'
-            : 'bg-muted text-muted-foreground border-border'
-          }`}>
+        <Badge variant={row.isActive ? 'success' : 'neutral'}>
           {row.isActive ? 'Aktif' : 'Pasif'}
-        </span>
+        </Badge>
       ),
     },
     {
@@ -179,26 +171,22 @@ export function WarehousesTable() {
       shrink: true,
       render: (row: Warehouse) => (
         <div className="flex items-center justify-end space-x-1">
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
+            icon="edit"
             onClick={() => handleEdit(row)}
-            className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
-            title="Edit"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-          </button>
-          <button
+            title="Düzenle"
+          />
+          <Button
+            variant="danger"
+            kind="text"
+            size="sm"
+            icon="delete"
             onClick={() => handleDelete(row.id)}
             disabled={row.storeCount > 0}
             title={row.storeCount > 0 ? 'Silinemez: Bağlı mağazalar var' : 'Sil'}
-            className={`p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors ${row.storeCount > 0 ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          </button>
+          />
         </div>
       ),
     },
@@ -218,15 +206,12 @@ export function WarehousesTable() {
           <h2 className="text-2xl font-semibold text-foreground">Depolar</h2>
           <p className="text-sm text-muted-foreground mt-1">Envanteriniz için depolama konumlarını yönetin</p>
         </div>
-        <Button onClick={handleCreate}>
-          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
+        <Button onClick={handleCreate} icon="plus">
           Depo Ekle
         </Button>
       </div>
 
-      <Table
+      <DataTable
         columns={columns}
         data={warehouses}
         keyExtractor={keyExtractor}
@@ -236,7 +221,8 @@ export function WarehousesTable() {
         emptyMessage="Henüz depo yok. Başlamak için ilk deponuzu oluşturun."
       />
 
-      <Modal isOpen={isModalOpen} onClose={handleModalClose} title={modalTitle} size="md">
+
+      <Modal isOpen={isModalOpen} onClose={handleModalClose} title={modalTitle} size="medium">
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input
             label="Ad"
@@ -261,7 +247,7 @@ export function WarehousesTable() {
             ]}
           />
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={handleModalClose}>
+            <Button type="button" variant="secondary" onClick={handleModalClose}>
               İptal
             </Button>
             <Button type="submit" disabled={!canSubmit}>{submitButtonText}</Button>
@@ -269,13 +255,27 @@ export function WarehousesTable() {
         </form>
       </Modal>
 
-      <ConfirmModal
+      {/* Delete Confirmation Modal */}
+      <Modal
         isOpen={isDeleteModalOpen}
         onClose={handleDeleteModalClose}
-        onConfirm={handleConfirmDelete}
         title="Depo Sil"
-        message="Bu depoyu silmek istediğinize emin misiniz? Bu işlem geri alınamaz."
-      />
+        size="small"
+      >
+        <div className="space-y-4">
+          <p className="text-muted-foreground">
+            Bu depoyu silmek istediğinize emin misiniz? Bu işlem geri alınamaz.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={handleDeleteModalClose}>
+              İptal
+            </Button>
+            <Button variant="danger" onClick={handleConfirmDelete}>
+              Sil
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }

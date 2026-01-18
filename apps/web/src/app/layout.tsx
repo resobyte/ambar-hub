@@ -4,7 +4,7 @@ import './globals.css';
 import { ToastProvider } from '@/components/common/ToastContext';
 import { ThemeProvider } from '@/components/common/ThemeProvider';
 import { SidebarProvider } from '@/components/common/SidebarProvider';
-
+import { BaklavaProvider } from '@/components/providers/BaklavaProvider';
 const rubik = Rubik({
   subsets: ['latin'],
   variable: '--font-family',
@@ -46,6 +46,10 @@ export default function RootLayout({
   return (
     <html lang="tr" suppressHydrationWarning>
       <head>
+        <link
+          rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/@trendyol/baklava@3.3.1/dist/themes/default.css"
+        />
         <script
           dangerouslySetInnerHTML={{ __html: themeInitScript }}
         />
@@ -54,7 +58,9 @@ export default function RootLayout({
         <ThemeProvider>
           <SidebarProvider>
             <ToastProvider>
-              {children}
+              <BaklavaProvider>
+                {children}
+              </BaklavaProvider>
             </ToastProvider>
           </SidebarProvider>
         </ThemeProvider>

@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Table, Column } from '@/components/common/Table';
-import { Button } from '@/components/common/Button';
-import { Input } from '@/components/common/Input';
-import { Modal } from '@/components/common/Modal';
+import { DataTable, DataTableColumn } from '@/components/ui';
+import { Button } from '@/components/ui';
+import { Input } from '@/components/ui';
+import { Modal } from '@/components/ui';
 import { useToast } from '@/components/common/ToastContext';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
@@ -109,7 +109,7 @@ export function SuppliersList() {
         }
     };
 
-    const columns: Column<Supplier>[] = [
+    const columns: DataTableColumn<Supplier>[] = [
         { key: 'name', header: 'Tedarikçi Adı' },
         { key: 'code', header: 'Kod' },
         { key: 'email', header: 'E-posta' },
@@ -139,7 +139,7 @@ export function SuppliersList() {
                 <Button onClick={handleCreate}>+ Yeni Tedarikçi</Button>
             </div>
 
-            <Table
+            <DataTable
                 columns={columns}
                 data={suppliers}
                 keyExtractor={(item) => item.id}

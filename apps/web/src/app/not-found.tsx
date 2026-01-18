@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import { Button } from '@/components/common/Button';
 
 export default function NotFoundPage() {
   return (
@@ -12,8 +11,11 @@ export default function NotFoundPage() {
             Aradığınız sayfa mevcut değil veya taşınmış olabilir.
           </p>
         </div>
-        <Link href="/">
-          <Button>Ana Sayfaya Dön</Button>
+        <Link
+          href="/"
+          className="inline-flex items-center justify-center px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors"
+        >
+          Ana Sayfaya Dön
         </Link>
       </div>
     </div>
