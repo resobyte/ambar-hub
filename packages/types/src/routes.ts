@@ -6,4 +6,5 @@ export interface RouteConfig {
   icon?: string;
   roles: Role[];
   showInSidebar: boolean;
+  group?: string;
 }

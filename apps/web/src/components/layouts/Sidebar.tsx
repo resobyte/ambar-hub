@@ -1,10 +1,40 @@
 'use client';
 
 import Link from 'next/link';
-import { useTransition } from 'react';
+import { useTransition, useState } from 'react';
 import { logout } from '@/lib/actions/auth';
 import { RouteConfig } from '@/types';
 import { useSidebar } from '@/components/common/SidebarProvider';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import {
+  LayoutDashboard,
+  Users,
+  Warehouse,
+  ShoppingBag,
+  Link2,
+  Package,
+  Truck,
+  Settings,
+  ShoppingCart,
+  AlertTriangle,
+  Archive,
+  UsersRound,
+  ClipboardList,
+  Route,
+  PackageOpen,
+  ClipboardCheck,
+  FileText,
+  LogOut,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  X,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface SidebarProps {
   routes: RouteConfig[];
@@ -14,103 +44,65 @@ interface SidebarProps {
 }
 
 const iconMap: Record<string, React.ReactNode> = {
-  dashboard: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-    </svg>
-  ),
-  users: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-    </svg>
-  ),
-  warehouse: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-    </svg>
-  ),
-  store: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-    </svg>
-  ),
-  integration: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-    </svg>
-  ),
-  products: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-    </svg>
-  ),
-  shipping: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-    </svg>
-  ),
-  account: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-    </svg>
-  ),
-  orders: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-    </svg>
-  ),
-  error: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-    </svg>
-  ),
-  shelf: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-    </svg>
-  ),
-  supplier: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-    </svg>
-  ),
-  purchase: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-    </svg>
-  ),
-  route: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-    </svg>
-  ),
-  package: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-    </svg>
-  ),
-  picking: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-    </svg>
-  ),
-  invoice: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-    </svg>
-  ),
-  settings: (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-    </svg>
-  ),
+  dashboard: <LayoutDashboard className="w-5 h-5" />,
+  users: <Users className="w-5 h-5" />,
+  warehouse: <Warehouse className="w-5 h-5" />,
+  store: <ShoppingBag className="w-5 h-5" />,
+  integration: <Link2 className="w-5 h-5" />,
+  products: <Package className="w-5 h-5" />,
+  shipping: <Truck className="w-5 h-5" />,
+  account: <Settings className="w-5 h-5" />,
+  orders: <ShoppingCart className="w-5 h-5" />,
+  error: <AlertTriangle className="w-5 h-5" />,
+  shelf: <Archive className="w-5 h-5" />,
+  supplier: <UsersRound className="w-5 h-5" />,
+  purchase: <ClipboardList className="w-5 h-5" />,
+  route: <Route className="w-5 h-5" />,
+  package: <PackageOpen className="w-5 h-5" />,
+  picking: <ClipboardCheck className="w-5 h-5" />,
+  invoice: <FileText className="w-5 h-5" />,
+  settings: <Settings className="w-5 h-5" />,
+};
+
+type GroupedRoutes = {
+  [key: string]: RouteConfig[];
 };
 
 export function Sidebar({ routes, currentPath, isMobileMenuOpen, onMobileMenuClose }: SidebarProps) {
   const { isCollapsed, setIsCollapsed } = useSidebar();
   const [isPending, startTransition] = useTransition();
+
+  // Group routes
+  const groupedRoutes = routes.reduce<GroupedRoutes>((acc, route) => {
+    const groupName = route.group || 'Diğer';
+    if (!acc[groupName]) {
+      acc[groupName] = [];
+    }
+    acc[groupName].push(route);
+    return acc;
+  }, {});
+
+  const dashboardRoute = routes.find(r => r.path === '/dashboard');
+  const otherGroups = Object.entries(groupedRoutes)
+    .filter(([group]) => group !== 'Diğer')
+    .sort((a, b) => {
+      // Custom sort order if needed, otherwise alphabetical or defined order
+      const order = ['Sipariş İşlemleri', 'Depo & Stok', 'Satın Alma', 'Entegrasyonlar', 'Ayarlar'];
+      return order.indexOf(a[0]) - order.indexOf(b[0]);
+    });
+
+  // State for collapsible groups
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
+    'Sipariş İşlemleri': true,
+    'Depo & Stok': true,
+    'Satın Alma': false,
+    'Entegrasyonlar': false,
+    'Ayarlar': false
+  });
+
+  const toggleGroup = (group: string) => {
+    setOpenGroups(prev => ({ ...prev, [group]: !prev[group] }));
+  };
 
   const handleLogout = () => {
     startTransition(async () => {
@@ -120,147 +112,219 @@ export function Sidebar({ routes, currentPath, isMobileMenuOpen, onMobileMenuClo
 
   const isActive = (path: string) => currentPath.startsWith(path);
 
+  const renderRouteLink = (route: RouteConfig, collapsed: boolean) => {
+    const isItemActive = isActive(route.path);
+    return (
+      <Link
+        key={route.path}
+        href={route.path}
+        onClick={isMobileMenuOpen ? onMobileMenuClose : undefined}
+        className={cn(
+          "flex items-center w-full rounded-lg transition-all duration-200 group relative",
+          collapsed ? 'justify-center px-2 py-2.5' : 'px-3 py-2',
+          isItemActive
+            ? 'bg-primary/10 text-primary font-semibold'
+            : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+        )}
+      >
+        <span className={cn(!collapsed && 'mr-3', 'shrink-0')}>
+          {route.icon && iconMap[route.icon]}
+        </span>
+        {!collapsed && (
+          <span className="whitespace-nowrap overflow-hidden text-sm">
+            {route.label}
+          </span>
+        )}
+        {collapsed && (
+          <span className="sr-only">{route.label}</span>
+        )}
+      </Link>
+    );
+  };
+
   return (
-    <>
+    <TooltipProvider delayDuration={0}>
       {/* Desktop Sidebar */}
       <aside
-        className={`hidden md:flex flex-col bg-card border-r border-border shadow-sm transition-all duration-300 ease-in-out ${isCollapsed ? 'w-20' : 'w-64'
-          }`}
+        className={cn(
+          "hidden md:flex flex-col bg-card border-r border-border shadow-sm transition-all duration-300 ease-in-out",
+          isCollapsed ? 'w-16' : 'w-64'
+        )}
       >
-        <div className={`p-4 h-16 flex items-center border-b border-border ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
+        {/* Header content unchanged */}
+        <div className={cn(
+          "h-16 flex items-center border-b border-border shrink-0",
+          isCollapsed ? 'justify-center px-2' : 'justify-between px-4'
+        )}>
           {!isCollapsed && (
             <h1 className="text-xl font-bold font-rubik tracking-wide text-primary truncate">AmbarHub</h1>
           )}
           {isCollapsed && (
-            <h1 className="text-xl font-bold font-rubik tracking-wide text-primary">AP</h1>
+            <h1 className="text-xl font-bold font-rubik tracking-wide text-primary">AH</h1>
           )}
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => setIsCollapsed(!isCollapsed)}
-            className={`p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors ${isCollapsed ? 'hidden' : 'block'}`}
+            className={cn("h-8 w-8 shrink-0", isCollapsed && 'hidden')}
           >
-            <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
         </div>
 
+        {/* Expand button */}
         {isCollapsed && (
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setIsCollapsed(false)}
-            className="w-full flex justify-center py-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+            className="w-full rounded-none h-10"
           >
-            <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
         )}
 
-        <nav className="flex-1 p-3 space-y-2 overflow-y-auto overflow-x-hidden">
-          {routes.map((route) => (
-            <Link
-              key={route.path}
-              href={route.path}
-              title={isCollapsed ? route.label : undefined}
-              className={`flex items-center w-full rounded-lg transition-all duration-200 group relative ${isCollapsed ? 'justify-center px-2 py-3' : 'px-4 py-3'
-                } ${isActive(route.path)
-                  ? 'bg-[rgba(128,0,32,0.1)] text-primary font-semibold'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                }`}
-            >
-              <span className={`${!isCollapsed && 'mr-3'} shrink-0`}>{route.icon && iconMap[route.icon]}</span>
-
-              {!isCollapsed && (
-                <span className="whitespace-nowrap overflow-hidden transition-all duration-300">
-                  {route.label}
-                </span>
-              )}
-
-              {isCollapsed && (
-                <div className="absolute left-full ml-2 px-2 py-1 bg-foreground text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 whitespace-nowrap shadow-lg">
-                  {route.label}
-                </div>
-              )}
-            </Link>
-          ))}
-        </nav>
-
-        <div className="p-3 border-t border-border">
-          <button
-            onClick={handleLogout}
-            disabled={isPending}
-            title={isCollapsed ? "Çıkış Yap" : undefined}
-            className={`flex items-center w-full rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors group relative disabled:opacity-50 ${isCollapsed ? 'justify-center px-2 py-3' : 'px-4 py-3'
-              }`}
-          >
-            {isPending ? (
-              <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <svg className={`w-5 h-5 ${!isCollapsed && 'mr-3'} shrink-0`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
+        {/* Navigation */}
+        <ScrollArea className="flex-1 px-3 py-3">
+          <nav className="space-y-4">
+            {/* Dashboard Link (Always visible) */}
+            {dashboardRoute && (
+              isCollapsed ? (
+                <Tooltip delayDuration={0}>
+                  <TooltipTrigger asChild>
+                    {renderRouteLink(dashboardRoute, true)}
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={10}>
+                    {dashboardRoute.label}
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                renderRouteLink(dashboardRoute, false)
+              )
             )}
-            {!isCollapsed && <span>Çıkış Yap</span>}
-            {isCollapsed && (
-              <div className="absolute left-full ml-2 px-2 py-1 bg-foreground text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 whitespace-nowrap shadow-lg">
-                Çıkış Yap
-              </div>
-            )}
-          </button>
+
+            {!isCollapsed && <Separator className="my-2" />}
+
+            {/* Groups */}
+            {otherGroups.map(([groupName, groupRoutes]) => {
+              if (groupRoutes.length === 0) return null;
+
+              if (isCollapsed) {
+                return (
+                  <div key={groupName} className="space-y-1">
+                    <div className="h-px bg-border my-2 mx-2" />
+                    {groupRoutes.map(route => (
+                      <Tooltip key={route.path} delayDuration={0}>
+                        <TooltipTrigger asChild>
+                          {renderRouteLink(route, true)}
+                        </TooltipTrigger>
+                        <TooltipContent side="right" sideOffset={10}>
+                          {route.label}
+                        </TooltipContent>
+                      </Tooltip>
+                    ))}
+                  </div>
+                );
+              }
+
+              return (
+                <Collapsible
+                  key={groupName}
+                  open={openGroups[groupName]}
+                  onOpenChange={() => toggleGroup(groupName)}
+                  className="space-y-1"
+                >
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      className="w-full flex items-center justify-between p-2 h-auto font-medium hover:bg-muted text-foreground"
+                    >
+                      <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wider text-[11px]">{groupName}</span>
+                      <ChevronDown
+                        className={cn(
+                          "h-4 w-4 transition-transform duration-200 text-muted-foreground",
+                          !openGroups[groupName] && "-rotate-90"
+                        )}
+                      />
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-1 pl-1">
+                    {groupRoutes.map(route => renderRouteLink(route, false))}
+                  </CollapsibleContent>
+                </Collapsible>
+              );
+            })}
+          </nav>
+        </ScrollArea>
+
+        {/* Footer */}
+        <Separator />
+        <div className="p-2">
+          {/* Logout logic similar to before */}
+          {isCollapsed ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={handleLogout} disabled={isPending} className="w-full h-10">
+                  {isPending ? (
+                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <LogOut className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Çıkış Yap</TooltipContent>
+            </Tooltip>
+          ) : (
+            <Button variant="ghost" onClick={handleLogout} disabled={isPending} className="w-full justify-start px-3 text-red-500 hover:text-red-600 hover:bg-red-50">
+              {isPending ? (
+                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-3" />
+              ) : (
+                <LogOut className="h-4 w-4 mr-3" />
+              )}
+              Çıkış Yap
+            </Button>
+          )}
         </div>
       </aside>
 
-      {/* Mobile Menu Overlay */}
+      {/* Mobile Menu Overlay & Sidebar - Kept simpler for mobile for now but can be updated similarly if needed */}
       {isMobileMenuOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
-          onClick={onMobileMenuClose}
-        />
+        <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={onMobileMenuClose} />
       )}
-
-      {/* Mobile Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 w-64 bg-card border-r border-border text-foreground z-50 transform transition-transform duration-300 md:hidden flex flex-col ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}>
-        <div className="p-4 h-16 flex justify-between items-center border-b border-border shrink-0">
+      <aside className={cn(
+        "fixed inset-y-0 left-0 w-64 bg-card border-r border-border z-50 transform transition-transform duration-300 md:hidden flex flex-col",
+        isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+      )}>
+        <div className="h-16 flex justify-between items-center border-b border-border px-4 shrink-0">
           <h1 className="text-xl font-bold font-rubik text-primary">AmbarHub</h1>
-          <button onClick={onMobileMenuClose} className="text-muted-foreground hover:text-foreground">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <Button variant="ghost" size="icon" onClick={onMobileMenuClose}><X className="h-5 w-5" /></Button>
         </div>
-        <nav className="flex-1 p-3 space-y-2 overflow-y-auto">
-          {routes.map((route) => (
-            <Link
-              key={route.path}
-              href={route.path}
-              onClick={onMobileMenuClose}
-              className={`flex items-center w-full px-4 py-3 rounded-lg ${isActive(route.path)
-                ? 'bg-[rgba(128,0,32,0.1)] text-primary font-semibold'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                }`}
-            >
-              <span className="mr-3">{route.icon && iconMap[route.icon]}</span>
-              {route.label}
-            </Link>
-          ))}
-        </nav>
-        <div className="p-3 border-t border-border shrink-0">
-          <button
-            onClick={handleLogout}
-            disabled={isPending}
-            className="flex items-center w-full px-4 py-3 text-muted-foreground hover:bg-muted hover:text-foreground rounded-lg disabled:opacity-50"
-          >
+        <ScrollArea className="flex-1 px-4 py-4">
+          <nav className="space-y-6">
+            {dashboardRoute && renderRouteLink(dashboardRoute, false)}
+
+            {otherGroups.map(([groupName, groupRoutes]) => (
+              <div key={groupName} className="space-y-2">
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{groupName}</h3>
+                <div className="space-y-1">
+                  {groupRoutes.map(route => renderRouteLink(route, false))}
+                </div>
+              </div>
+            ))}
+          </nav>
+        </ScrollArea>
+        <div className="p-4 border-t border-border">
+          <Button variant="ghost" onClick={handleLogout} disabled={isPending} className="w-full justify-start px-3 text-red-500 hover:text-red-600 hover:bg-red-50">
             {isPending ? (
-              <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin mr-3" />
+              <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-3" />
             ) : (
-              <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
+              <LogOut className="h-4 w-4 mr-3" />
             )}
             Çıkış Yap
-          </button>
+          </Button>
         </div>
       </aside>
-    </>
+
+    </TooltipProvider>
   );
 }
