@@ -21,12 +21,12 @@ function getSystemTheme(): ResolvedTheme {
 }
 
 function getInitialTheme(): Theme {
-  if (typeof window === 'undefined') return 'system';
+  if (typeof window === 'undefined') return 'light';
   const stored = localStorage.getItem(THEME_STORAGE_KEY);
   if (stored && ['light', 'dark', 'system'].includes(stored)) {
     return stored as Theme;
   }
-  return 'system';
+  return 'light';
 }
 
 function resolveTheme(theme: Theme): ResolvedTheme {
