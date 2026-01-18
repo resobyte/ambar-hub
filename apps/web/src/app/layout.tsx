@@ -4,6 +4,7 @@ import './globals.css';
 import { ToastProvider } from '@/components/common/ToastContext';
 import { ThemeProvider } from '@/components/common/ThemeProvider';
 import { SidebarProvider } from '@/components/common/SidebarProvider';
+import { Toaster } from '@/components/ui/use-toast';
 
 const rubik = Rubik({
   subsets: ['latin'],
@@ -55,6 +56,7 @@ export default function RootLayout({
           <SidebarProvider>
             <ToastProvider>
               {children}
+              <Toaster />
             </ToastProvider>
           </SidebarProvider>
         </ThemeProvider>
@@ -62,3 +64,4 @@ export default function RootLayout({
     </html>
   );
 }
+
