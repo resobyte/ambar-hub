@@ -19,8 +19,8 @@ COPY apps/api ./apps/api
 RUN pnpm install --frozen-lockfile
 
 # Build the api
-WORKDIR /app/apps/api
-RUN pnpm run build
+WORKDIR /app
+RUN pnpm run build:api
 
 # Production stage
 FROM node:20-alpine AS runner

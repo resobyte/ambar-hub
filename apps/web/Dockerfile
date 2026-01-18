@@ -19,8 +19,9 @@ COPY apps/web ./apps/web
 RUN pnpm install --frozen-lockfile
 
 # Build the web app
-WORKDIR /app/apps/web
-RUN pnpm run build
+# Build the web app
+WORKDIR /app
+RUN pnpm run build:web
 
 # Production stage
 FROM node:20-alpine AS runner
