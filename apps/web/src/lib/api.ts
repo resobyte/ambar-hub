@@ -2,6 +2,7 @@ const isServer = typeof window === 'undefined';
 const API_URL = isServer
   ? (process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api')
   : '/api';
+const BASE_URL = isServer ? undefined : window.location.origin;
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -22,7 +23,7 @@ export interface PaginationResponse<T> {
 
 // Generic API functions
 export async function apiGetPaginated<T>(endpoint: string, options?: { params?: Record<string, any> }): Promise<PaginationResponse<T>> {
-  const url = new URL(`${API_URL}${endpoint}`);
+  const url = new URL(`${API_URL}${endpoint}`, BASE_URL);
   if (options?.params) {
     Object.entries(options.params).forEach(([key, value]) => {
       if (value !== undefined && value !== null) {
@@ -379,7 +380,7 @@ export async function deleteIntegration(id: string): Promise<{ message: string }
 
 // IntegrationStore API
 export async function getIntegrationStores(integrationId?: string): Promise<IntegrationStore[]> {
-  const url = new URL(`${API_URL}/integration-stores`);
+  const url = new URL(`${API_URL}/integration-stores`, BASE_URL);
   if (integrationId) {
     url.searchParams.append('integrationId', integrationId);
   }
@@ -659,7 +660,7 @@ export async function updateProductSetItems(productId: string, items: {
 
 // ProductStore API
 export async function getProductStores(productId?: string): Promise<ProductStore[]> {
-  const url = new URL(`${API_URL}/product-stores`);
+  const url = new URL(`${API_URL}/product-stores`, BASE_URL);
   if (productId) {
     url.searchParams.append('productId', productId);
   }
@@ -741,7 +742,7 @@ export async function deleteIntegrationStore(id: string): Promise<{ message: str
 
 // ProductIntegration API
 export async function getProductIntegrations(productStoreId?: string): Promise<ProductIntegration[]> {
-  const url = new URL(`${API_URL}/product-integrations`);
+  const url = new URL(`${API_URL}/product-integrations`, BASE_URL);
   if (productStoreId) {
     url.searchParams.append('productStoreId', productStoreId);
   }
