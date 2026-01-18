@@ -737,7 +737,7 @@ export class InvoicesService {
                 costCenterCode: options.costCenterCode || EMBEAUTY_CONFIG.costCenterCode,
                 whouseCode: options.whouseCode || EMBEAUTY_CONFIG.whouseCode,
                 sourceApp2: 'Fatura',
-                vatCode: order.micro ? 0 : 20,
+                vatCode: order.micro ? '0-KDV-301' : 20,
                 unitPrice: discountedUnitPrice,
                 itemNameManual: item.productName?.substring(0, 100) || '',
                 qtyPrm: quantity,
