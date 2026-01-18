@@ -20,7 +20,10 @@ RUN pnpm install --frozen-lockfile
 
 # Build the web app
 # Build the web app
+# Build the web app
 WORKDIR /app
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN pnpm run build:web
 
 # Production stage
