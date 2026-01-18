@@ -1,15 +1,46 @@
-FROM node:20-alpine
+# Build stage
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-COPY package*.json ./
+# Install pnpm
+RUN npm install -g pnpm
 
-RUN npm ci
+# Copy root package files
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 
-COPY . .
+# Copy packages (shared dependencies)
+COPY packages ./packages
 
-RUN npm run build
+# Copy api app
+COPY apps/api ./apps/api
+
+# Install all dependencies
+RUN pnpm install --frozen-lockfile
+
+# Build the api
+WORKDIR /app/apps/api
+RUN pnpm run build
+
+# Production stage
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+# Install pnpm for production
+RUN npm install -g pnpm
+
+# Copy built app and dependencies
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages ./packages
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
+COPY --from=builder /app/apps/api/node_modules ./apps/api/node_modules
+
+WORKDIR /app/apps/api
 
 EXPOSE 3001
 
-CMD ["npm", "run", "start:prod"]
+ENV NODE_ENV=production
+
+CMD ["node", "dist/main"]
