@@ -2,12 +2,47 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { getCategories, createCategory, updateCategory, deleteCategory, Category } from '@/lib/api';
-import { Button } from '@/components/common/Button';
-import { Table, Column } from '@/components/common/Table';
-import { Modal } from '@/components/common/Modal';
-import { Input } from '@/components/common/Input';
-import { Select } from '@/components/common/Select';
-import { Badge } from '@/components/common/Badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from "@/components/ui/dialog";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
+import { useTableQuery } from '@/hooks/use-table-query';
+import { Loader2, Plus, Pencil, Trash2, ChevronRight, ChevronDown } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { useToast } from '@/components/ui/use-toast';
 
 // Helper type for flattened category with depth
 interface FlattenedCategory extends Category {
@@ -16,14 +51,25 @@ interface FlattenedCategory extends Category {
 }
 
 export default function CategoriesPage() {
+    const { toast } = useToast();
     const [categories, setCategories] = useState<Category[]>([]);
     const [allFlattenedCategories, setAllFlattenedCategories] = useState<FlattenedCategory[]>([]);
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(true);
+
+    // Pagination
+    const { page, pageSize, setPage, setPageSize } = useTableQuery({
+        defaultPage: 1,
+        defaultPageSize: 20, // Larger default for tree view
+    });
+
+    // Modal states
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isDeleteOpen, setIsDeleteOpen] = useState(false);
     const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+    const [deletingCategoryId, setDeletingCategoryId] = useState<string | null>(null);
+
     const [formData, setFormData] = useState<{ name: string; parentId: string; isActive: boolean }>({ name: '', parentId: '', isActive: true });
-    const [processing, setProcessing] = useState(false);
 
     const fetchCategories = useCallback(async () => {
         setLoading(true);
@@ -31,11 +77,11 @@ export default function CategoriesPage() {
             const res = await getCategories();
             setCategories(res.data || []);
         } catch (err) {
-            console.error('Failed to fetch categories:', err);
+            toast({ variant: 'destructive', title: 'Hata', description: 'Kategoriler yüklenemedi' });
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [toast]);
 
     // Flatten tree for display with depth calculation
     const flatten = useCallback((cats: Category[], depth = 0): FlattenedCategory[] => {
@@ -71,34 +117,12 @@ export default function CategoriesPage() {
     // Calculate visible categories based on expanded state
     const visibleCategories = useMemo(() => {
         const visible: FlattenedCategory[] = [];
-        // Helper to check if a category should be visible
-        // A category is visible if its parent is expanded (or if it has no parent/is root)
-
-        // We can just iterate through the flat list.
-        // But since the flat list is depth-first ordered, we can track "current allowed depth" or simply check parent visibility.
-        // simpler approach: iterate and verify if all ancestors are expanded. 
-        // OR: since it is flattened depth-first:
-        // root1 -> visible
-        //   child1 -> visible only if root1 expanded
-        //     grandchild1 -> visible only if root1 AND child1 expanded
-
-        // Let's use a set of "visible parent IDs"
-        // Actually since we have a flat list in order:
-        // We can just iterate. If we encounter a node, we check if its parent is in the "expanded" set?
-        // No, we need to check if its parent is currently visible AND expanded.
-
-        // Let's re-traverse or filter.
-        // Filter approach: A node is visible if all its ancestors are expanded.
-        // This might be slow if we walk up the tree every time.
-
-        // Faster approach: recursive walk like 'flatten' but with visibility check.
         const traverse = (cats: Category[], isParentExpanded: boolean) => {
             for (const cat of cats) {
                 if (isParentExpanded) {
                     const flattened = allFlattenedCategories.find(c => c.id === cat.id);
                     if (flattened) {
                         visible.push(flattened);
-                        // Its children are visible only if THIS category is expanded
                         const isExpanded = expandedIds.has(cat.id);
                         if (cat.children && cat.children.length > 0) {
                             traverse(cat.children, isExpanded);
@@ -107,17 +131,34 @@ export default function CategoriesPage() {
                 }
             }
         };
-
-        // Roots are always "parent expanded" effectively
         traverse(categories, true);
         return visible;
     }, [categories, allFlattenedCategories, expandedIds]);
 
     useEffect(() => { fetchCategories(); }, [fetchCategories]);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setProcessing(true);
+    const handleCreate = () => {
+        setEditingCategory(null);
+        setFormData({ name: '', parentId: '', isActive: true });
+        setIsModalOpen(true);
+    };
+
+    const handleEdit = (category: Category) => {
+        setEditingCategory(category);
+        setFormData({
+            name: category.name,
+            parentId: category.parent?.id || '',
+            isActive: category.isActive ?? true
+        });
+        setIsModalOpen(true);
+    };
+
+    const handleDelete = (id: string) => {
+        setDeletingCategoryId(id);
+        setIsDeleteOpen(true);
+    };
+
+    const handleSubmit = async () => {
         try {
             const data = {
                 name: formData.name,
@@ -127,182 +168,248 @@ export default function CategoriesPage() {
 
             if (editingCategory) {
                 await updateCategory(editingCategory.id, data);
+                toast({ title: 'Başarılı', description: 'Kategori güncellendi', variant: 'success' });
             } else {
                 await createCategory(data);
+                toast({ title: 'Başarılı', description: 'Kategori oluşturuldu', variant: 'success' });
             }
             setIsModalOpen(false);
-            setEditingCategory(null);
-            setFormData({ name: '', parentId: '', isActive: true });
             fetchCategories();
-        } catch (err) {
-            console.error('Failed to save category:', err);
-            alert('Kaydetme hatası oluştu');
-        } finally {
-            setProcessing(false);
+        } catch (err: any) {
+            toast({
+                variant: 'destructive',
+                title: 'Hata',
+                description: err.message || 'İşlem başarısız'
+            });
         }
     };
 
-    const handleDelete = async (id: string) => {
-        if (!confirm('Bu kategoriyi silmek istediğinize emin misiniz? Alt kategorileri varsa onlar da etkilenebilir.')) return;
+    const handleConfirmDelete = async () => {
+        if (!deletingCategoryId) return;
         try {
-            await deleteCategory(id);
+            await deleteCategory(deletingCategoryId);
+            toast({ title: 'Başarılı', description: 'Kategori silindi', variant: 'success' });
+            setIsDeleteOpen(false);
             fetchCategories();
-        } catch (err) {
-            console.error('Failed to delete category:', err);
-            alert('Silme hatası oluştu');
+        } catch (err: any) {
+            toast({
+                variant: 'destructive',
+                title: 'Hata',
+                description: err.message || 'Silme işlemi başarısız'
+            });
         }
     };
 
-    const openEdit = (category: Category) => {
-        setEditingCategory(category);
-        setFormData({
-            name: category.name,
-            parentId: category.parent?.id || '',
-            isActive: category.isActive
-        });
-        setIsModalOpen(true);
-    };
-
-    const openCreate = () => {
-        setEditingCategory(null);
-        setFormData({ name: '', parentId: '', isActive: true });
-        setIsModalOpen(true);
-    };
-
-    const columns: Column<FlattenedCategory>[] = [
-        {
-            key: 'name',
-            header: 'Kategori Adı',
-            sortable: false,
-            render: (cat) => (
-                <div
-                    className="flex items-center"
-                    style={{ paddingLeft: `${cat.depth * 24}px` }}
-                >
-                    <div className="w-6 h-6 flex items-center justify-center mr-1">
-                        {cat.hasChildren ? (
-                            <button
-                                onClick={() => toggleExpand(cat.id)}
-                                className="p-0.5 hover:bg-gray-100 rounded text-gray-500"
-                            >
-                                {expandedIds.has(cat.id) ? (
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                                ) : (
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                                )}
-                            </button>
-                        ) : (
-                            <div className="w-4" />
-                        )}
-                    </div>
-                    {cat.depth > 0 && (
-                        <div className="mr-2 text-gray-300">
-                            └
-                        </div>
-                    )}
-                    <span className={cat.depth === 0 ? 'font-semibold text-gray-900' : 'text-gray-700'}>
-                        {cat.name}
-                    </span>
-                </div>
-            )
-        },
-        {
-            key: 'isActive',
-            header: 'Durum',
-            width: '120px',
-            align: 'center',
-            render: (category) => (
-                <Badge variant={category.isActive ? 'success' : 'secondary'}>
-                    {category.isActive ? 'Aktif' : 'Pasif'}
-                </Badge>
-            )
-        },
-        {
-            key: 'actions',
-            header: 'İşlemler',
-            align: 'right',
-            width: '200px',
-            render: (category) => (
-                <div className="flex justify-end gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(category)}>Düzenle</Button>
-                    <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleDelete(category.id)}>Sil</Button>
-                </div>
-            )
-        }
-    ];
-
-    // Create options for parent selection (flattened nicely)
     const categoryOptions = useMemo(() => {
         return allFlattenedCategories
-            .filter(c => c.id !== editingCategory?.id) // Prevent selecting self as parent (circular)
+            .filter(c => c.id !== editingCategory?.id)
             .map(c => ({
                 value: c.id,
                 label: '\u00A0\u00A0'.repeat(c.depth) + (c.depth > 0 ? '└ ' : '') + c.name
             }));
     }, [allFlattenedCategories, editingCategory]);
 
+    // Pagination logic applied to visible tree nodes
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const paginatedCategories = visibleCategories.slice(startIndex, endIndex);
+    const totalPages = Math.ceil(visibleCategories.length / pageSize);
+
     return (
-        <div>
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-lg font-semibold text-foreground">Kategoriler</h2>
-                <Button onClick={openCreate}>
-                    + Yeni Kategori
+        <div className="space-y-4">
+            <div className="flex justify-end items-center">
+                <Button onClick={handleCreate}>
+                    <Plus className="w-4 h-4 mr-2" /> Yeni Kategori
                 </Button>
             </div>
 
-            <Table
-                columns={columns}
-                data={visibleCategories}
-                isLoading={loading}
-                keyExtractor={(item) => item.id}
+            <Card>
+                <CardContent className="p-0">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Kategori Adı</TableHead>
+                                <TableHead className="text-center w-[120px]">Durum</TableHead>
+                                <TableHead className="text-right w-[200px]">İşlemler</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {loading ? (
+                                <TableRow>
+                                    <TableCell colSpan={3} className="h-24 text-center">
+                                        <div className="flex justify-center items-center">
+                                            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                                        </div>
+                                    </TableCell>
+                                </TableRow>
+                            ) : paginatedCategories.length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={3} className="h-24 text-center text-muted-foreground">
+                                        Kategori bulunamadı.
+                                    </TableCell>
+                                </TableRow>
+                            ) : (
+                                paginatedCategories.map((cat) => (
+                                    <TableRow key={cat.id}>
+                                        <TableCell>
+                                            <div
+                                                className="flex items-center"
+                                                style={{ paddingLeft: `${cat.depth * 24}px` }}
+                                            >
+                                                <div className="w-6 h-6 flex items-center justify-center mr-1">
+                                                    {cat.hasChildren ? (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-6 w-6 p-0 hover:bg-muted"
+                                                            onClick={() => toggleExpand(cat.id)}
+                                                        >
+                                                            {expandedIds.has(cat.id) ? (
+                                                                <ChevronDown className="h-4 w-4" />
+                                                            ) : (
+                                                                <ChevronRight className="h-4 w-4" />
+                                                            )}
+                                                        </Button>
+                                                    ) : (
+                                                        <div className="w-6" />
+                                                    )}
+                                                </div>
+                                                {cat.depth > 0 && (
+                                                    <span className="mr-2 text-muted-foreground/50">
+                                                        └
+                                                    </span>
+                                                )}
+                                                <span className={cat.depth === 0 ? 'font-medium' : ''}>
+                                                    {cat.name}
+                                                </span>
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="text-center">
+                                            <Badge
+                                                variant="outline"
+                                                className={cat.isActive
+                                                    ? "bg-green-100 text-green-800 hover:bg-green-100"
+                                                    : "bg-gray-100 text-gray-800 hover:bg-gray-100"
+                                                }
+                                            >
+                                                {cat.isActive ? 'Aktif' : 'Pasif'}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <div className="flex justify-end gap-2">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    onClick={() => handleEdit(cat)}
+                                                >
+                                                    <Pencil className="w-4 h-4" />
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                                    onClick={() => handleDelete(cat.id)}
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </Button>
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                ))
+                            )}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+            </Card>
+
+            <DataTablePagination
+                page={page}
+                pageSize={pageSize}
+                totalPages={totalPages}
+                totalItems={visibleCategories.length}
+                onPageChange={setPage}
+                onPageSizeChange={setPageSize}
             />
 
-            <Modal
-                isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
-                title={editingCategory ? 'Kategoriyi Düzenle' : 'Yeni Kategori'}
-                footer={
-                    <div className="flex justify-end gap-3">
-                        <Button
-                            variant="outline"
-                            onClick={() => setIsModalOpen(false)}
-                        >
-                            İptal
-                        </Button>
-                        <Button
-                            onClick={handleSubmit}
-                            isLoading={processing}
-                        >
-                            Kaydet
-                        </Button>
+            {/* Create/Edit Modal */}
+            <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>{editingCategory ? 'Kategoriyi Düzenle' : 'Yeni Kategori Ekle'}</DialogTitle>
+                    </DialogHeader>
+
+                    <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                            <Label>Kategori Adı</Label>
+                            <Input
+                                value={formData.name}
+                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                placeholder="Kategori adı girin"
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Üst Kategori</Label>
+                            <Select
+                                value={formData.parentId}
+                                onValueChange={(value) => setFormData({ ...formData, parentId: value })}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Seçiniz (Opsiyonel)" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {categoryOptions.map((opt) => (
+                                        <SelectItem key={opt.value} value={opt.value}>
+                                            {opt.label}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Durum</Label>
+                            <Select
+                                value={formData.isActive ? 'active' : 'passive'}
+                                onValueChange={(value) => setFormData({ ...formData, isActive: value === 'active' })}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="active">Aktif</SelectItem>
+                                    <SelectItem value="passive">Pasif</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
                     </div>
-                }
-            >
-                <form id="category-form" onSubmit={handleSubmit} className="space-y-4">
-                    <Input
-                        label="Kategori Adı"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        required
-                    />
-                    <Select
-                        label="Üst Kategori"
-                        value={formData.parentId}
-                        onChange={(e) => setFormData({ ...formData, parentId: e.target.value })}
-                        options={categoryOptions}
-                    />
-                    <div className="flex items-center pt-2">
-                        <input
-                            type="checkbox"
-                            id="isActive"
-                            checked={formData.isActive}
-                            onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                            className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
-                        />
-                        <label htmlFor="isActive" className="ml-2 text-sm text-foreground">Aktif</label>
-                    </div>
-                </form>
-            </Modal>
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsModalOpen(false)}>İptal</Button>
+                        <Button onClick={handleSubmit}>
+                            {editingCategory ? 'Güncelle' : 'Oluştur'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Delete Confirmation */}
+            <AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Kategoriyi silmek istediğinize emin misiniz?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Bu işlem geri alınamaz. Alt kategorileri varsa onlar da etkilenebilir.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>İptal</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleConfirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                            Sil
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }

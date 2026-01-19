@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Button } from '@/components/common/Button';
+import { Button } from '@/components/ui/button';
 
 export default function NotFoundPage() {
   return (
@@ -12,9 +12,11 @@ export default function NotFoundPage() {
             Aradığınız sayfa mevcut değil veya taşınmış olabilir.
           </p>
         </div>
-        <Link href="/">
-          <Button>Ana Sayfaya Dön</Button>
-        </Link>
+        <div className="pt-4">
+          <Link href="/">
+            <Button>Ana Sayfaya Dön</Button>
+          </Link>
+        </div>
       </div>
     </div>
   );

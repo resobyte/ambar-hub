@@ -1,19 +1,62 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Button } from '@/components/common/Button';
-import { Table, Column } from '@/components/common/Table';
-import { Modal } from '@/components/common/Modal';
-import { Input } from '@/components/common/Input';
-import { Select } from '@/components/common/Select';
-import { ConfirmModal } from '@/components/common/ConfirmModal';
+import { useState, useEffect, useCallback } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Card, CardContent } from '@/components/ui/card';
+import { useToast } from '@/components/ui/use-toast';
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import { Badge } from '@/components/ui/badge';
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
+import { useTableQuery } from '@/hooks/use-table-query';
+import { Loader2, Plus, Pencil, Trash2, Truck } from 'lucide-react';
 import {
   getShippingProviders,
   createShippingProvider,
   updateShippingProvider,
   deleteShippingProvider,
 } from '@/lib/api';
-import { useToast } from '@/components/common/ToastContext';
 
 interface ShippingProvider {
   id: string;
@@ -31,274 +74,306 @@ interface ShippingFormData {
   isActive: boolean;
 }
 
-const keyExtractor = (item: ShippingProvider) => item.id;
-
 const SHIPPING_TYPES = [
   { value: 'ARAS', label: 'ARAS' },
 ];
 
 export function ShippingTable() {
-  const [shippingProviders, setShippingProviders] = useState<ShippingProvider[]>([]);
+  const { toast } = useToast();
+  const [providers, setProviders] = useState<ShippingProvider[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Note: getShippingProviders typically returns all items, so we might simulate pagination or handle it if API supports it.
+  // Based on previous file, it seemed to return array directly. We'll stick to client-side pagination if needed or just display all.
+  // However, for consistency with StoresTable, let's assume we want to use the hook, even if we paginate client-side for now or if the API is updated later.
+  // Actually, looking at previous code: `getShippingProviders()` took NO arguments and returned `data` array directly.
+  // So we will fetch all and paginate client-side for now to match the UI pattern.
+
+  const { page, pageSize, setPage, setPageSize } = useTableQuery({
+    defaultPage: 1,
+    defaultPageSize: 10,
+  });
+
+  // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [editingProvider, setEditingProvider] = useState<ShippingProvider | null>(null);
   const [deletingProviderId, setDeletingProviderId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<ShippingFormData>({
-    name: '',
-    type: 'ARAS',
-    isActive: true,
-  });
-  const [initialFormData, setInitialFormData] = useState<ShippingFormData>({
-    name: '',
-    type: 'ARAS',
-    isActive: true,
-  });
-  const formDataRef = useRef(formData);
-  const { success, error } = useToast();
+  const [formData, setFormData] = useState<ShippingFormData>({ name: '', type: 'ARAS', isActive: true });
 
-  const fetchShippingProviders = useCallback(async () => {
+  const fetchProviders = useCallback(async () => {
     setLoading(true);
     try {
       const data = await getShippingProviders();
-      setShippingProviders(data);
+      setProviders(data);
     } catch (err) {
-      error('Kargo firmaları yüklenemedi');
+      toast({ variant: 'destructive', title: 'Hata', description: 'Kargo firmaları yüklenemedi' });
     } finally {
       setLoading(false);
     }
-  }, [error]);
+  }, [toast]);
 
   useEffect(() => {
-    fetchShippingProviders();
-  }, [fetchShippingProviders]);
+    fetchProviders();
+  }, [fetchProviders]);
 
-  const handleCreate = useCallback(() => {
+  const handleCreate = () => {
     setEditingProvider(null);
-    const newData = { name: '', type: 'ARAS' as const, isActive: true };
-    setFormData(newData);
-    setInitialFormData(newData);
+    setFormData({ name: '', type: 'ARAS', isActive: true });
     setIsModalOpen(true);
-  }, []);
+  };
 
-  const handleModalClose = useCallback(() => {
-    setIsModalOpen(false);
-  }, []);
-
-  const handleDeleteModalClose = useCallback(() => {
-    setIsDeleteModalOpen(false);
-  }, []);
-
-  const handleEdit = useCallback((provider: ShippingProvider) => {
+  const handleEdit = (provider: ShippingProvider) => {
     setEditingProvider(provider);
-    const newData = {
+    setFormData({
       name: provider.name,
       type: provider.type,
-      isActive: provider.isActive,
-    };
-    setFormData(newData);
-    setInitialFormData(newData);
+      isActive: provider.isActive
+    });
     setIsModalOpen(true);
-  }, []);
+  };
 
-  const handleDelete = useCallback((id: string) => {
+  const handleDelete = (id: string) => {
     setDeletingProviderId(id);
-    setIsDeleteModalOpen(true);
-  }, []);
+    setIsDeleteOpen(true);
+  };
 
-  const handleSubmit = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
     try {
-      const currentFormData = formDataRef.current;
       if (editingProvider) {
-        await updateShippingProvider(editingProvider.id, {
-          name: currentFormData.name,
-          isActive: currentFormData.isActive,
-        });
-        success('Kargo firması başarıyla güncellendi');
+        await updateShippingProvider(editingProvider.id, formData);
+        toast({ title: 'Başarılı', description: 'Kargo firması güncellendi', variant: 'success' });
       } else {
-        await createShippingProvider(currentFormData);
-        success('Kargo firması başarıyla oluşturuldu');
+        await createShippingProvider(formData);
+        toast({ title: 'Başarılı', description: 'Kargo firması oluşturuldu', variant: 'success' });
       }
       setIsModalOpen(false);
-      fetchShippingProviders();
+      fetchProviders();
     } catch (err: any) {
-      error(err.message || 'İşlem başarısız');
+      toast({
+        variant: 'destructive',
+        title: 'Hata',
+        description: err.message || 'İşlem başarısız'
+      });
     }
-  }, [editingProvider, fetchShippingProviders, success, error]);
+  };
 
-  const handleConfirmDelete = useCallback(async () => {
+  const handleConfirmDelete = async () => {
     if (!deletingProviderId) return;
     try {
       await deleteShippingProvider(deletingProviderId);
-      success('Kargo firması başarıyla silindi');
-      setIsDeleteModalOpen(false);
-      fetchShippingProviders();
+      toast({ title: 'Başarılı', description: 'Kargo firması silindi', variant: 'success' });
+      setIsDeleteOpen(false);
+      fetchProviders();
     } catch (err: any) {
-      error(err.message || 'Silme işlemi başarısız');
+      toast({
+        variant: 'destructive',
+        title: 'Hata',
+        description: err.message || 'Silme işlemi başarısız'
+      });
     }
-  }, [deletingProviderId, fetchShippingProviders, success, error]);
+  };
 
-  const updateFormField = useCallback(<K extends keyof ShippingFormData>(
-    field: K,
-    value: ShippingFormData[K]
-  ) => {
-    setFormData(prev => {
-      const newData = { ...prev, [field]: value };
-      formDataRef.current = newData;
-      return newData;
-    });
-  }, []);
-
-  const isFormValid = useMemo(() => {
-    return formData.name.trim().length > 0;
-  }, [formData.name]);
-
-  const isFormDirty = useMemo(() => {
-    return JSON.stringify(formData) !== JSON.stringify(initialFormData);
-  }, [formData, initialFormData]);
-
-  const canSubmit = useMemo(() => {
-    return isFormValid && (isFormDirty || !editingProvider);
-  }, [isFormValid, isFormDirty, editingProvider]);
-
-  const modalTitle = useMemo(() =>
-    editingProvider ? 'Kargo Firması Düzenle' : 'Kargo Firması Ekle',
-    [editingProvider]
-  );
-
-  const submitButtonText = useMemo(() =>
-    editingProvider ? 'Güncelle' : 'Oluştur',
-    [editingProvider]
-  );
-
-  const columns = useMemo<Column<ShippingProvider>[]>(() => [
-    { key: 'name', header: 'Ad' },
-    {
-      key: 'type',
-      header: 'Sağlayıcı',
-      render: (row: ShippingProvider) => (
-        <span className="px-2.5 py-0.5 rounded-full text-xs font-medium border bg-primary/10 text-primary border-primary/20">
-          {row.type}
-        </span>
-      ),
-    },
-    {
-      key: 'integrationCount',
-      header: 'Kullanım',
-      render: (row: ShippingProvider) => (
-        <span className="text-muted-foreground">{row.integrationCount} {row.integrationCount === 1 ? 'entegrasyon' : 'entegrasyon'}</span>
-      ),
-    },
-    {
-      key: 'isActive',
-      header: 'Durum',
-      render: (row: ShippingProvider) => (
-        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${row.isActive
-            ? 'bg-success/10 text-success border-success/20'
-            : 'bg-muted text-muted-foreground border-border'
-          }`}>
-          {row.isActive ? 'Aktif' : 'Pasif'}
-        </span>
-      ),
-    },
-    {
-      key: 'actions',
-      header: '',
-      align: 'right',
-      shrink: true,
-      render: (row: ShippingProvider) => (
-        <div className="flex items-center justify-end space-x-1">
-          <button
-            onClick={() => handleEdit(row)}
-            className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
-            title="Edit"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-          </button>
-          <button
-            onClick={() => handleDelete(row.id)}
-            disabled={row.integrationCount > 0}
-            title={row.integrationCount > 0 ? 'Silinemez: Entegrasyonlar tarafından kullanılıyor' : 'Sil'}
-            className={`p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors ${row.integrationCount > 0 ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          </button>
-        </div>
-      ),
-    },
-  ], [handleEdit, handleDelete]);
+  // Client-side pagination logic since API returns all
+  const startIndex = (page - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const currentProviders = providers.slice(startIndex, endIndex);
+  const totalPages = Math.ceil(providers.length / pageSize);
 
   return (
-    <>
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h2 className="text-2xl font-semibold text-foreground">Kargo Firmaları</h2>
-          <p className="text-sm text-muted-foreground mt-1">Sipariş gönderimi için kargo firmalarını yönetin</p>
-        </div>
+    <div className="space-y-6">
+      <Breadcrumb>
+        <BreadcrumbList>
+          <BreadcrumbItem>
+            <BreadcrumbLink href="/dashboard">AmbarHUB</BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator />
+          <BreadcrumbItem>
+            <BreadcrumbPage>Kargo Firmaları</BreadcrumbPage>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
+
+      <div className="flex justify-end items-center">
         <Button onClick={handleCreate}>
-          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Kargo Ekle
+          <Plus className="w-4 h-4 mr-2" /> Kargo Ekle
         </Button>
       </div>
 
-      <Table
-        columns={columns}
-        data={shippingProviders}
-        keyExtractor={keyExtractor}
-        isLoading={loading}
-        emptyMessage="Henüz kargo firması yok. Başlamak için ilk firmanızı ekleyin."
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Firma Adı</TableHead>
+                <TableHead>Sağlayıcı</TableHead>
+                <TableHead>Kullanım</TableHead>
+                <TableHead>Durum</TableHead>
+                <TableHead className="text-right">İşlemler</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="h-24 text-center">
+                    <div className="flex justify-center items-center">
+                      <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : currentProviders.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                    Henüz kargo firması bulunmuyor.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                currentProviders.map((provider) => (
+                  <TableRow key={provider.id}>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2">
+                        <Truck className="w-4 h-4 text-muted-foreground" />
+                        {provider.name}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
+                        {provider.type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {provider.integrationCount} entegrasyon
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={provider.isActive
+                          ? "bg-green-100 text-green-800 hover:bg-green-100"
+                          : "bg-gray-100 text-gray-800 hover:bg-gray-100"
+                        }
+                      >
+                        {provider.isActive ? 'Aktif' : 'Pasif'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleEdit(provider)}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => handleDelete(provider.id)}
+                          disabled={provider.integrationCount > 0}
+                          title={provider.integrationCount > 0 ? 'Entegrasyonlar tarafından kullanılıyor' : 'Sil'}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <DataTablePagination
+        page={page}
+        pageSize={pageSize}
+        totalPages={totalPages}
+        totalItems={providers.length}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
       />
 
-      <Modal isOpen={isModalOpen} onClose={handleModalClose} title={modalTitle} size="md">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <Input
-            label="Ad"
-            value={formData.name}
-            onChange={(e) => updateFormField('name', e.target.value)}
-            required
-            placeholder="Firma adı girin"
-          />
-          <Select
-            label="Sağlayıcı Tipi"
-            value={formData.type}
-            onChange={(e) => updateFormField('type', e.target.value as ShippingFormData['type'])}
-            options={SHIPPING_TYPES}
-            required
-            disabled={!!editingProvider}
-          />
-          <Select
-            label="Durum"
-            value={formData.isActive ? 'Active' : 'Passive'}
-            onChange={(e) => updateFormField('isActive', e.target.value === 'Active')}
-            options={[
-              { value: 'Active', label: 'Aktif' },
-              { value: 'Passive', label: 'Pasif' },
-            ]}
-          />
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={handleModalClose}>
-              İptal
-            </Button>
-            <Button type="submit" disabled={!canSubmit}>{submitButtonText}</Button>
+      {/* Create/Edit Modal */}
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingProvider ? 'Kargo Firması Düzenle' : 'Yeni Kargo Firması Ekle'}</DialogTitle>
+            <DialogDescription>
+              Kargo entegrasyon bilgilerini aşağıdan yönetebilirsiniz.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Firma Adı</Label>
+              <Input
+                placeholder="Örn: Aras Kargo"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Sağlayıcı Tipi</Label>
+              <Select
+                value={formData.type}
+                onValueChange={(value) => setFormData({ ...formData, type: value as 'ARAS' })}
+                disabled={!!editingProvider}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Sağlayıcı seçin" />
+                </SelectTrigger>
+                <SelectContent>
+                  {SHIPPING_TYPES.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Durum</Label>
+              <Select
+                value={formData.isActive ? 'active' : 'passive'}
+                onValueChange={(value) => setFormData({ ...formData, isActive: value === 'active' })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Aktif</SelectItem>
+                  <SelectItem value="passive">Pasif</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-        </form>
-      </Modal>
 
-      <ConfirmModal
-        isOpen={isDeleteModalOpen}
-        onClose={handleDeleteModalClose}
-        onConfirm={handleConfirmDelete}
-        title="Kargo Firmasını Sil"
-        message="Bu kargo firmasını silmek istediğinize emin misiniz? Bu işlem geri alınamaz."
-      />
-    </>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsModalOpen(false)}>İptal</Button>
+            <Button onClick={handleSubmit}>
+              {editingProvider ? 'Güncelle' : 'Oluştur'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Alert */}
+      <AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Kargo firmasını silmek istiyor musunuz?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bu işlem geri alınamaz. Bu firmaya ait entegrasyon ayarları silinecektir.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>İptal</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Sil
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }

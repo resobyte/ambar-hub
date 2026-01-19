@@ -2,10 +2,32 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { useToast } from '@/components/common/ToastContext';
-import { ConfirmModal } from '@/components/common';
+import { useToast } from '@/components/ui/use-toast';
 import { apiPatch } from '@/lib/api';
 import { AuthUser } from '@/types';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import { Loader2 } from 'lucide-react';
 
 interface AccountFormProps {
   user: AuthUser;
@@ -13,13 +35,18 @@ interface AccountFormProps {
 
 export function AccountForm({ user }: AccountFormProps) {
   const router = useRouter();
-  const toast = useToast();
+  const { toast } = useToast();
+
+  // Profile State
   const [firstName, setFirstName] = useState(user.firstName);
   const [lastName, setLastName] = useState(user.lastName);
   const [email, setEmail] = useState(user.email);
+
+  // Password State
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+
   const [isPending, startTransition] = useTransition();
   const [profileConfirmOpen, setProfileConfirmOpen] = useState(false);
   const [passwordConfirmOpen, setPasswordConfirmOpen] = useState(false);
@@ -41,6 +68,7 @@ export function AccountForm({ user }: AccountFormProps) {
   };
 
   const handleProfileConfirm = async () => {
+    setProfileConfirmOpen(false);
     startTransition(async () => {
       try {
         await apiPatch(`/users/${user.id}`, {
@@ -48,11 +76,14 @@ export function AccountForm({ user }: AccountFormProps) {
           lastName,
           email,
         });
-        toast.success('Profil başarıyla güncellendi');
+        toast({ title: 'Başarılı', description: 'Profil başarıyla güncellendi', variant: 'success' });
         router.refresh();
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : 'Profil güncellenemedi');
-        throw error;
+        toast({
+          variant: 'destructive',
+          title: 'Hata',
+          description: error instanceof Error ? error.message : 'Profil güncellenemedi'
+        });
       }
     });
   };
@@ -61,12 +92,12 @@ export function AccountForm({ user }: AccountFormProps) {
     e.preventDefault();
 
     if (newPassword !== confirmPassword) {
-      toast.error('Şifreler eşleşmiyor');
+      toast({ variant: 'destructive', title: 'Hata', description: 'Şifreler eşleşmiyor' });
       return;
     }
 
     if (newPassword.length < 8) {
-      toast.error('Şifre en az 8 karakter olmalıdır');
+      toast({ variant: 'destructive', title: 'Hata', description: 'Şifre en az 8 karakter olmalıdır' });
       return;
     }
 
@@ -74,141 +105,158 @@ export function AccountForm({ user }: AccountFormProps) {
   };
 
   const handlePasswordConfirm = async () => {
+    setPasswordConfirmOpen(false);
     startTransition(async () => {
       try {
         await apiPatch(`/users/${user.id}`, {
           password: newPassword,
         });
-        toast.success('Şifre başarıyla güncellendi');
+        toast({ title: 'Başarılı', description: 'Şifre başarıyla güncellendi', variant: 'success' });
         setCurrentPassword('');
         setNewPassword('');
         setConfirmPassword('');
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : 'Şifre güncellenemedi');
-        throw error;
+        toast({
+          variant: 'destructive',
+          title: 'Hata',
+          description: error instanceof Error ? error.message : 'Şifre güncellenemedi'
+        });
       }
     });
   };
 
   return (
     <div className="space-y-6">
-      <div className="bg-card rounded-xl border border-border shadow-sm p-6">
-        <h3 className="text-lg font-bold text-foreground mb-4">Profil Bilgileri</h3>
-        <form onSubmit={handleProfileSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1">Ad</label>
-              <input
-                type="text"
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
+      <Breadcrumb>
+        <BreadcrumbList>
+          <BreadcrumbItem>
+            <BreadcrumbLink href="/dashboard">AmbarHUB</BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator />
+          <BreadcrumbItem>
+            <BreadcrumbPage>Hesap Ayarları</BreadcrumbPage>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Profil Bilgileri</CardTitle>
+          <CardDescription>Kişisel bilgilerinizi ve e-posta adresinizi güncelleyin.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleProfileSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Ad</Label>
+                <Input
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Soyad</Label>
+                <Input
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>E-posta</Label>
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full px-3 py-2 border border-input rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none bg-muted/20"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1">Soyad</label>
-              <input
-                type="text"
-                value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
+            <div className="flex justify-end">
+              <Button type="submit" disabled={isPending || !isProfileChanged}>
+                {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Profili Güncelle
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Şifre Değiştir</CardTitle>
+          <CardDescription>Hesap güvenliğiniz için şifrenizi güncelleyin.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handlePasswordSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Mevcut Şifre</Label>
+              <Input
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
                 required
-                className="w-full px-3 py-2 border border-input rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none bg-muted/20"
               />
             </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-3 py-2 border border-input rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none bg-muted/20"
-            />
-          </div>
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={isPending || !isProfileChanged}
-              className="px-4 py-2 text-sm font-bold text-white bg-primary hover:bg-primary-dark rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isPending ? (
-                <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : (
-                'Profili Güncelle'
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
+            <div className="space-y-2">
+              <Label>Yeni Şifre</Label>
+              <Input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="En az 8 karakter"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Yeni Şifreyi Onayla</Label>
+              <Input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button type="submit" disabled={isPending || !isPasswordValid}>
+                {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Şifreyi Güncelle
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
 
-      <div className="bg-card rounded-xl border border-border shadow-sm p-6">
-        <h3 className="text-lg font-bold text-foreground mb-4">Şifre Değiştir</h3>
-        <form onSubmit={handlePasswordSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">Mevcut Şifre</label>
-            <input
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              className="w-full px-3 py-2 border border-input rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none bg-muted/20"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">Yeni Şifre</label>
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="En az 8 karakter"
-              className="w-full px-3 py-2 border border-input rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none bg-muted/20"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">Yeni Şifreyi Onayla</label>
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full px-3 py-2 border border-input rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none bg-muted/20"
-            />
-          </div>
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={isPending || !isPasswordValid}
-              className="px-4 py-2 text-sm font-bold text-white bg-primary hover:bg-primary-dark rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isPending ? (
-                <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : (
-                'Şifreyi Güncelle'
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
+      <AlertDialog open={profileConfirmOpen} onOpenChange={setProfileConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Profili Güncelle</AlertDialogTitle>
+            <AlertDialogDescription>
+              Profil bilgilerinizi güncellemek istediğinize emin misiniz?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>İptal</AlertDialogCancel>
+            <AlertDialogAction onClick={handleProfileConfirm}>Güncelle</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-      <ConfirmModal
-        isOpen={profileConfirmOpen}
-        onClose={() => setProfileConfirmOpen(false)}
-        onConfirm={handleProfileConfirm}
-        title="Profili Güncelle"
-        message="Profil bilgilerinizi güncellemek istediğinize emin misiniz?"
-        confirmText="Güncelle"
-        cancelText="İptal"
-      />
-
-      <ConfirmModal
-        isOpen={passwordConfirmOpen}
-        onClose={() => setPasswordConfirmOpen(false)}
-        onConfirm={handlePasswordConfirm}
-        title="Şifre Değiştir"
-        message="Şifrenizi değiştirmek istediğinize emin misiniz? Bir sonraki girişinizde yeni şifreyi kullanmanız gerekecek."
-        confirmText="Şifre Değiştir"
-        cancelText="İptal"
-      />
+      <AlertDialog open={passwordConfirmOpen} onOpenChange={setPasswordConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Şifre Değiştir</AlertDialogTitle>
+            <AlertDialogDescription>
+              Şifrenizi değiştirmek istediğinize emin misiniz? Bir sonraki girişinizde yeni şifreyi kullanmanız gerekecek.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>İptal</AlertDialogCancel>
+            <AlertDialogAction onClick={handlePasswordConfirm}>Şifre Değiştir</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

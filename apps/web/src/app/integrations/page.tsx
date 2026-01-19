@@ -14,7 +14,7 @@ export default async function IntegrationsPage() {
 
   return (
     <AppLayout user={user} currentPath="/integrations">
-      <Suspense fallback={<div>Yükleniyor...</div>}>
+      <Suspense fallback={null}>
         <IntegrationsTable />
       </Suspense>
     </AppLayout>

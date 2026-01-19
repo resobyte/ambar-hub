@@ -2,19 +2,67 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { getBrands, createBrand, updateBrand, deleteBrand, Brand } from '@/lib/api';
-import { Button } from '@/components/common/Button';
-import { Table, Column } from '@/components/common/Table';
-import { Modal } from '@/components/common/Modal';
-import { Input } from '@/components/common/Input';
-import { Badge } from '@/components/common/Badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from "@/components/ui/dialog";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
+import { useTableQuery } from '@/hooks/use-table-query';
+import { Loader2, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { useToast } from '@/components/ui/use-toast';
 
 export default function BrandsPage() {
+    const { toast } = useToast();
     const [brands, setBrands] = useState<Brand[]>([]);
     const [loading, setLoading] = useState(true);
+
+    // Pagination state
+    const { page, pageSize, setPage, setPageSize } = useTableQuery({
+        defaultPage: 1,
+        defaultPageSize: 10,
+    });
+
+    // Modal states
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isDeleteOpen, setIsDeleteOpen] = useState(false);
     const [editingBrand, setEditingBrand] = useState<Brand | null>(null);
+    const [deletingBrandId, setDeletingBrandId] = useState<string | null>(null);
+
+    // Form state
     const [formData, setFormData] = useState({ name: '', isActive: true });
-    const [processing, setProcessing] = useState(false);
 
     const fetchBrands = useCallback(async () => {
         setLoading(true);
@@ -22,140 +70,217 @@ export default function BrandsPage() {
             const res = await getBrands();
             setBrands(res.data || []);
         } catch (err) {
-            console.error('Failed to fetch brands:', err);
+            toast({ variant: 'destructive', title: 'Hata', description: 'Markalar yüklenemedi' });
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [toast]);
 
     useEffect(() => { fetchBrands(); }, [fetchBrands]);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setProcessing(true);
-        try {
-            if (editingBrand) {
-                await updateBrand(editingBrand.id, formData);
-            } else {
-                await createBrand(formData);
-            }
-            setIsModalOpen(false);
-            setEditingBrand(null);
-            setFormData({ name: '', isActive: true });
-            fetchBrands();
-        } catch (err) {
-            console.error('Failed to save brand:', err);
-            alert('Kaydetme hatası oluştu');
-        } finally {
-            setProcessing(false);
-        }
-    };
-
-    const handleDelete = async (id: string) => {
-        if (!confirm('Bu markayı silmek istediğinize emin misiniz?')) return;
-        try {
-            await deleteBrand(id);
-            fetchBrands();
-        } catch (err) {
-            console.error('Failed to delete brand:', err);
-            alert('Silme hatası oluştu');
-        }
-    };
-
-    const openEdit = (brand: Brand) => {
-        setEditingBrand(brand);
-        setFormData({ name: brand.name, isActive: brand.isActive });
-        setIsModalOpen(true);
-    };
-
-    const openCreate = () => {
+    const handleCreate = () => {
         setEditingBrand(null);
         setFormData({ name: '', isActive: true });
         setIsModalOpen(true);
     };
 
-    const columns: Column<Brand>[] = [
-        { key: 'name', header: 'Marka Adı', sortable: true },
-        {
-            key: 'isActive',
-            header: 'Durum',
-            render: (brand) => (
-                <Badge variant={brand.isActive ? 'success' : 'secondary'}>
-                    {brand.isActive ? 'Aktif' : 'Pasif'}
-                </Badge>
-            )
-        },
-        {
-            key: 'actions',
-            header: 'İşlemler',
-            align: 'right',
-            render: (brand) => (
-                <div className="flex justify-end gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(brand)}>Düzenle</Button>
-                    <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleDelete(brand.id)}>Sil</Button>
-                </div>
-            )
+    const handleEdit = (brand: Brand) => {
+        setEditingBrand(brand);
+        setFormData({ name: brand.name, isActive: brand.isActive });
+        setIsModalOpen(true);
+    };
+
+    const handleDelete = (id: string) => {
+        setDeletingBrandId(id);
+        setIsDeleteOpen(true);
+    };
+
+    const handleSubmit = async () => {
+        try {
+            if (editingBrand) {
+                await updateBrand(editingBrand.id, formData);
+                toast({ title: 'Başarılı', description: 'Marka güncellendi', variant: 'success' });
+            } else {
+                await createBrand(formData);
+                toast({ title: 'Başarılı', description: 'Marka oluşturuldu', variant: 'success' });
+            }
+            setIsModalOpen(false);
+            fetchBrands();
+        } catch (err: any) {
+            toast({
+                variant: 'destructive',
+                title: 'Hata',
+                description: err.message || 'İşlem başarısız'
+            });
         }
-    ];
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!deletingBrandId) return;
+        try {
+            await deleteBrand(deletingBrandId);
+            toast({ title: 'Başarılı', description: 'Marka silindi', variant: 'success' });
+            setIsDeleteOpen(false);
+            fetchBrands();
+        } catch (err: any) {
+            toast({
+                variant: 'destructive',
+                title: 'Hata',
+                description: err.message || 'Silme işlemi başarısız'
+            });
+        }
+    };
+
+    // Pagination Logic
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const currentBrands = brands.slice(startIndex, endIndex);
+    const totalPages = Math.ceil(brands.length / pageSize);
 
     return (
-        <div>
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-lg font-semibold text-foreground">Markalar</h2>
-                <Button onClick={openCreate}>
-                    + Yeni Marka
+        <div className="space-y-4">
+            <div className="flex justify-end items-center">
+                <Button onClick={handleCreate}>
+                    <Plus className="w-4 h-4 mr-2" /> Yeni Marka
                 </Button>
             </div>
 
-            <Table
-                columns={columns}
-                data={brands}
-                isLoading={loading}
-                keyExtractor={(item) => item.id}
+            <Card>
+                <CardContent className="p-0">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Marka Adı</TableHead>
+                                <TableHead>Durum</TableHead>
+                                <TableHead className="text-right">İşlemler</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {loading ? (
+                                <TableRow>
+                                    <TableCell colSpan={3} className="h-24 text-center">
+                                        <div className="flex justify-center items-center">
+                                            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                                        </div>
+                                    </TableCell>
+                                </TableRow>
+                            ) : currentBrands.length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={3} className="h-24 text-center text-muted-foreground">
+                                        Henüz marka bulunmuyor.
+                                    </TableCell>
+                                </TableRow>
+                            ) : (
+                                currentBrands.map((brand) => (
+                                    <TableRow key={brand.id}>
+                                        <TableCell className="font-medium">{brand.name}</TableCell>
+                                        <TableCell>
+                                            <Badge
+                                                variant="outline"
+                                                className={brand.isActive
+                                                    ? "bg-green-100 text-green-800 hover:bg-green-100"
+                                                    : "bg-gray-100 text-gray-800 hover:bg-gray-100"
+                                                }
+                                            >
+                                                {brand.isActive ? 'Aktif' : 'Pasif'}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <div className="flex justify-end gap-2">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    onClick={() => handleEdit(brand)}
+                                                >
+                                                    <Pencil className="w-4 h-4" />
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                                    onClick={() => handleDelete(brand.id)}
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </Button>
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                ))
+                            )}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+            </Card>
+
+            <DataTablePagination
+                page={page}
+                pageSize={pageSize}
+                totalPages={totalPages}
+                totalItems={brands.length}
+                onPageChange={setPage}
+                onPageSizeChange={setPageSize}
             />
 
-            <Modal
-                isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
-                title={editingBrand ? 'Markayı Düzenle' : 'Yeni Marka'}
-                footer={
-                    <div className="flex justify-end gap-3">
-                        <Button
-                            variant="outline"
-                            onClick={() => setIsModalOpen(false)}
-                        >
-                            İptal
-                        </Button>
-                        <Button
-                            onClick={handleSubmit}
-                            isLoading={processing}
-                        >
-                            Kaydet
-                        </Button>
-                    </div>
-                }
-            >
-                <form id="brand-form" onSubmit={handleSubmit}>
-                    <div className="space-y-4">
-                        <Input
-                            label="Marka Adı"
-                            value={formData.name}
-                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                            required
-                        />
-                        <div className="flex items-center">
-                            <input
-                                type="checkbox"
-                                id="isActive"
-                                checked={formData.isActive}
-                                onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                                className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
+            {/* Create/Edit Modal */}
+            <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>{editingBrand ? 'Markayı Düzenle' : 'Yeni Marka Ekle'}</DialogTitle>
+                    </DialogHeader>
+
+                    <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                            <Label>Marka Adı</Label>
+                            <Input
+                                value={formData.name}
+                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                placeholder="Marka adı girin"
                             />
-                            <label htmlFor="isActive" className="ml-2 text-sm text-foreground">Aktif</label>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Durum</Label>
+                            <Select
+                                value={formData.isActive ? 'active' : 'passive'}
+                                onValueChange={(value) => setFormData({ ...formData, isActive: value === 'active' })}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="active">Aktif</SelectItem>
+                                    <SelectItem value="passive">Pasif</SelectItem>
+                                </SelectContent>
+                            </Select>
                         </div>
                     </div>
-                </form>
-            </Modal>
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsModalOpen(false)}>İptal</Button>
+                        <Button onClick={handleSubmit}>
+                            {editingBrand ? 'Güncelle' : 'Oluştur'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Delete Confirmation */}
+            <AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Markayı silmek istediğinize emin misiniz?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Bu işlem geri alınamaz.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>İptal</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleConfirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                            Sil
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }

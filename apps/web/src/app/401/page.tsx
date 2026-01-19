@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Button } from '@/components/common/Button';
+import { Button } from '@/components/ui/button';
 
 export default function UnauthorizedPage() {
   return (
@@ -12,9 +12,11 @@ export default function UnauthorizedPage() {
             Bu sayfaya erişmek için giriş yapmalısınız. Lütfen devam etmek için oturum açın.
           </p>
         </div>
-        <Link href="/auth/login">
-          <Button>Giriş Yap</Button>
-        </Link>
+        <div className="pt-4">
+          <Link href="/auth/login">
+            <Button>Giriş Yap</Button>
+          </Link>
+        </div>
       </div>
     </div>
   );

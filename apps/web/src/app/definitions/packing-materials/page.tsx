@@ -2,18 +2,65 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { getPackingMaterials, createPackingMaterial, updatePackingMaterial, deletePackingMaterial, PackingMaterial, PackingMaterialType } from '@/lib/api';
-import { Button } from '@/components/common/Button';
-import { Table, Column } from '@/components/common/Table';
-import { Modal } from '@/components/common/Modal';
-import { Input } from '@/components/common/Input';
-import { Select } from '@/components/common/Select';
-import { Badge } from '@/components/common/Badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from "@/components/ui/dialog";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
+import { useTableQuery } from '@/hooks/use-table-query';
+import { Loader2, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { useToast } from '@/components/ui/use-toast';
 
 export default function PackingMaterialsPage() {
+    const { toast } = useToast();
     const [materials, setMaterials] = useState<PackingMaterial[]>([]);
     const [loading, setLoading] = useState(true);
+
+    // Pagination
+    const { page, pageSize, setPage, setPageSize } = useTableQuery({
+        defaultPage: 1,
+        defaultPageSize: 10,
+    });
+
+    // Modal states
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isDeleteOpen, setIsDeleteOpen] = useState(false);
     const [editingMaterial, setEditingMaterial] = useState<PackingMaterial | null>(null);
+    const [deletingMaterialId, setDeletingMaterialId] = useState<string | null>(null);
+
     const [formData, setFormData] = useState({
         name: '',
         type: PackingMaterialType.BOX,
@@ -21,7 +68,6 @@ export default function PackingMaterialsPage() {
         lowStockThreshold: 10,
         isActive: true
     });
-    const [processing, setProcessing] = useState(false);
 
     const fetchMaterials = useCallback(async () => {
         setLoading(true);
@@ -29,53 +75,27 @@ export default function PackingMaterialsPage() {
             const res = await getPackingMaterials();
             setMaterials(res.data || []);
         } catch (err) {
-            console.error('Failed to fetch materials:', err);
+            toast({ variant: 'destructive', title: 'Hata', description: 'Malzemeler yüklenemedi' });
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [toast]);
 
     useEffect(() => { fetchMaterials(); }, [fetchMaterials]);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setProcessing(true);
-        try {
-            if (editingMaterial) {
-                await updatePackingMaterial(editingMaterial.id, formData);
-            } else {
-                await createPackingMaterial(formData);
-            }
-            setIsModalOpen(false);
-            setEditingMaterial(null);
-            setFormData({
-                name: '',
-                type: PackingMaterialType.BOX,
-                stockQuantity: 0,
-                lowStockThreshold: 10,
-                isActive: true
-            });
-            fetchMaterials();
-        } catch (err) {
-            console.error('Failed to save material:', err);
-            alert('Kaydetme hatası oluştu');
-        } finally {
-            setProcessing(false);
-        }
+    const handleCreate = () => {
+        setEditingMaterial(null);
+        setFormData({
+            name: '',
+            type: PackingMaterialType.BOX,
+            stockQuantity: 0,
+            lowStockThreshold: 10,
+            isActive: true
+        });
+        setIsModalOpen(true);
     };
 
-    const handleDelete = async (id: string) => {
-        if (!confirm('Bu malzemeyi silmek istediğinize emin misiniz?')) return;
-        try {
-            await deletePackingMaterial(id);
-            fetchMaterials();
-        } catch (err) {
-            console.error('Failed to delete material:', err);
-            alert('Silme hatası oluştu');
-        }
-    };
-
-    const openEdit = (material: PackingMaterial) => {
+    const handleEdit = (material: PackingMaterial) => {
         setEditingMaterial(material);
         setFormData({
             name: material.name,
@@ -87,16 +107,45 @@ export default function PackingMaterialsPage() {
         setIsModalOpen(true);
     };
 
-    const openCreate = () => {
-        setEditingMaterial(null);
-        setFormData({
-            name: '',
-            type: PackingMaterialType.BOX,
-            stockQuantity: 0,
-            lowStockThreshold: 10,
-            isActive: true
-        });
-        setIsModalOpen(true);
+    const handleDelete = (id: string) => {
+        setDeletingMaterialId(id);
+        setIsDeleteOpen(true);
+    };
+
+    const handleSubmit = async () => {
+        try {
+            if (editingMaterial) {
+                await updatePackingMaterial(editingMaterial.id, formData);
+                toast({ title: 'Başarılı', description: 'Malzeme güncellendi', variant: 'success' });
+            } else {
+                await createPackingMaterial(formData);
+                toast({ title: 'Başarılı', description: 'Malzeme oluşturuldu', variant: 'success' });
+            }
+            setIsModalOpen(false);
+            fetchMaterials();
+        } catch (err: any) {
+            toast({
+                variant: 'destructive',
+                title: 'Hata',
+                description: err.message || 'İşlem başarısız'
+            });
+        }
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!deletingMaterialId) return;
+        try {
+            await deletePackingMaterial(deletingMaterialId);
+            toast({ title: 'Başarılı', description: 'Malzeme silindi', variant: 'success' });
+            setIsDeleteOpen(false);
+            fetchMaterials();
+        } catch (err: any) {
+            toast({
+                variant: 'destructive',
+                title: 'Hata',
+                description: err.message || 'Silme işlemi başarısız'
+            });
+        }
     };
 
     const typeLabels: Record<string, string> = {
@@ -112,125 +161,208 @@ export default function PackingMaterialsPage() {
         label: typeLabels[key]
     }));
 
-    const columns: Column<PackingMaterial>[] = [
-        { key: 'name', header: 'Malzeme Adı', sortable: true },
-        {
-            key: 'type',
-            header: 'Tip',
-            render: (item) => <Badge variant="outline">{typeLabels[item.type] || item.type}</Badge>
-        },
-        {
-            key: 'stockQuantity',
-            header: 'Stok',
-            render: (item) => (
-                <span className={`font-mono font-bold ${item.stockQuantity <= item.lowStockThreshold ? 'text-red-500' : 'text-foreground'}`}>
-                    {item.stockQuantity}
-                </span>
-            )
-        },
-        { key: 'lowStockThreshold', header: 'Kritik Sınır' },
-        {
-            key: 'isActive',
-            header: 'Durum',
-            render: (item) => (
-                <Badge variant={item.isActive ? 'success' : 'secondary'}>
-                    {item.isActive ? 'Aktif' : 'Pasif'}
-                </Badge>
-            )
-        },
-        {
-            key: 'actions',
-            header: 'İşlemler',
-            align: 'right',
-            render: (item) => (
-                <div className="flex justify-end gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(item)}>Düzenle</Button>
-                    <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleDelete(item.id)}>Sil</Button>
-                </div>
-            )
-        }
-    ];
+    // Pagination
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const currentMaterials = materials.slice(startIndex, endIndex);
+    const totalPages = Math.ceil(materials.length / pageSize);
 
     return (
-        <div>
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-lg font-semibold text-foreground">Sarf Malzemeler</h2>
-                <Button onClick={openCreate}>
-                    + Malzeme Ekle
+        <div className="space-y-4">
+            <div className="flex justify-end items-center">
+                <Button onClick={handleCreate}>
+                    <Plus className="w-4 h-4 mr-2" /> Malzeme Ekle
                 </Button>
             </div>
 
-            <Table
-                columns={columns}
-                data={materials}
-                isLoading={loading}
-                keyExtractor={(item) => item.id}
+            <Card>
+                <CardContent className="p-0">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Malzeme Adı</TableHead>
+                                <TableHead>Tip</TableHead>
+                                <TableHead>Stok</TableHead>
+                                <TableHead>Kritik Sınır</TableHead>
+                                <TableHead>Durum</TableHead>
+                                <TableHead className="text-right">İşlemler</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {loading ? (
+                                <TableRow>
+                                    <TableCell colSpan={6} className="h-24 text-center">
+                                        <div className="flex justify-center items-center">
+                                            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                                        </div>
+                                    </TableCell>
+                                </TableRow>
+                            ) : currentMaterials.length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                                        Henüz malzeme bulunmuyor.
+                                    </TableCell>
+                                </TableRow>
+                            ) : (
+                                currentMaterials.map((item) => (
+                                    <TableRow key={item.id}>
+                                        <TableCell className="font-medium">{item.name}</TableCell>
+                                        <TableCell>
+                                            <Badge variant="outline">{typeLabels[item.type] || item.type}</Badge>
+                                        </TableCell>
+                                        <TableCell>
+                                            <span className={`font-mono font-bold ${item.stockQuantity <= item.lowStockThreshold ? 'text-destructive' : 'text-foreground'}`}>
+                                                {item.stockQuantity}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell>{item.lowStockThreshold}</TableCell>
+                                        <TableCell>
+                                            <Badge
+                                                variant="outline"
+                                                className={item.isActive
+                                                    ? "bg-green-100 text-green-800 hover:bg-green-100"
+                                                    : "bg-gray-100 text-gray-800 hover:bg-gray-100"
+                                                }
+                                            >
+                                                {item.isActive ? 'Aktif' : 'Pasif'}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <div className="flex justify-end gap-2">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    onClick={() => handleEdit(item)}
+                                                >
+                                                    <Pencil className="w-4 h-4" />
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                                    onClick={() => handleDelete(item.id)}
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </Button>
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                ))
+                            )}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+            </Card>
+
+            <DataTablePagination
+                page={page}
+                pageSize={pageSize}
+                totalPages={totalPages}
+                totalItems={materials.length}
+                onPageChange={setPage}
+                onPageSizeChange={setPageSize}
             />
 
-            <Modal
-                isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
-                title={editingMaterial ? 'Malzemeyi Düzenle' : 'Yeni Malzeme'}
-                footer={
-                    <div className="flex justify-end gap-3">
-                        <Button
-                            variant="outline"
-                            onClick={() => setIsModalOpen(false)}
-                        >
-                            İptal
+            {/* Create/Edit Modal */}
+            <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>{editingMaterial ? 'Malzemeyi Düzenle' : 'Yeni Malzeme Ekle'}</DialogTitle>
+                    </DialogHeader>
+
+                    <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                            <Label>Malzeme Adı</Label>
+                            <Input
+                                value={formData.name}
+                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                placeholder="Malzeme adı girin"
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Tip</Label>
+                            <Select
+                                value={formData.type}
+                                onValueChange={(value) => setFormData({ ...formData, type: value as PackingMaterialType })}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {typeOptions.map((opt) => (
+                                        <SelectItem key={opt.value} value={opt.value}>
+                                            {opt.label}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label>Stok Miktarı</Label>
+                                <Input
+                                    type="number"
+                                    min="0"
+                                    value={formData.stockQuantity}
+                                    onChange={(e) => setFormData({ ...formData, stockQuantity: parseInt(e.target.value) || 0 })}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Kritik Stok Sınırı</Label>
+                                <Input
+                                    type="number"
+                                    min="0"
+                                    value={formData.lowStockThreshold}
+                                    onChange={(e) => setFormData({ ...formData, lowStockThreshold: parseInt(e.target.value) || 0 })}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Durum</Label>
+                            <Select
+                                value={formData.isActive ? 'active' : 'passive'}
+                                onValueChange={(value) => setFormData({ ...formData, isActive: value === 'active' })}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="active">Aktif</SelectItem>
+                                    <SelectItem value="passive">Pasif</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsModalOpen(false)}>İptal</Button>
+                        <Button onClick={handleSubmit}>
+                            {editingMaterial ? 'Güncelle' : 'Oluştur'}
                         </Button>
-                        <Button
-                            onClick={handleSubmit}
-                            isLoading={processing}
-                        >
-                            Kaydet
-                        </Button>
-                    </div>
-                }
-            >
-                <form id="packing-material-form" onSubmit={handleSubmit} className="space-y-4">
-                    <Input
-                        label="Malzeme Adı"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        required
-                    />
-                    <Select
-                        label="Tip"
-                        value={formData.type}
-                        onChange={(e) => setFormData({ ...formData, type: e.target.value as PackingMaterialType })}
-                        options={typeOptions}
-                    />
-                    <div className="grid grid-cols-2 gap-4">
-                        <Input
-                            label="Stok Miktarı"
-                            type="number"
-                            min="0"
-                            value={formData.stockQuantity}
-                            onChange={(e) => setFormData({ ...formData, stockQuantity: parseInt(e.target.value) || 0 })}
-                            required
-                        />
-                        <Input
-                            label="Kritik Stok Sınırı"
-                            type="number"
-                            min="0"
-                            value={formData.lowStockThreshold}
-                            onChange={(e) => setFormData({ ...formData, lowStockThreshold: parseInt(e.target.value) || 0 })}
-                            required
-                        />
-                    </div>
-                    <div className="flex items-center pt-2">
-                        <input
-                            type="checkbox"
-                            id="isActive"
-                            checked={formData.isActive}
-                            onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                            className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
-                        />
-                        <label htmlFor="isActive" className="ml-2 text-sm text-foreground">Aktif</label>
-                    </div>
-                </form>
-            </Modal>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Delete Confirmation */}
+            <AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Malzemeyi silmek istediğinize emin misiniz?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Bu işlem geri alınamaz.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>İptal</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleConfirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                            Sil
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }

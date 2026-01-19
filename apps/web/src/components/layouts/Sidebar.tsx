@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useTransition, useState } from 'react';
+import { useTransition, useState, useEffect } from 'react';
 import { logout } from '@/lib/actions/auth';
 import { RouteConfig } from '@/types';
 import { useSidebar } from '@/components/common/SidebarProvider';
@@ -99,6 +99,19 @@ export function Sidebar({ routes, currentPath, isMobileMenuOpen, onMobileMenuClo
     'Entegrasyonlar': false,
     'Ayarlar': false
   });
+
+  // Automatically open the group containing the current active route
+  useEffect(() => {
+    Object.entries(groupedRoutes).forEach(([groupName, groupRoutes]) => {
+      const activeRoute = groupRoutes.some(route => currentPath.startsWith(route.path));
+      if (activeRoute && !openGroups[groupName]) {
+        setOpenGroups(prev => ({
+          ...prev,
+          [groupName]: true
+        }));
+      }
+    });
+  }, [currentPath, groupedRoutes]);
 
   const toggleGroup = (group: string) => {
     setOpenGroups(prev => ({ ...prev, [group]: !prev[group] }));

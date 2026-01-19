@@ -22,10 +22,7 @@ export default async function DefinitionsLayout({
     return (
         <AppLayout user={user} currentPath="/definitions">
             <div className="space-y-6">
-                <div>
-                    <h1 className="text-2xl font-bold text-foreground font-rubik">Tanımlamalar</h1>
-                    <p className="text-muted-foreground mt-1">Sistem genelindeki tanımlamaları yönetin</p>
-                </div>
+
 
                 <DefinitionsTabs />
 
