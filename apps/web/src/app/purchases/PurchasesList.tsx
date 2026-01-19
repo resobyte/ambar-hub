@@ -146,7 +146,7 @@ export function PurchasesList() {
             const [poRes, supRes, prodRes] = await Promise.all([
                 fetch(`${API_URL}/purchases?${params}`, { credentials: 'include' }),
                 fetch(`${API_URL}/suppliers?page=1&limit=100`, { credentials: 'include' }),
-                fetch(`${API_URL}/products?page=1&limit=500`, { credentials: 'include' }),
+                fetch(`${API_URL}/products?page=1&limit=100`, { credentials: 'include' }),
             ]);
             const poData = await poRes.json();
             const supData = await supRes.json();

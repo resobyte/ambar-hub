@@ -1,5 +1,9 @@
 import { Suspense } from 'react';
+import { getServerUser } from '@/lib/auth';
+import { Role } from '@repo/types';
+import { AppLayout } from '@/components/layouts/AppLayout';
 import { IntegrationDetail } from './IntegrationDetail';
+import { redirect } from 'next/navigation';
 
 interface Props {
     params: Promise<{ id: string }>;
@@ -7,10 +11,17 @@ interface Props {
 
 export default async function IntegrationDetailPage({ params }: Props) {
     const { id } = await params;
+    const user = await getServerUser();
+
+    if (!user || user.role !== Role.PLATFORM_OWNER) {
+        redirect('/403');
+    }
 
     return (
-        <Suspense fallback={<div className="flex items-center justify-center h-64">Yükleniyor...</div>}>
-            <IntegrationDetail integrationId={id} />
-        </Suspense>
+        <AppLayout user={user} currentPath="/integrations">
+            <Suspense fallback={<div className="flex items-center justify-center h-64">Yükleniyor...</div>}>
+                <IntegrationDetail integrationId={id} />
+            </Suspense>
+        </AppLayout>
     );
 }
