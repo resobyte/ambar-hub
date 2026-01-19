@@ -1,10 +1,10 @@
-import { IsString, MinLength, MaxLength, IsOptional, IsArray, IsUUID } from 'class-validator';
+import { IsString, MaxLength, IsOptional, IsArray, IsUUID } from 'class-validator';
 
 export class CreateRouteDto {
     @IsString()
-    @MinLength(2)
+    @IsOptional()
     @MaxLength(255)
-    name: string;
+    name?: string;
 
     @IsString()
     @IsOptional()

@@ -107,9 +107,26 @@ export class RoutesService {
             }
         }
 
+        // Generate route code (R000001, R000002, etc.)
+        const lastRoute = await this.routeRepository
+            .createQueryBuilder('route')
+            .orderBy('route.createdAt', 'DESC')
+            .getOne();
+
+        let nextNumber = 1;
+        if (lastRoute && lastRoute.name && lastRoute.name.startsWith('R')) {
+            // Handle both R000001 and R_001 formats for backward compatibility
+            const numPart = lastRoute.name.replace(/^R_?/, '');
+            const parsed = parseInt(numPart, 10);
+            if (!isNaN(parsed)) {
+                nextNumber = parsed + 1;
+            }
+        }
+        const routeCode = `R${String(nextNumber).padStart(6, '0')}`;
+
         // Create route
         const route = this.routeRepository.create({
-            name: dto.name,
+            name: routeCode,
             description: dto.description || null,
             status: RouteStatus.COLLECTING,
             totalOrderCount: orders.length,
@@ -120,6 +137,7 @@ export class RoutesService {
         });
 
         const savedRoute = await this.routeRepository.save(route);
+
 
         // Create route orders
         const routeOrders = orders.map((order, index) =>

@@ -43,7 +43,6 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
     Dialog,
@@ -81,7 +80,6 @@ export function RoutesClient() {
     // Modal state
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedSuggestion, setSelectedSuggestion] = useState<RouteSuggestion | null>(null);
-    const [routeName, setRouteName] = useState('');
     const [routeDescription, setRouteDescription] = useState('');
     const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
     const [fifoLimit, setFifoLimit] = useState<number>(50);
@@ -162,15 +160,12 @@ export function RoutesClient() {
 
     const handleSelectSuggestion = (suggestion: RouteSuggestion) => {
         setSelectedSuggestion(suggestion);
-        setRouteName(suggestion.name);
         setRouteDescription(suggestion.description);
-        // Default to all orders, user can adjust with FIFO limit
         setFifoLimit(Math.min(suggestion.orders.length, 50));
         setSelectedOrderIds(suggestion.orders.map(o => o.id));
         setIsModalOpen(true);
     };
 
-    // Update selected orders when FIFO limit changes
     const handleFifoLimitChange = (newLimit: number) => {
         setFifoLimit(newLimit);
         if (selectedSuggestion) {
@@ -180,15 +175,14 @@ export function RoutesClient() {
     };
 
     const handleCreateRoute = async () => {
-        if (!routeName.trim() || selectedOrderIds.length === 0) {
-            setError('Lütfen rota adı girin ve en az bir sipariş seçin');
+        if (selectedOrderIds.length === 0) {
+            setError('Lütfen en az bir sipariş seçin');
             return;
         }
         setCreating(true);
         setError(null);
         try {
             const response = await createRoute({
-                name: routeName.trim(),
                 description: routeDescription.trim() || undefined,
                 orderIds: selectedOrderIds,
             });
@@ -203,7 +197,6 @@ export function RoutesClient() {
                 }
             }
             setIsModalOpen(false);
-            setRouteName('');
             setRouteDescription('');
             setSelectedOrderIds([]);
             setSelectedSuggestion(null);
@@ -260,299 +253,290 @@ export function RoutesClient() {
 
     const getTypeDescription = (type: string) => {
         const descriptions: Record<string, string> = {
-            single_product: 'Tek ürün, tek adet siparişler',
-            single_product_multi: 'Aynı üründen birden fazla adet siparişler',
-            mixed: 'Birden fazla farklı ürün içeren siparişler',
+            single_product: 'Tek ürün, tek adet',
+            single_product_multi: 'Aynı üründen çoklu adet',
+            mixed: 'Farklı ürünler içeriyor',
         };
         return descriptions[type] || '';
     };
 
     return (
-        <div className="space-y-6">
-            {/* Breadcrumb */}
-            <Breadcrumb>
-                <BreadcrumbList>
-                    <BreadcrumbItem>
-                        <BreadcrumbLink asChild>
-                            <Link href="/dashboard">Ana Sayfa</Link>
-                        </BreadcrumbLink>
-                    </BreadcrumbItem>
-                    <BreadcrumbSeparator />
-                    <BreadcrumbItem>
-                        <BreadcrumbPage>Rotalar</BreadcrumbPage>
-                    </BreadcrumbItem>
-                </BreadcrumbList>
-            </Breadcrumb>
+        <div className="space-y-4">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+                <Breadcrumb>
+                    <BreadcrumbList>
+                        <BreadcrumbItem>
+                            <BreadcrumbLink asChild>
+                                <Link href="/dashboard">Ana Sayfa</Link>
+                            </BreadcrumbLink>
+                        </BreadcrumbItem>
+                        <BreadcrumbSeparator />
+                        <BreadcrumbItem>
+                            <BreadcrumbPage>Rotalar</BreadcrumbPage>
+                        </BreadcrumbItem>
+                    </BreadcrumbList>
+                </Breadcrumb>
+                <Button variant="outline" onClick={() => router.push('/routes/create')}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Manuel Rota Oluştur
+                </Button>
+            </div>
 
             {/* Tabs */}
             <Tabs defaultValue="routes" className="w-full">
-                <div className="flex items-center justify-between mb-4">
-                    <TabsList>
-                        <TabsTrigger value="routes" className="flex items-center gap-2">
-                            <RouteIcon className="h-4 w-4" />
-                            Rotalar
-                        </TabsTrigger>
-                        <TabsTrigger value="suggestions" className="flex items-center gap-2">
-                            <Package className="h-4 w-4" />
-                            Rota Önerileri
-                        </TabsTrigger>
-                    </TabsList>
-                    <Button variant="outline" onClick={() => router.push('/routes/create')}>
-                        <Plus className="h-4 w-4 mr-2" />
-                        Manuel Rota Oluştur
-                    </Button>
-                </div>
+                <TabsList>
+                    <TabsTrigger value="routes" className="flex items-center gap-2">
+                        <RouteIcon className="h-4 w-4" />
+                        Rotalar
+                    </TabsTrigger>
+                    <TabsTrigger value="suggestions" className="flex items-center gap-2">
+                        <Package className="h-4 w-4" />
+                        Rota Önerileri
+                    </TabsTrigger>
+                </TabsList>
 
                 {/* Routes Tab */}
-                <TabsContent value="routes">
-                    <Card>
-                        <CardHeader className="pb-3">
-                            <CardTitle>Mevcut Rotalar</CardTitle>
-                            {/* Filters Row */}
-                            <div className="flex items-center gap-4 pt-4 flex-wrap">
-                                <div className="flex-1 min-w-[200px]">
-                                    <Input
-                                        placeholder="Rota adı ara..."
-                                        value={routeSearchFilter}
-                                        onChange={(e) => {
-                                            setRouteSearchFilter(e.target.value);
-                                            setRoutesPage(1);
-                                        }}
-                                    />
-                                </div>
-                                <Select value={routeStatusFilter} onValueChange={(v) => {
-                                    setRouteStatusFilter(v);
+                <TabsContent value="routes" className="space-y-4">
+                    {/* Filters - Above Table */}
+                    <div className="flex items-center gap-4 flex-wrap">
+                        <div className="flex-1 min-w-[200px] max-w-[300px]">
+                            <Input
+                                placeholder="Rota adı ara..."
+                                value={routeSearchFilter}
+                                onChange={(e) => {
+                                    setRouteSearchFilter(e.target.value);
                                     setRoutesPage(1);
-                                }}>
-                                    <SelectTrigger className="w-[180px]">
-                                        <SelectValue placeholder="Durum" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">Tümü</SelectItem>
-                                        <SelectItem value="active">Aktif (Toplanıyor + Hazır)</SelectItem>
-                                        <SelectItem value="collecting">Toplanıyor</SelectItem>
-                                        <SelectItem value="ready">Hazır</SelectItem>
-                                        <SelectItem value="completed">Tamamlandı</SelectItem>
-                                        <SelectItem value="cancelled">İptal Edilmiş</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </CardHeader>
-                        <CardContent>
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Rota Adı</TableHead>
-                                        <TableHead>Durum</TableHead>
-                                        <TableHead>Sipariş</TableHead>
-                                        <TableHead>Oluşturulma</TableHead>
-                                        <TableHead className="text-right">İşlemler</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {loading ? (
-                                        <TableRow>
-                                            <TableCell colSpan={5} className="text-center py-8">
-                                                <Loader2 className="h-6 w-6 animate-spin mx-auto" />
-                                            </TableCell>
-                                        </TableRow>
-                                    ) : paginatedRoutes.length === 0 ? (
-                                        <TableRow>
-                                            <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                                                {filteredRoutes.length === 0 ? 'Henüz rota bulunmuyor' : 'Arama sonucu bulunamadı'}
-                                            </TableCell>
-                                        </TableRow>
-                                    ) : (
-                                        paginatedRoutes.map((route) => (
-                                            <TableRow key={route.id}>
-                                                <TableCell>
-                                                    <Link
-                                                        href={`/routes/${route.id}`}
-                                                        className="font-medium text-primary hover:underline"
-                                                    >
-                                                        {route.name}
-                                                    </Link>
-                                                    {route.description && (
-                                                        <p className="text-sm text-muted-foreground">{route.description}</p>
-                                                    )}
-                                                </TableCell>
-                                                <TableCell>{getStatusBadge(route.status)}</TableCell>
-                                                <TableCell>{route.totalOrderCount}</TableCell>
-                                                <TableCell className="text-muted-foreground">
-                                                    {new Date(route.createdAt).toLocaleDateString('tr-TR')}
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    <div className="flex justify-end gap-1">
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            onClick={() => router.push(`/routes/${route.id}`)}
-                                                        >
-                                                            <Eye className="h-4 w-4" />
-                                                        </Button>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            onClick={() => handlePrintLabel(route.id)}
-                                                        >
-                                                            <Printer className="h-4 w-4" />
-                                                        </Button>
-                                                        {route.status === RouteStatus.COLLECTING && (
-                                                            <Button
-                                                                variant="default"
-                                                                size="sm"
-                                                                onClick={() => router.push(`/picking?route=${route.id}`)}
-                                                            >
-                                                                Topla
-                                                            </Button>
-                                                        )}
-                                                        {route.status !== RouteStatus.COMPLETED && route.status !== RouteStatus.CANCELLED && (
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                className="text-destructive hover:text-destructive"
-                                                                onClick={() => handleDeleteRoute(route.id)}
-                                                            >
-                                                                <Trash2 className="h-4 w-4" />
-                                                            </Button>
-                                                        )}
-                                                    </div>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))
-                                    )}
-                                </TableBody>
-                            </Table>
+                                }}
+                            />
+                        </div>
+                        <Select value={routeStatusFilter} onValueChange={(v) => {
+                            setRouteStatusFilter(v);
+                            setRoutesPage(1);
+                        }}>
+                            <SelectTrigger className="w-[200px]">
+                                <SelectValue placeholder="Durum" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">Tümü</SelectItem>
+                                <SelectItem value="active">Aktif (Toplanıyor + Hazır)</SelectItem>
+                                <SelectItem value="collecting">Toplanıyor</SelectItem>
+                                <SelectItem value="ready">Hazır</SelectItem>
+                                <SelectItem value="completed">Tamamlandı</SelectItem>
+                                <SelectItem value="cancelled">İptal Edilmiş</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
 
-                            {/* Pagination */}
-                            {totalPages > 1 && (
-                                <div className="flex items-center justify-between pt-4 border-t mt-4">
-                                    <p className="text-sm text-muted-foreground">
-                                        {filteredRoutes.length} rotadan {(routesPage - 1) * routesPerPage + 1}-{Math.min(routesPage * routesPerPage, filteredRoutes.length)} arası gösteriliyor
-                                    </p>
-                                    <div className="flex items-center gap-2">
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => setRoutesPage(p => p - 1)}
-                                            disabled={routesPage === 1}
-                                        >
-                                            <ChevronLeft className="h-4 w-4" />
-                                        </Button>
-                                        <span className="text-sm">
-                                            {routesPage} / {totalPages}
-                                        </span>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => setRoutesPage(p => p + 1)}
-                                            disabled={routesPage === totalPages}
-                                        >
-                                            <ChevronRight className="h-4 w-4" />
-                                        </Button>
-                                    </div>
+                    {/* Table */}
+                    <div className="border border-border rounded-xl bg-card">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Rota Adı</TableHead>
+                                    <TableHead>Durum</TableHead>
+                                    <TableHead>Sipariş</TableHead>
+                                    <TableHead>Oluşturulma</TableHead>
+                                    <TableHead className="text-right">İşlemler</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {loading ? (
+                                    <TableRow>
+                                        <TableCell colSpan={5} className="text-center py-8">
+                                            <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+                                        </TableCell>
+                                    </TableRow>
+                                ) : paginatedRoutes.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                                            {filteredRoutes.length === 0 ? 'Rota bulunamadı' : 'Arama sonucu bulunamadı'}
+                                        </TableCell>
+                                    </TableRow>
+                                ) : (
+                                    paginatedRoutes.map((route) => (
+                                        <TableRow key={route.id}>
+                                            <TableCell>
+                                                <Link
+                                                    href={`/routes/${route.id}`}
+                                                    className="font-medium text-primary hover:underline"
+                                                >
+                                                    {route.name}
+                                                </Link>
+                                                {route.description && (
+                                                    <p className="text-sm text-muted-foreground">{route.description}</p>
+                                                )}
+                                            </TableCell>
+                                            <TableCell>{getStatusBadge(route.status)}</TableCell>
+                                            <TableCell>{route.totalOrderCount}</TableCell>
+                                            <TableCell className="text-muted-foreground">
+                                                {new Date(route.createdAt).toLocaleDateString('tr-TR')}
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                <div className="flex justify-end gap-1">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => router.push(`/routes/${route.id}`)}
+                                                    >
+                                                        <Eye className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => handlePrintLabel(route.id)}
+                                                    >
+                                                        <Printer className="h-4 w-4" />
+                                                    </Button>
+                                                    {route.status === RouteStatus.COLLECTING && (
+                                                        <Button
+                                                            variant="default"
+                                                            size="sm"
+                                                            onClick={() => router.push(`/picking?route=${route.id}`)}
+                                                        >
+                                                            Topla
+                                                        </Button>
+                                                    )}
+                                                    {route.status !== RouteStatus.COMPLETED && route.status !== RouteStatus.CANCELLED && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="text-destructive hover:text-destructive"
+                                                            onClick={() => handleDeleteRoute(route.id)}
+                                                        >
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))
+                                )}
+                            </TableBody>
+                        </Table>
+
+                        {/* Pagination */}
+                        {totalPages > 1 && (
+                            <div className="flex items-center justify-between px-4 py-3 border-t">
+                                <p className="text-sm text-muted-foreground">
+                                    {filteredRoutes.length} rotadan {(routesPage - 1) * routesPerPage + 1}-{Math.min(routesPage * routesPerPage, filteredRoutes.length)} arası
+                                </p>
+                                <div className="flex items-center gap-2">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setRoutesPage(p => p - 1)}
+                                        disabled={routesPage === 1}
+                                    >
+                                        <ChevronLeft className="h-4 w-4" />
+                                    </Button>
+                                    <span className="text-sm">
+                                        {routesPage} / {totalPages}
+                                    </span>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setRoutesPage(p => p + 1)}
+                                        disabled={routesPage === totalPages}
+                                    >
+                                        <ChevronRight className="h-4 w-4" />
+                                    </Button>
                                 </div>
-                            )}
-                        </CardContent>
-                    </Card>
+                            </div>
+                        )}
+                    </div>
                 </TabsContent>
 
                 {/* Suggestions Tab */}
-                <TabsContent value="suggestions">
-                    <Card>
-                        <CardHeader className="pb-3">
-                            <CardTitle>Rota Önerileri</CardTitle>
-                            <CardDescription>
-                                Bekleyen siparişler analiz edilerek gruplandırılmış öneriler
-                            </CardDescription>
-                            {/* Filters Row */}
-                            <div className="flex items-center gap-4 pt-4 flex-wrap">
-                                <Select value={storeFilter} onValueChange={setStoreFilter}>
-                                    <SelectTrigger className="w-[200px]">
-                                        <SelectValue placeholder="Tüm Mağazalar" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">Tüm Mağazalar</SelectItem>
-                                        {stores.map(store => (
-                                            <SelectItem key={store.id} value={store.id}>
-                                                {store.name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                <Select value={typeFilter} onValueChange={setTypeFilter}>
-                                    <SelectTrigger className="w-[200px]">
-                                        <SelectValue placeholder="Tüm Sipariş Tipleri" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">Tüm Sipariş Tipleri</SelectItem>
-                                        <SelectItem value="single_product">Tekli Sipariş</SelectItem>
-                                        <SelectItem value="single_product_multi">Aynı Ürün Çoklu</SelectItem>
-                                        <SelectItem value="mixed">Karma Sipariş</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </CardHeader>
-                        <CardContent>
-                            <Table>
-                                <TableHeader>
+                <TabsContent value="suggestions" className="space-y-4">
+                    {/* Filters - Above Table */}
+                    <div className="flex items-center gap-4 flex-wrap">
+                        <Select value={storeFilter} onValueChange={setStoreFilter}>
+                            <SelectTrigger className="w-[200px]">
+                                <SelectValue placeholder="Tüm Mağazalar" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">Tüm Mağazalar</SelectItem>
+                                {stores.map(store => (
+                                    <SelectItem key={store.id} value={store.id}>
+                                        {store.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <Select value={typeFilter} onValueChange={setTypeFilter}>
+                            <SelectTrigger className="w-[200px]">
+                                <SelectValue placeholder="Tüm Sipariş Tipleri" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">Tüm Sipariş Tipleri</SelectItem>
+                                <SelectItem value="single_product">Tekli Sipariş</SelectItem>
+                                <SelectItem value="single_product_multi">Aynı Ürün Çoklu</SelectItem>
+                                <SelectItem value="mixed">Karma Sipariş</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    {/* Table */}
+                    <div className="border border-border rounded-xl bg-card">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Öneri</TableHead>
+                                    <TableHead>Tip</TableHead>
+                                    <TableHead>Mağaza</TableHead>
+                                    <TableHead>Sipariş</TableHead>
+                                    <TableHead>Toplam Adet</TableHead>
+                                    <TableHead className="text-right">İşlemler</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {loadingSuggestions ? (
                                     <TableRow>
-                                        <TableHead>Öneri</TableHead>
-                                        <TableHead>Tip</TableHead>
-                                        <TableHead>Mağaza</TableHead>
-                                        <TableHead>Sipariş Sayısı</TableHead>
-                                        <TableHead>Toplam Adet</TableHead>
-                                        <TableHead className="text-right">İşlemler</TableHead>
+                                        <TableCell colSpan={6} className="text-center py-8">
+                                            <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+                                        </TableCell>
                                     </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {loadingSuggestions ? (
-                                        <TableRow>
-                                            <TableCell colSpan={6} className="text-center py-8">
-                                                <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+                                ) : suggestions.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                                            Rota önerisi bulunamadı
+                                        </TableCell>
+                                    </TableRow>
+                                ) : (
+                                    suggestions.map((suggestion) => (
+                                        <TableRow key={suggestion.id}>
+                                            <TableCell>
+                                                <div className="font-medium">{suggestion.name}</div>
+                                                <div className="text-sm text-muted-foreground">
+                                                    {suggestion.products.length} farklı ürün
+                                                </div>
+                                            </TableCell>
+                                            <TableCell>
+                                                <div className="flex flex-col gap-1">
+                                                    {getTypeBadge(suggestion.type)}
+                                                    <span className="text-xs text-muted-foreground">
+                                                        {getTypeDescription(suggestion.type)}
+                                                    </span>
+                                                </div>
+                                            </TableCell>
+                                            <TableCell>{suggestion.storeName || '-'}</TableCell>
+                                            <TableCell>
+                                                <Badge variant="secondary">{suggestion.orderCount}</Badge>
+                                            </TableCell>
+                                            <TableCell>{suggestion.totalQuantity} adet</TableCell>
+                                            <TableCell className="text-right">
+                                                <Button onClick={() => handleSelectSuggestion(suggestion)}>
+                                                    <Plus className="h-4 w-4 mr-2" />
+                                                    Rota Oluştur
+                                                </Button>
                                             </TableCell>
                                         </TableRow>
-                                    ) : suggestions.length === 0 ? (
-                                        <TableRow>
-                                            <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                                                Rota önerisi bulunamadı
-                                            </TableCell>
-                                        </TableRow>
-                                    ) : (
-                                        suggestions.map((suggestion) => (
-                                            <TableRow key={suggestion.id}>
-                                                <TableCell>
-                                                    <div className="font-medium">{suggestion.name}</div>
-                                                    <div className="text-sm text-muted-foreground">
-                                                        {suggestion.products.length} farklı ürün
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <div className="flex flex-col gap-1">
-                                                        {getTypeBadge(suggestion.type)}
-                                                        <span className="text-xs text-muted-foreground">
-                                                            {getTypeDescription(suggestion.type)}
-                                                        </span>
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell>{suggestion.storeName || '-'}</TableCell>
-                                                <TableCell>
-                                                    <Badge variant="secondary">{suggestion.orderCount}</Badge>
-                                                </TableCell>
-                                                <TableCell>{suggestion.totalQuantity} adet</TableCell>
-                                                <TableCell className="text-right">
-                                                    <Button onClick={() => handleSelectSuggestion(suggestion)}>
-                                                        <Plus className="h-4 w-4 mr-2" />
-                                                        Rota Oluştur
-                                                    </Button>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </CardContent>
-                    </Card>
+                                    ))
+                                )}
+                            </TableBody>
+                        </Table>
+                    </div>
                 </TabsContent>
             </Tabs>
 
@@ -571,14 +555,10 @@ export function RoutesClient() {
                         </div>
                     )}
                     <div className="space-y-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="routeName">Rota Adı</Label>
-                            <Input
-                                id="routeName"
-                                value={routeName}
-                                onChange={(e) => setRouteName(e.target.value)}
-                                placeholder="Rota adı girin"
-                            />
+                        <div className="p-3 bg-muted/50 border rounded-lg">
+                            <p className="text-sm text-muted-foreground">
+                                Rota otomatik olarak <strong className="text-foreground">R000001</strong> formatında numaralandırılacak
+                            </p>
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="routeDesc">Açıklama (Opsiyonel)</Label>

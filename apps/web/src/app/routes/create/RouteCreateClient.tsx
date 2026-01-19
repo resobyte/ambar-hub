@@ -83,7 +83,6 @@ export function RouteCreateClient() {
     const [fifoLimit, setFifoLimit] = useState<number>(50);
 
     // Route form
-    const [routeName, setRouteName] = useState('');
     const [routeDescription, setRouteDescription] = useState('');
 
     const fetchOrders = useCallback(async () => {
@@ -139,10 +138,6 @@ export function RouteCreateClient() {
     };
 
     const handleCreateRoute = async () => {
-        if (!routeName.trim()) {
-            setError('Lütfen rota adı girin');
-            return;
-        }
         if (selectedOrderIds.size === 0) {
             setError('Lütfen en az bir sipariş seçin');
             return;
@@ -153,7 +148,6 @@ export function RouteCreateClient() {
 
         try {
             const response = await createRoute({
-                name: routeName.trim(),
                 description: routeDescription.trim() || undefined,
                 orderIds: Array.from(selectedOrderIds),
             });
@@ -387,17 +381,13 @@ export function RouteCreateClient() {
                                     {error}
                                 </div>
                             )}
-                            <div className="space-y-2">
-                                <Label htmlFor="routeName">Rota Adı *</Label>
-                                <Input
-                                    id="routeName"
-                                    value={routeName}
-                                    onChange={(e) => setRouteName(e.target.value)}
-                                    placeholder="Örn: Tekli Siparişler - 20 Ocak"
-                                />
+                            <div className="p-3 bg-muted/50 border rounded-lg">
+                                <p className="text-sm text-muted-foreground">
+                                    Rota otomatik olarak <strong className="text-foreground">R000001</strong> formatında numaralandırılacak
+                                </p>
                             </div>
                             <div className="space-y-2">
-                                <Label htmlFor="routeDesc">Açıklama</Label>
+                                <Label htmlFor="routeDesc">Açıklama (Opsiyonel)</Label>
                                 <Textarea
                                     id="routeDesc"
                                     value={routeDescription}
@@ -451,7 +441,7 @@ export function RouteCreateClient() {
                         className="w-full"
                         size="lg"
                         onClick={handleCreateRoute}
-                        disabled={creating || selectedOrderIds.size === 0 || !routeName.trim()}
+                        disabled={creating || selectedOrderIds.size === 0}
                     >
                         {creating ? (
                             <>

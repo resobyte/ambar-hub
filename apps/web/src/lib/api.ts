@@ -1171,7 +1171,7 @@ export async function getRoute(id: string): Promise<ApiResponse<Route>> {
   return res.json();
 }
 
-export async function createRoute(data: { name: string; description?: string; orderIds: string[] }): Promise<ApiResponse<Route>> {
+export async function createRoute(data: { name?: string; description?: string; orderIds: string[] }): Promise<ApiResponse<Route>> {
   const res = await fetch(`${API_URL}/routes`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
