@@ -1,11 +1,46 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Table, Column } from '@/components/common/Table';
-import { Button } from '@/components/common/Button';
-import { Input } from '@/components/common/Input';
-import { Modal } from '@/components/common/Modal';
-import { useToast } from '@/components/common/ToastContext';
+import { useState, useEffect, useCallback } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+    Breadcrumb,
+    BreadcrumbItem,
+    BreadcrumbLink,
+    BreadcrumbList,
+    BreadcrumbPage,
+    BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useToast } from '@/components/ui/use-toast';
+import { Loader2, Pencil, Trash2, Plus, Users, Search, X } from 'lucide-react';
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
+import { useTableQuery } from '@/hooks/use-table-query';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
@@ -22,13 +57,27 @@ interface Supplier {
 }
 
 export function SuppliersList() {
+
+    // URL-synced table query state
+    const { page, pageSize, filters, setPage, setPageSize, setFilter, clearFilters: clearUrlFilters } = useTableQuery({
+        defaultPage: 1,
+        defaultPageSize: 10,
+    });
+
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
     const [loading, setLoading] = useState(true);
-    const [page, setPage] = useState(1);
     const [total, setTotal] = useState(0);
+    const [totalPages, setTotalPages] = useState(0);
+
+    // Filters from URL
+    const name = filters.name || '';
+    const taxNumber = filters.taxNumber || '';
+
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
-    const { success, error } = useToast();
+    const [deletingId, setDeletingId] = useState<string | null>(null);
+    const { toast } = useToast();
 
     const [formData, setFormData] = useState({
         name: '',
@@ -40,21 +89,42 @@ export function SuppliersList() {
         taxNumber: '',
     });
 
-    const fetchSuppliers = async () => {
+    const fetchSuppliers = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await fetch(`${API_URL}/suppliers?page=${page}&limit=10`, { credentials: 'include' });
+            const params = new URLSearchParams();
+            params.append('page', String(page));
+            params.append('limit', String(pageSize));
+            if (name) params.append('name', name);
+            if (taxNumber) params.append('taxNumber', taxNumber);
+
+            const res = await fetch(`${API_URL}/suppliers?${params}`, { credentials: 'include' });
             const data = await res.json();
             setSuppliers(data.data || []);
             setTotal(data.meta?.total || 0);
+            setTotalPages(Math.ceil((data.meta?.total || 0) / pageSize));
         } catch (err) {
-            error('Tedarikçiler yüklenemedi');
+            toast({ variant: 'destructive', title: 'Hata', description: 'Tedarikçiler yüklenemedi' });
         } finally {
             setLoading(false);
         }
-    };
+    }, [page, pageSize, name, taxNumber, toast]);
 
-    useEffect(() => { fetchSuppliers(); }, [page]);
+    useEffect(() => {
+        // Debounce fetching if filters change (except page/size which usually don't need debounce but here we fetch on any change)
+        // With useTableQuery, URL updates, triggering this effect. 
+        // We can add a simple debounce if typing is fast, but let's stick to simple effect for now or add debounce logic.
+        // Actually, let's debounce just like other tables effectively do via keypress -> URL -> effect. 
+        // To be safe for text inputs, usually we debounce strict state updates, but here state comes from URL.
+        const timer = setTimeout(() => {
+            fetchSuppliers();
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [fetchSuppliers]);
+
+    const handleClearFilters = () => {
+        clearUrlFilters();
+    };
 
     const handleCreate = () => {
         setEditingSupplier(null);
@@ -90,84 +160,221 @@ export function SuppliersList() {
             });
 
             if (!res.ok) throw new Error('Failed');
-            success(editingSupplier ? 'Tedarikçi güncellendi' : 'Tedarikçi oluşturuldu');
+            toast({ title: 'Başarılı', variant: 'success', description: editingSupplier ? 'Tedarikçi güncellendi' : 'Tedarikçi oluşturuldu' });
             setIsModalOpen(false);
             fetchSuppliers();
         } catch (err) {
-            error('İşlem başarısız');
+            toast({ variant: 'destructive', title: 'Hata', description: 'İşlem başarısız' });
         }
     };
 
-    const handleDelete = async (id: string) => {
-        if (!confirm('Bu tedarikçiyi silmek istediğinize emin misiniz?')) return;
+    const handleDelete = (id: string) => {
+        setDeletingId(id);
+        setIsDeleteModalOpen(true);
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!deletingId) return;
         try {
-            await fetch(`${API_URL}/suppliers/${id}`, { method: 'DELETE', credentials: 'include' });
-            success('Tedarikçi silindi');
+            await fetch(`${API_URL}/suppliers/${deletingId}`, { method: 'DELETE', credentials: 'include' });
+            toast({ title: 'Başarılı', variant: 'success', description: 'Tedarikçi silindi' });
+            setIsDeleteModalOpen(false);
             fetchSuppliers();
         } catch (err) {
-            error('Silme başarısız');
+            toast({ variant: 'destructive', title: 'Hata', description: 'Silme başarısız' });
         }
     };
 
-    const columns: Column<Supplier>[] = [
-        { key: 'name', header: 'Tedarikçi Adı' },
-        { key: 'code', header: 'Kod' },
-        { key: 'email', header: 'E-posta' },
-        { key: 'phone', header: 'Telefon' },
-        { key: 'contactPerson', header: 'Yetkili Kişi' },
-        {
-            key: 'actions',
-            header: '',
-            align: 'right',
-            shrink: true,
-            render: (row) => (
-                <div className="flex gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => handleEdit(row)}>Düzenle</Button>
-                    <Button variant="ghost" size="sm" onClick={() => handleDelete(row.id)}>Sil</Button>
-                </div>
-            ),
-        },
-    ];
-
     return (
-        <div className="p-6">
-            <div className="flex justify-between items-center mb-6">
-                <div>
-                    <h2 className="text-2xl font-semibold text-foreground">Tedarikçiler</h2>
-                    <p className="text-sm text-muted-foreground">Tedarikçi listesini yönetin</p>
-                </div>
-                <Button onClick={handleCreate}>+ Yeni Tedarikçi</Button>
+        <div className="space-y-6">
+            <div className="flex justify-between items-center">
+                <Breadcrumb>
+                    <BreadcrumbList>
+                        <BreadcrumbItem>
+                            <BreadcrumbLink href="/dashboard">AmbarHUB</BreadcrumbLink>
+                        </BreadcrumbItem>
+                        <BreadcrumbSeparator />
+                        <BreadcrumbItem>
+                            <BreadcrumbPage>Tedarikçiler</BreadcrumbPage>
+                        </BreadcrumbItem>
+                    </BreadcrumbList>
+                </Breadcrumb>
+                <Button onClick={handleCreate}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Yeni Tedarikçi
+                </Button>
             </div>
 
-            <Table
-                columns={columns}
-                data={suppliers}
-                keyExtractor={(item) => item.id}
-                isLoading={loading}
-                pagination={{ page, limit: 10, total, totalPages: Math.ceil(total / 10) }}
+            <Card>
+                <CardHeader>
+                    <CardTitle>Filtrele</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div className="space-y-2">
+                            <Label>Tedarikçi Adı</Label>
+                            <div className="relative">
+                                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                    placeholder="Tedarikçi adı ara..."
+                                    className="pl-8"
+                                    value={name}
+                                    onChange={(e) => setFilter('name', e.target.value)}
+                                />
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Vergi No</Label>
+                            <Input
+                                placeholder="Vergi numarası..."
+                                value={taxNumber}
+                                onChange={(e) => setFilter('taxNumber', e.target.value)}
+                            />
+                        </div>
+                        <div className="flex items-end md:col-span-2">
+                            <Button variant="outline" onClick={handleClearFilters} className="ml-auto">
+                                <X className="w-4 h-4 mr-2" /> Filtreleri Temizle
+                            </Button>
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardContent className="p-0">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Tedarikçi Adı</TableHead>
+                                <TableHead>Kod</TableHead>
+                                <TableHead>E-posta</TableHead>
+                                <TableHead>Telefon</TableHead>
+                                <TableHead>Yetkili Kişi</TableHead>
+                                <TableHead className="text-right">İşlemler</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {loading ? (
+                                <TableRow>
+                                    <TableCell colSpan={6} className="h-24 text-center">
+                                        <div className="flex items-center justify-center">
+                                            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                                        </div>
+                                    </TableCell>
+                                </TableRow>
+                            ) : suppliers.length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                                        Henüz tedarikçi eklenmemiş
+                                    </TableCell>
+                                </TableRow>
+                            ) : (
+                                suppliers.map((supplier) => (
+                                    <TableRow key={supplier.id}>
+                                        <TableCell className="font-medium">{supplier.name}</TableCell>
+                                        <TableCell className="text-muted-foreground">{supplier.code || '-'}</TableCell>
+                                        <TableCell className="text-muted-foreground">{supplier.email || '-'}</TableCell>
+                                        <TableCell className="text-muted-foreground">{supplier.phone || '-'}</TableCell>
+                                        <TableCell className="text-muted-foreground">{supplier.contactPerson || '-'}</TableCell>
+                                        <TableCell className="text-right">
+                                            <div className="flex items-center justify-end gap-1">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8"
+                                                    onClick={() => handleEdit(supplier)}
+                                                >
+                                                    <Pencil className="w-4 h-4" />
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8 text-destructive hover:text-destructive"
+                                                    onClick={() => handleDelete(supplier.id)}
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </Button>
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                ))
+                            )}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+            </Card>
+
+            <DataTablePagination
+                page={page}
+                pageSize={pageSize}
+                totalPages={totalPages}
+                totalItems={total}
                 onPageChange={setPage}
-                emptyMessage="Henüz tedarikçi eklenmemiş"
+                onPageSizeChange={setPageSize}
             />
 
-            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingSupplier ? 'Tedarikçi Düzenle' : 'Yeni Tedarikçi'}>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <Input label="Tedarikçi Adı" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
-                    <Input label="Kod" value={formData.code} onChange={(e) => setFormData({ ...formData, code: e.target.value })} />
-                    <div className="grid grid-cols-2 gap-4">
-                        <Input label="E-posta" type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
-                        <Input label="Telefon" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <Input label="Yetkili Kişi" value={formData.contactPerson} onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })} />
-                        <Input label="Vergi No" value={formData.taxNumber} onChange={(e) => setFormData({ ...formData, taxNumber: e.target.value })} />
-                    </div>
-                    <Input label="Adres" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} />
-                    <div className="flex justify-end gap-2">
-                        <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>İptal</Button>
-                        <Button type="submit">{editingSupplier ? 'Güncelle' : 'Oluştur'}</Button>
-                    </div>
-                </form>
-            </Modal>
+            <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+                <DialogContent className="max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>{editingSupplier ? 'Tedarikçi Düzenle' : 'Yeni Tedarikçi'}</DialogTitle>
+                    </DialogHeader>
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div className="space-y-2">
+                            <Label>Tedarikçi Adı</Label>
+                            <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Kod</Label>
+                            <Input value={formData.code} onChange={(e) => setFormData({ ...formData, code: e.target.value })} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label>E-posta</Label>
+                                <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Telefon</Label>
+                                <Input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label>Yetkili Kişi</Label>
+                                <Input value={formData.contactPerson} onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })} />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Vergi No</Label>
+                                <Input value={formData.taxNumber} onChange={(e) => setFormData({ ...formData, taxNumber: e.target.value })} />
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Adres</Label>
+                            <Input value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} />
+                        </div>
+                        <div className="flex justify-end gap-2">
+                            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>İptal</Button>
+                            <Button type="submit">{editingSupplier ? 'Güncelle' : 'Oluştur'}</Button>
+                        </div>
+                    </form>
+                </DialogContent>
+            </Dialog>
+
+            <AlertDialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Tedarikçi Sil</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Bu tedarikçiyi silmek istediğinize emin misiniz? Bu işlem geri alınamaz.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>İptal</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleConfirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                            Sil
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }

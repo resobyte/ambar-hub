@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { getFaultyOrders, FaultyOrder } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,48 +21,33 @@ import {
     BreadcrumbPage,
     BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import {
-    Pagination,
-    PaginationContent,
-    PaginationEllipsis,
-    PaginationItem,
-    PaginationLink,
-    PaginationNext,
-    PaginationPrevious,
-} from "@/components/ui/pagination";
 import { DatePickerWithRange } from '@/components/ui/date-range-picker';
 import { DateRange } from 'react-day-picker';
 import { Search, Filter, X, AlertOctagon } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
+import { useTableQuery } from '@/hooks/use-table-query';
 
 export function FaultyOrdersTable() {
+    // URL-synced table query state
+    const { page, pageSize, filters: urlFilters, setPage, setPageSize, setFilter, clearFilters: clearUrlFilters } = useTableQuery({
+        defaultPage: 1,
+        defaultPageSize: 10,
+    });
+
     const [orders, setOrders] = useState<FaultyOrder[]>([]);
     const [loading, setLoading] = useState(true);
-    const [page, setPage] = useState(1);
     const [total, setTotal] = useState(0);
     const [totalPages, setTotalPages] = useState(0);
-    const limit = 10;
 
-    // Filters
+    // Filters from URL
+    const customerName = urlFilters.customerName || '';
+    const orderNumber = urlFilters.orderNumber || '';
+    const barcode = urlFilters.barcode || '';
     const [dateRange, setDateRange] = useState<DateRange | undefined>();
-    const [customerName, setCustomerName] = useState('');
-    const [orderNumber, setOrderNumber] = useState('');
-    const [barcode, setBarcode] = useState('');
 
-    useEffect(() => {
-        fetchOrders();
-    }, [page, dateRange]);
-
-    // Simple debounce for text inputs
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            fetchOrders();
-        }, 500);
-        return () => clearTimeout(timer);
-    }, [customerName, orderNumber, barcode]);
-
-    const fetchOrders = async () => {
+    const fetchOrders = useCallback(async () => {
         setLoading(true);
         try {
             const filters: any = {};
@@ -72,7 +57,7 @@ export function FaultyOrdersTable() {
             if (orderNumber) filters.orderNumber = orderNumber;
             if (barcode) filters.barcode = barcode;
 
-            const res = await getFaultyOrders(page, limit, filters);
+            const res = await getFaultyOrders(page, pageSize, filters);
 
             if (res.success && Array.isArray(res.data)) {
                 setOrders(res.data);
@@ -89,59 +74,18 @@ export function FaultyOrdersTable() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [page, pageSize, dateRange, customerName, orderNumber, barcode]);
 
-    const clearFilters = () => {
+    useEffect(() => {
+        fetchOrders();
+    }, [fetchOrders]);
+
+    const handleClearFilters = () => {
+        clearUrlFilters();
         setDateRange(undefined);
-        setCustomerName('');
-        setOrderNumber('');
-        setBarcode('');
-        setPage(1);
     };
 
-    const renderPagination = () => {
-        if (totalPages <= 1) return null;
 
-        return (
-            <Pagination className="mt-4">
-                <PaginationContent>
-                    <PaginationItem>
-                        <PaginationPrevious
-                            onClick={() => setPage(p => Math.max(1, p - 1))}
-                            className={page === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                        />
-                    </PaginationItem>
-
-                    {Array.from({ length: totalPages }).map((_, i) => {
-                        const p = i + 1;
-                        if (p === 1 || p === totalPages || (p >= page - 1 && p <= page + 1)) {
-                            return (
-                                <PaginationItem key={p}>
-                                    <PaginationLink
-                                        isActive={page === p}
-                                        onClick={() => setPage(p)}
-                                        className="cursor-pointer"
-                                    >
-                                        {p}
-                                    </PaginationLink>
-                                </PaginationItem>
-                            );
-                        } else if (p === page - 2 || p === page + 2) {
-                            return <PaginationItem key={p}><PaginationEllipsis /></PaginationItem>;
-                        }
-                        return null;
-                    })}
-
-                    <PaginationItem>
-                        <PaginationNext
-                            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                            className={page === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                        />
-                    </PaginationItem>
-                </PaginationContent>
-            </Pagination>
-        );
-    };
 
     return (
         <div className="space-y-6">
@@ -181,7 +125,7 @@ export function FaultyOrdersTable() {
                             <Input
                                 placeholder="Sipariş Numarası..."
                                 value={orderNumber}
-                                onChange={(e) => setOrderNumber(e.target.value)}
+                                onChange={(e) => setFilter('orderNumber', e.target.value)}
                             />
                         </div>
                         <div className="space-y-2">
@@ -192,7 +136,7 @@ export function FaultyOrdersTable() {
                                     placeholder="Müşteri Adı..."
                                     className="pl-8"
                                     value={customerName}
-                                    onChange={(e) => setCustomerName(e.target.value)}
+                                    onChange={(e) => setFilter('customerName', e.target.value)}
                                 />
                             </div>
                         </div>
@@ -201,11 +145,11 @@ export function FaultyOrdersTable() {
                             <Input
                                 placeholder="Eksik ürün barkodu..."
                                 value={barcode}
-                                onChange={(e) => setBarcode(e.target.value)}
+                                onChange={(e) => setFilter('barcode', e.target.value)}
                             />
                         </div>
                         <div className="flex items-end lg:col-span-4">
-                            <Button variant="outline" onClick={clearFilters} className="ml-auto">
+                            <Button variant="outline" onClick={handleClearFilters} className="ml-auto">
                                 <X className="w-4 h-4 mr-2" /> Filtreleri Temizle
                             </Button>
                         </div>
@@ -281,7 +225,14 @@ export function FaultyOrdersTable() {
                 </CardContent>
             </Card>
 
-            {renderPagination()}
+            <DataTablePagination
+                page={page}
+                pageSize={pageSize}
+                totalPages={totalPages}
+                totalItems={total}
+                onPageChange={setPage}
+                onPageSizeChange={setPageSize}
+            />
         </div>
     );
 }

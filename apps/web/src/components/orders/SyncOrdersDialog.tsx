@@ -70,7 +70,7 @@ export function SyncOrdersDialog({ open, onClose, onSuccess }: SyncOrdersDialogP
             toast({
                 title: "Başarılı",
                 description: "Sipariş eşitleme işlemi başlatıldı.",
-                className: "bg-green-600 text-white border-green-700",
+                variant: 'success',
             });
             onSuccess();
             onClose();

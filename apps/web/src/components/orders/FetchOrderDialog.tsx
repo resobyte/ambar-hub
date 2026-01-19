@@ -57,7 +57,7 @@ export function FetchOrderDialog({ open, onClose, onSuccess }: FetchOrderDialogP
                 toast({
                     title: "Başarılı",
                     description: data.message || 'Sipariş başarıyla çekildi',
-                    variant: 'default', // or 'success' if implemented, usually default is fine or we can add className
+                    variant: 'success', // or 'success' if implemented, usually default is fine or we can add className
                     className: "bg-green-600 text-white border-green-700"
                 });
                 setOrderNumber('');

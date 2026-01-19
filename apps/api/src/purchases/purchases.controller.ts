@@ -16,11 +16,19 @@ export class PurchasesController {
         @Query('page') page = 1,
         @Query('limit') limit = 10,
         @Query('status') status?: PurchaseOrderStatus,
+        @Query('search') search?: string,
+        @Query('supplierId') supplierId?: string,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
     ) {
         const { data, total } = await this.purchasesService.findAllPurchaseOrders(
             Number(page),
             Number(limit),
             status,
+            search,
+            supplierId,
+            startDate,
+            endDate,
         );
         return {
             success: true,

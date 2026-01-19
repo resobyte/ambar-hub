@@ -21,32 +21,24 @@ import {
     BreadcrumbPage,
     BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
+import { useTableQuery } from '@/hooks/use-table-query';
 
 export function OrdersClient() {
+    // URL-synced table query state
+    const { page, pageSize, filters, setPage, setPageSize, setFilters: setUrlFilters } = useTableQuery({
+        defaultPage: 1,
+        defaultPageSize: 20,
+    });
+
     const [orders, setOrders] = useState<Order[]>([]);
     const [integrations, setIntegrations] = useState<Integration[]>([]);
     const [stores, setStores] = useState<Store[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSyncDialogOpen, setIsSyncDialogOpen] = useState(false);
     const [isFetchDialogOpen, setIsFetchDialogOpen] = useState(false);
-    const [page, setPage] = useState(1);
-    const [pageSize, setPageSize] = useState(20);
     const [totalPages, setTotalPages] = useState(1);
-    const [filters, setFilters] = useState<{
-        orderNumber?: string;
-        packageId?: string;
-        integrationId?: string;
-        storeId?: string;
-        status?: string;
-        startDate?: string;
-        endDate?: string;
-        customerName?: string;
-        micro?: boolean;
-        startDeliveryDate?: string;
-        endDeliveryDate?: string;
-    }>({});
 
-    // Fetch integrations and stores once
+    // Initial load only
     useEffect(() => {
         getIntegrations(1, 100).then(res => setIntegrations(res.data)).catch(console.error);
         getStores(1, 100).then(res => setStores(res.data)).catch(console.error);
@@ -59,17 +51,13 @@ export function OrdersClient() {
             const params = new URLSearchParams();
             params.append('page', String(page));
             params.append('limit', String(pageSize));
-            if (filters.orderNumber) params.append('orderNumber', filters.orderNumber);
-            if (filters.packageId) params.append('packageId', filters.packageId);
-            if (filters.integrationId) params.append('integrationId', filters.integrationId);
-            if (filters.storeId) params.append('storeId', filters.storeId);
-            if (filters.status) params.append('status', filters.status);
-            if (filters.startDate) params.append('startDate', filters.startDate);
-            if (filters.endDate) params.append('endDate', filters.endDate);
-            if (filters.customerName) params.append('customerName', filters.customerName);
-            if (filters.micro !== undefined) params.append('micro', String(filters.micro));
-            if (filters.startDeliveryDate) params.append('startDeliveryDate', filters.startDeliveryDate);
-            if (filters.endDeliveryDate) params.append('endDeliveryDate', filters.endDeliveryDate);
+
+            // Map filters from useTableQuery to API params
+            Object.entries(filters).forEach(([key, value]) => {
+                if (value !== undefined && value !== '' && value !== null) {
+                    params.append(key, String(value));
+                }
+            });
 
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/orders?${params}`, {
                 credentials: 'include',
@@ -90,14 +78,9 @@ export function OrdersClient() {
         fetchOrders();
     }, [fetchOrders]);
 
-    const handlePageSizeChange = (newSize: number) => {
-        setPageSize(newSize);
-        setPage(1);
-    };
-
     const handleFilterChange = (newFilters: any) => {
-        setFilters(newFilters);
-        setPage(1); // Reset to first page on filter change
+        setUrlFilters(newFilters);
+        // setPage(1) is handled automatically by useTableQuery when filters change
     };
 
     const handleExportExcel = async () => {
@@ -196,7 +179,7 @@ export function OrdersClient() {
                     totalPages={totalPages}
                     pageSize={pageSize}
                     onPageChange={setPage}
-                    onPageSizeChange={handlePageSizeChange}
+                    onPageSizeChange={setPageSize}
                     filters={filters}
                     onFilterChange={handleFilterChange}
                     onExport={handleExportExcel}

@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, ILike } from 'typeorm';
 import { Supplier } from './entities/supplier.entity';
 
 @Injectable()
@@ -15,8 +15,14 @@ export class SuppliersService {
         return this.supplierRepository.save(supplier);
     }
 
-    async findAll(page = 1, limit = 10): Promise<{ data: Supplier[]; total: number }> {
+    async findAll(page = 1, limit = 10, filters?: { name?: string; taxNumber?: string; isActive?: boolean }): Promise<{ data: Supplier[]; total: number }> {
+        const where: any = {};
+        if (filters?.name) where.name = ILike(`%${filters.name}%`);
+        if (filters?.taxNumber) where.taxNumber = ILike(`%${filters.taxNumber}%`);
+        if (filters?.isActive !== undefined) where.isActive = filters.isActive;
+
         const [data, total] = await this.supplierRepository.findAndCount({
+            where,
             order: { name: 'ASC' },
             skip: (page - 1) * limit,
             take: limit,

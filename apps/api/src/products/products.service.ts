@@ -36,13 +36,37 @@ export class ProductsService {
   async findAll(
     page: number = 1,
     limit: number = 10,
+    filters?: { name?: string; isActive?: string; brandId?: string; categoryId?: string },
   ): Promise<PaginationResponse<ProductResponseDto>> {
-    const [products, total] = await this.productRepository.findAndCount({
-      skip: (page - 1) * limit,
-      take: limit,
-      order: { createdAt: 'DESC' },
-      relations: ['productStores'],
-    });
+    const queryBuilder = this.productRepository.createQueryBuilder('product')
+      .leftJoinAndSelect('product.productStores', 'productStores')
+      .leftJoinAndSelect('product.brand', 'brand')
+      .leftJoinAndSelect('product.category', 'category')
+      .where('product.deletedAt IS NULL');
+
+    if (filters?.name) {
+      queryBuilder.andWhere('LOWER(product.name) LIKE LOWER(:name)', { name: `%${filters.name}%` });
+    }
+
+    if (filters?.isActive !== undefined && filters?.isActive !== '') {
+      const isActiveValue = filters.isActive === 'true';
+      queryBuilder.andWhere('product.isActive = :isActive', { isActive: isActiveValue });
+    }
+
+    if (filters?.brandId) {
+      queryBuilder.andWhere('product.brandId = :brandId', { brandId: filters.brandId });
+    }
+
+    if (filters?.categoryId) {
+      queryBuilder.andWhere('product.categoryId = :categoryId', { categoryId: filters.categoryId });
+    }
+
+    queryBuilder
+      .orderBy('product.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    const [products, total] = await queryBuilder.getManyAndCount();
 
     const data = products.map((product) =>
       ProductResponseDto.fromEntity(product, product.productStores?.length || 0),

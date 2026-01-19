@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { apiGetPaginated, Invoice } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,15 +22,6 @@ import {
     BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import {
-    Pagination,
-    PaginationContent,
-    PaginationEllipsis,
-    PaginationItem,
-    PaginationLink,
-    PaginationNext,
-    PaginationPrevious,
-} from "@/components/ui/pagination";
-import {
     Dialog,
     DialogContent,
     DialogDescription,
@@ -50,54 +41,36 @@ import { Search, FileText, AlertCircle, CheckCircle2, Clock, Filter, X } from 'l
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
+import { useTableQuery } from '@/hooks/use-table-query';
 
 export function InvoicesClient() {
+    // URL-synced table query state
+    const { page, pageSize, filters: urlFilters, setPage, setPageSize, setFilter, clearFilters: clearUrlFilters } = useTableQuery({
+        defaultPage: 1,
+        defaultPageSize: 20,
+    });
+
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [loading, setLoading] = useState(true);
-    const [page, setPage] = useState(1);
     const [total, setTotal] = useState(0);
     const [totalPages, setTotalPages] = useState(0);
-    const limit = 20;
 
-    // Filters
-    const [status, setStatus] = useState<string>('all');
+    // Filters from URL
+    const status = urlFilters.status || 'all';
+    const customerName = urlFilters.customerName || '';
+    const cardCode = urlFilters.cardCode || '';
+    const invoiceNumber = urlFilters.invoiceNumber || '';
+    const edocNo = urlFilters.edocNo || '';
     const [dateRange, setDateRange] = useState<DateRange | undefined>();
-    const [customerName, setCustomerName] = useState('');
-    const [cardCode, setCardCode] = useState('');
-    const [invoiceNumber, setInvoiceNumber] = useState('');
-    const [edocNo, setEdocNo] = useState('');
 
     // Modal
     const [viewPayload, setViewPayload] = useState<{ title: string; content: any } | null>(null);
 
-    useEffect(() => {
-        fetchInvoices();
-    }, [page, status, dateRange, customerName, cardCode, invoiceNumber, edocNo]);
-
-    // Simple debounce for text inputs could be added, but for now relying on effect or manual trigger? 
-    // Effect triggers on every keystroke which is bad for API.
-    // Let's implement a wrapper for fetch or use a separate "apply filters" logic?
-    // OrdersTable tends to fetch on change. I'll add a debounce effect or just fetch.
-    // Given the user request is "copy OrdersTable", OrdersTable uses individual state + handlers.
-    // I'll make a `debouncedFetch` logic or just simple effect with timeout?
-    // For simplicity in this iteration, I'll use a fast debounce.
-
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            fetchInvoices();
-        }, 500);
-        return () => clearTimeout(timer);
-    }, [customerName, cardCode, invoiceNumber, edocNo]);
-
-    useEffect(() => {
-        fetchInvoices();
-    }, [page, status, dateRange]);
-
-
-    const fetchInvoices = async () => {
+    const fetchInvoices = useCallback(async () => {
         setLoading(true);
         try {
-            const params: Record<string, any> = { page, limit };
+            const params: Record<string, any> = { page, limit: pageSize };
 
             if (status && status !== 'all') params.status = status;
             if (dateRange?.from) params.startDate = dateRange.from.toISOString();
@@ -124,16 +97,15 @@ export function InvoicesClient() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [page, pageSize, status, dateRange, customerName, cardCode, invoiceNumber, edocNo]);
 
-    const clearFilters = () => {
-        setStatus('all');
+    useEffect(() => {
+        fetchInvoices();
+    }, [fetchInvoices]);
+
+    const handleClearFilters = () => {
+        clearUrlFilters();
         setDateRange(undefined);
-        setCustomerName('');
-        setCardCode('');
-        setInvoiceNumber('');
-        setEdocNo('');
-        setPage(1);
     };
 
     const getStatusBadge = (status: string) => {
@@ -148,51 +120,6 @@ export function InvoicesClient() {
             default:
                 return <Badge variant="secondary">{status}</Badge>;
         }
-    };
-
-    const renderPagination = () => {
-        if (totalPages <= 1) return null;
-
-        return (
-            <Pagination className="mt-4">
-                <PaginationContent>
-                    <PaginationItem>
-                        <PaginationPrevious
-                            onClick={() => setPage(p => Math.max(1, p - 1))}
-                            className={page === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                        />
-                    </PaginationItem>
-
-                    {Array.from({ length: totalPages }).map((_, i) => {
-                        const p = i + 1;
-                        // Simple logic: show first, last, current, and neighbors
-                        if (p === 1 || p === totalPages || (p >= page - 1 && p <= page + 1)) {
-                            return (
-                                <PaginationItem key={p}>
-                                    <PaginationLink
-                                        isActive={page === p}
-                                        onClick={() => setPage(p)}
-                                        className="cursor-pointer"
-                                    >
-                                        {p}
-                                    </PaginationLink>
-                                </PaginationItem>
-                            );
-                        } else if (p === page - 2 || p === page + 2) {
-                            return <PaginationItem key={p}><PaginationEllipsis /></PaginationItem>;
-                        }
-                        return null;
-                    })}
-
-                    <PaginationItem>
-                        <PaginationNext
-                            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                            className={page === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                        />
-                    </PaginationItem>
-                </PaginationContent>
-            </Pagination>
-        );
     };
 
     return (
@@ -235,7 +162,7 @@ export function InvoicesClient() {
                         </div>
                         <div className="space-y-2">
                             <Label>Durum</Label>
-                            <Select value={status} onValueChange={setStatus}>
+                            <Select value={status} onValueChange={(v) => setFilter('status', v === 'all' ? '' : v)}>
                                 <SelectTrigger>
                                     <SelectValue placeholder="Durum seçin" />
                                 </SelectTrigger>
@@ -255,7 +182,7 @@ export function InvoicesClient() {
                                     placeholder="Ad veya Soyad ara..."
                                     className="pl-8"
                                     value={customerName}
-                                    onChange={(e) => setCustomerName(e.target.value)}
+                                    onChange={(e) => setFilter('customerName', e.target.value)}
                                 />
                             </div>
                         </div>
@@ -264,7 +191,7 @@ export function InvoicesClient() {
                             <Input
                                 placeholder="Örn: EMA2024..."
                                 value={invoiceNumber}
-                                onChange={(e) => setInvoiceNumber(e.target.value)}
+                                onChange={(e) => setFilter('invoiceNumber', e.target.value)}
                             />
                         </div>
                         <div className="space-y-2">
@@ -272,7 +199,7 @@ export function InvoicesClient() {
                             <Input
                                 placeholder="Uyumsoft No..."
                                 value={edocNo}
-                                onChange={(e) => setEdocNo(e.target.value)}
+                                onChange={(e) => setFilter('edocNo', e.target.value)}
                             />
                         </div>
                         <div className="space-y-2">
@@ -280,11 +207,11 @@ export function InvoicesClient() {
                             <Input
                                 placeholder="Cari Kodu..."
                                 value={cardCode}
-                                onChange={(e) => setCardCode(e.target.value)}
+                                onChange={(e) => setFilter('cardCode', e.target.value)}
                             />
                         </div>
                         <div className="flex items-end lg:col-span-2">
-                            <Button variant="outline" onClick={clearFilters} className="w-full">
+                            <Button variant="outline" onClick={handleClearFilters} className="w-full">
                                 <X className="w-4 h-4 mr-2" /> Filtreleri Temizle
                             </Button>
                         </div>
@@ -366,7 +293,14 @@ export function InvoicesClient() {
                 </CardContent>
             </Card>
 
-            {renderPagination()}
+            <DataTablePagination
+                page={page}
+                pageSize={pageSize}
+                totalPages={totalPages}
+                totalItems={total}
+                onPageChange={setPage}
+                onPageSizeChange={setPageSize}
+            />
 
             <Dialog open={!!viewPayload} onOpenChange={(open) => !open && setViewPayload(null)}>
                 <DialogContent className="max-w-3xl">

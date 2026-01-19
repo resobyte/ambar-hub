@@ -1,16 +1,57 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Button } from '@/components/common/Button';
-import { Table, Column } from '@/components/common/Table';
-import { Modal } from '@/components/common/Modal';
-import { Input } from '@/components/common/Input';
-import { Select } from '@/components/common/Select';
-import { ConfirmModal } from '@/components/common/ConfirmModal';
+import { useState, useEffect, useCallback } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import { Card, CardContent } from '@/components/ui/card';
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
+import { useTableQuery } from '@/hooks/use-table-query';
 import { getWarehouses, createWarehouse, updateWarehouse, deleteWarehouse } from '@/lib/api';
-import { useToast } from '@/components/common/ToastContext';
+import { useToast } from '@/components/ui/use-toast';
+import { Loader2, Pencil, Trash2, Plus } from 'lucide-react';
 
-interface Warehouse {
+interface WarehouseType {
   id: string;
   name: string;
   address: string | null;
@@ -26,256 +67,252 @@ interface WarehouseFormData {
   isActive: boolean;
 }
 
-const keyExtractor = (item: Warehouse) => item.id;
-
 export function WarehousesTable() {
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  // URL-synced table query state
+  const { page, pageSize, setPage, setPageSize } = useTableQuery({
+    defaultPage: 1,
+    defaultPageSize: 10,
+  });
+
+  const [warehouses, setWarehouses] = useState<WarehouseType[]>([]);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [editingWarehouse, setEditingWarehouse] = useState<Warehouse | null>(null);
+  const [editingWarehouse, setEditingWarehouse] = useState<WarehouseType | null>(null);
   const [deletingWarehouseId, setDeletingWarehouseId] = useState<string | null>(null);
   const [formData, setFormData] = useState<WarehouseFormData>({ name: '', address: '', isActive: true });
-  const [initialFormData, setInitialFormData] = useState<WarehouseFormData>({ name: '', address: '', isActive: true });
-  const formDataRef = useRef(formData);
-  const { success, error } = useToast();
+  const { toast } = useToast();
 
   const fetchWarehouses = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await getWarehouses(page, 10);
+      const response = await getWarehouses(page, pageSize);
       setWarehouses(response.data);
       setTotal(response.meta.total);
+      setTotalPages(Math.ceil(response.meta.total / pageSize));
     } catch (err) {
-      error('Depolar yüklenemedi');
+      toast({ variant: 'destructive', title: 'Hata', description: 'Depolar yüklenemedi' });
     } finally {
       setLoading(false);
     }
-  }, [page, error]);
+  }, [page, pageSize, toast]);
 
   useEffect(() => {
     fetchWarehouses();
   }, [fetchWarehouses]);
 
-  const handleCreate = useCallback(() => {
+  const handleCreate = () => {
     setEditingWarehouse(null);
-    const newData = { name: '', address: '', isActive: true };
-    setFormData(newData);
-    setInitialFormData(newData);
+    setFormData({ name: '', address: '', isActive: true });
     setIsModalOpen(true);
-  }, []);
+  };
 
-  const handleModalClose = useCallback(() => {
-    setIsModalOpen(false);
-  }, []);
-
-  const handleDeleteModalClose = useCallback(() => {
-    setIsDeleteModalOpen(false);
-  }, []);
-
-  const handleEdit = useCallback((warehouse: Warehouse) => {
+  const handleEdit = (warehouse: WarehouseType) => {
     setEditingWarehouse(warehouse);
-    const newData = { name: warehouse.name, address: warehouse.address || '', isActive: warehouse.isActive };
-    setFormData(newData);
-    setInitialFormData(newData);
+    setFormData({ name: warehouse.name, address: warehouse.address || '', isActive: warehouse.isActive });
     setIsModalOpen(true);
-  }, []);
+  };
 
-  const handleDelete = useCallback((id: string) => {
+  const handleDelete = (id: string) => {
     setDeletingWarehouseId(id);
     setIsDeleteModalOpen(true);
-  }, []);
+  };
 
-  const handleSubmit = useCallback(async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const currentFormData = formDataRef.current;
       if (editingWarehouse) {
-        await updateWarehouse(editingWarehouse.id, currentFormData);
-        success('Depo başarıyla güncellendi');
+        await updateWarehouse(editingWarehouse.id, formData);
+        toast({ variant: 'success', title: 'Başarılı', description: 'Depo başarıyla güncellendi' });
       } else {
-        await createWarehouse(currentFormData);
-        success('Depo başarıyla oluşturuldu');
+        await createWarehouse(formData);
+        toast({ variant: 'success', title: 'Başarılı', description: 'Depo başarıyla oluşturuldu' });
       }
       setIsModalOpen(false);
       fetchWarehouses();
     } catch (err: any) {
-      error(err.message || 'İşlem başarısız');
+      toast({ variant: 'destructive', title: 'Hata', description: err.message || 'İşlem başarısız' });
     }
-  }, [editingWarehouse, fetchWarehouses, success, error]);
+  };
 
-  const handleConfirmDelete = useCallback(async () => {
+  const handleConfirmDelete = async () => {
     if (!deletingWarehouseId) return;
     try {
       await deleteWarehouse(deletingWarehouseId);
-      success('Depo başarıyla silindi');
+      toast({ variant: 'success', title: 'Başarılı', description: 'Depo başarıyla silindi' });
       setIsDeleteModalOpen(false);
       fetchWarehouses();
     } catch (err: any) {
-      error(err.message || 'Silme işlemi başarısız');
+      toast({ variant: 'destructive', title: 'Hata', description: err.message || 'Silme işlemi başarısız' });
     }
-  }, [deletingWarehouseId, fetchWarehouses, success, error]);
-
-  const updateFormField = useCallback(<K extends keyof WarehouseFormData>(
-    field: K,
-    value: WarehouseFormData[K]
-  ) => {
-    setFormData(prev => {
-      const newData = { ...prev, [field]: value };
-      formDataRef.current = newData;
-      return newData;
-    });
-  }, []);
-
-  const isFormValid = useMemo(() => {
-    return formData.name.trim().length > 0;
-  }, [formData.name]);
-
-  const isFormDirty = useMemo(() => {
-    return JSON.stringify(formData) !== JSON.stringify(initialFormData);
-  }, [formData, initialFormData]);
-
-  const canSubmit = useMemo(() => {
-    return isFormValid && (isFormDirty || !editingWarehouse);
-  }, [isFormValid, isFormDirty, editingWarehouse]);
-
-  const modalTitle = useMemo(() =>
-    editingWarehouse ? 'Depo Düzenle' : 'Depo Ekle',
-    [editingWarehouse]
-  );
-
-  const submitButtonText = useMemo(() =>
-    editingWarehouse ? 'Güncelle' : 'Oluştur',
-    [editingWarehouse]
-  );
-
-  const columns = useMemo<Column<Warehouse>[]>(() => [
-    { key: 'name', header: 'Ad' },
-    {
-      key: 'storeCount',
-      header: 'Mağazalar',
-      render: (row: Warehouse) => (
-        <span className="text-muted-foreground">{row.storeCount}</span>
-      ),
-    },
-    {
-      key: 'isActive',
-      header: 'Durum',
-      render: (row: Warehouse) => (
-        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${row.isActive
-            ? 'bg-success/10 text-success border-success/20'
-            : 'bg-muted text-muted-foreground border-border'
-          }`}>
-          {row.isActive ? 'Aktif' : 'Pasif'}
-        </span>
-      ),
-    },
-    {
-      key: 'actions',
-      header: '',
-      align: 'right',
-      shrink: true,
-      render: (row: Warehouse) => (
-        <div className="flex items-center justify-end space-x-1">
-          <button
-            onClick={() => handleEdit(row)}
-            className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
-            title="Edit"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-          </button>
-          <button
-            onClick={() => handleDelete(row.id)}
-            disabled={row.storeCount > 0}
-            title={row.storeCount > 0 ? 'Silinemez: Bağlı mağazalar var' : 'Sil'}
-            className={`p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors ${row.storeCount > 0 ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          </button>
-        </div>
-      ),
-    },
-  ], [handleEdit, handleDelete]);
-
-  const pagination = useMemo(() => ({
-    page,
-    limit: 10,
-    total,
-    totalPages: Math.ceil(total / 10),
-  }), [page, total]);
+  };
 
   return (
-    <>
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h2 className="text-2xl font-semibold text-foreground">Depolar</h2>
-          <p className="text-sm text-muted-foreground mt-1">Envanteriniz için depolama konumlarını yönetin</p>
-        </div>
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink href="/">Dashboard</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Depolar</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
         <Button onClick={handleCreate}>
-          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
+          <Plus className="w-4 h-4 mr-2" />
           Depo Ekle
         </Button>
       </div>
 
-      <Table
-        columns={columns}
-        data={warehouses}
-        keyExtractor={keyExtractor}
-        isLoading={loading}
-        pagination={pagination}
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Ad</TableHead>
+                <TableHead>Mağazalar</TableHead>
+                <TableHead>Durum</TableHead>
+                <TableHead className="text-right">İşlemler</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="h-24 text-center">
+                    <div className="flex items-center justify-center">
+                      <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : warehouses.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
+                    Henüz depo yok. Başlamak için ilk deponuzu oluşturun.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                warehouses.map((warehouse) => (
+                  <TableRow key={warehouse.id}>
+                    <TableCell className="font-medium">{warehouse.name}</TableCell>
+                    <TableCell className="text-muted-foreground">{warehouse.storeCount}</TableCell>
+                    <TableCell>
+                      <Badge variant={warehouse.isActive ? 'default' : 'secondary'}
+                        className={warehouse.isActive ? 'bg-green-100 text-green-800 hover:bg-green-200' : ''}>
+                        {warehouse.isActive ? 'Aktif' : 'Pasif'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => handleEdit(warehouse)}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={() => handleDelete(warehouse.id)}
+                          disabled={warehouse.storeCount > 0}
+                          title={warehouse.storeCount > 0 ? 'Silinemez: Bağlı mağazalar var' : 'Sil'}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <DataTablePagination
+        page={page}
+        pageSize={pageSize}
+        totalPages={totalPages}
+        totalItems={total}
         onPageChange={setPage}
-        emptyMessage="Henüz depo yok. Başlamak için ilk deponuzu oluşturun."
+        onPageSizeChange={setPageSize}
       />
 
-      <Modal isOpen={isModalOpen} onClose={handleModalClose} title={modalTitle} size="md">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <Input
-            label="Ad"
-            value={formData.name}
-            onChange={(e) => updateFormField('name', e.target.value)}
-            required
-            placeholder="Depo adı girin"
-          />
-          <Input
-            label="Adres"
-            value={formData.address}
-            onChange={(e) => updateFormField('address', e.target.value)}
-            placeholder="Depo adresi girin (opsiyonel)"
-          />
-          <Select
-            label="Durum"
-            value={formData.isActive ? 'Active' : 'Passive'}
-            onChange={(e) => updateFormField('isActive', e.target.value === 'Active')}
-            options={[
-              { value: 'Active', label: 'Aktif' },
-              { value: 'Passive', label: 'Pasif' },
-            ]}
-          />
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={handleModalClose}>
-              İptal
-            </Button>
-            <Button type="submit" disabled={!canSubmit}>{submitButtonText}</Button>
-          </div>
-        </form>
-      </Modal>
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingWarehouse ? 'Depo Düzenle' : 'Depo Ekle'}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Ad</Label>
+              <Input
+                id="name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                required
+                placeholder="Depo adı girin"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="address">Adres</Label>
+              <Input
+                id="address"
+                value={formData.address}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                placeholder="Depo adresi girin (opsiyonel)"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="status">Durum</Label>
+              <Select
+                value={formData.isActive ? 'active' : 'passive'}
+                onValueChange={(v) => setFormData({ ...formData, isActive: v === 'active' })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Durum seçin" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Aktif</SelectItem>
+                  <SelectItem value="passive">Pasif</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
+                İptal
+              </Button>
+              <Button type="submit" disabled={!formData.name.trim()}>
+                {editingWarehouse ? 'Güncelle' : 'Oluştur'}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
-      <ConfirmModal
-        isOpen={isDeleteModalOpen}
-        onClose={handleDeleteModalClose}
-        onConfirm={handleConfirmDelete}
-        title="Depo Sil"
-        message="Bu depoyu silmek istediğinize emin misiniz? Bu işlem geri alınamaz."
-      />
-    </>
+      <AlertDialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Depo Sil</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bu depoyu silmek istediğinize emin misiniz? Bu işlem geri alınamaz.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>İptal</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Sil
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }

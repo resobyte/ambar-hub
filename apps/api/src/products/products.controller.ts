@@ -57,8 +57,12 @@ export class ProductsController {
   findAll(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+    @Query('name') name?: string,
+    @Query('isActive') isActive?: string,
+    @Query('brandId') brandId?: string,
+    @Query('categoryId') categoryId?: string,
   ) {
-    return this.productsService.findAll(page, limit);
+    return this.productsService.findAll(page, limit, { name, isActive, brandId, categoryId });
   }
 
   @Get(':id')

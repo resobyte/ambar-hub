@@ -1,12 +1,52 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Button } from '@/components/common/Button';
-import { Table, Column } from '@/components/common/Table';
-import { Modal } from '@/components/common/Modal';
-import { Input } from '@/components/common/Input';
-import { Select } from '@/components/common/Select';
-import { ConfirmModal } from '@/components/common/ConfirmModal';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Card, CardContent } from '@/components/ui/card';
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
+import { useTableQuery } from '@/hooks/use-table-query';
 import {
   getProducts,
   importProducts,
@@ -33,9 +73,12 @@ import {
   Brand,
   Category,
   Product,
+  ProductFilters,
 } from '@/lib/api';
-import { useToast } from '@/components/common/ToastContext';
+import { useToast } from '@/components/ui/use-toast';
 import { ProductStoreList } from '@/components/products/ProductStoreList';
+import { Combobox } from '@/components/ui/combobox';
+import { Loader2, Pencil, Trash2, Plus, Upload, Download, Search } from 'lucide-react';
 
 
 interface ProductStore {
@@ -114,8 +157,6 @@ interface IntegrationConfigData {
   isActive: boolean;
 }
 
-const keyExtractor = (item: Product) => item.id;
-
 const VAT_RATES = [
   { value: '1', label: '1%' },
   { value: '8', label: '8%' },
@@ -145,6 +186,12 @@ interface SetComponentData {
 }
 
 export function ProductsTable() {
+  // URL-synced table query state
+  const { page, pageSize, filters: urlFilters, setPage, setPageSize, setFilter } = useTableQuery({
+    defaultPage: 1,
+    defaultPageSize: 10,
+  });
+
   const [products, setProducts] = useState<Product[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -154,12 +201,19 @@ export function ProductsTable() {
   const [integrationStores, setIntegrationStores] = useState<IntegrationStore[]>([]);
   const [productIntegrations, setProductIntegrations] = useState<ProductIntegration[]>([]);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
+
+  // Filter values from URL
+  const filterName = urlFilters.name || '';
+  const filterIsActive = urlFilters.isActive || '';
+  const filterBrandId = urlFilters.brandId || '';
+  const filterCategoryId = urlFilters.categoryId || '';
+
   const [formData, setFormData] = useState<ProductFormData>({
     name: '',
     brandId: '',
@@ -199,7 +253,8 @@ export function ProductsTable() {
   const [initialIntegrationConfigs, setInitialIntegrationConfigs] = useState<Map<string, Map<string, IntegrationConfigData>>>(new Map());
   const formDataRef = useRef(formData);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { success, error } = useToast();
+  const { toast } = useToast();
+  const limit = 10;
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -209,15 +264,15 @@ export function ProductsTable() {
       setLoading(true);
       const res = await importProducts(file);
       if (res.errors && res.errors.length > 0) {
-        error(`Bazı satırlar yüklenemedi: ${res.errors.length} hata.`);
+        toast({ variant: 'destructive', title: 'Uyarı', description: `Bazı satırlar yüklenemedi: ${res.errors.length} hata.` });
         console.error(res.errors);
       } else {
-        success(`${res.success} ürün başarıyla yüklendi.`);
+        toast({ title: 'Başarılı', description: `${res.success} ürün başarıyla yüklendi.`, variant: 'success' });
       }
       fetchProducts();
-      fetchBrandsAndCategories(); // New brands/categories might have been created
+      fetchBrandsAndCategories();
     } catch (err: any) {
-      error(err.message || 'Dosya yüklenirken bir hata oluştu.');
+      toast({ variant: 'destructive', title: 'Hata', description: err.message || 'Dosya yüklenirken bir hata oluştu.' });
     } finally {
       setLoading(false);
       if (fileInputRef.current) {
@@ -238,22 +293,30 @@ export function ProductsTable() {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (err: any) {
-      error(err.message || 'Şablon indirilemedi');
+      toast({ variant: 'destructive', title: 'Hata', description: err.message || 'Şablon indirilemedi' });
     }
   };
+
+  const filters: ProductFilters = useMemo(() => ({
+    name: filterName || undefined,
+    isActive: filterIsActive || undefined,
+    brandId: filterBrandId || undefined,
+    categoryId: filterCategoryId || undefined,
+  }), [filterName, filterIsActive, filterBrandId, filterCategoryId]);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await getProducts(page, 10);
+      const response = await getProducts(page, pageSize, filters);
       setProducts(response.data);
       setTotal(response.meta.total);
+      setTotalPages(Math.ceil(response.meta.total / pageSize));
     } catch (err) {
-      error('Ürünler yüklenemedi');
+      toast({ variant: 'destructive', title: 'Hata', description: 'Ürünler yüklenemedi' });
     } finally {
       setLoading(false);
     }
-  }, [page, error]);
+  }, [page, pageSize, filters, toast]);
 
   const fetchBrandsAndCategories = useCallback(async () => {
     try {
@@ -261,54 +324,54 @@ export function ProductsTable() {
       setBrands(brandsRes.data || []);
       setCategories(categoriesRes.data || []);
     } catch (err) {
-      error('Tanımlamalar yüklenemedi');
+      toast({ variant: 'destructive', title: 'Hata', description: 'Tanımlamalar yüklenemedi' });
     }
-  }, [error]);
+  }, [toast]);
 
   const fetchStores = useCallback(async () => {
     try {
       const response = await getStores(1, 100);
       setStores(response.data);
     } catch (err) {
-      error('Failed to fetch stores');
+      toast({ variant: 'destructive', title: 'Hata', description: 'Mağazalar yüklenemedi' });
     }
-  }, [error]);
+  }, [toast]);
 
   const fetchProductStores = useCallback(async () => {
     try {
       const data = await getProductStores();
       setProductStores(data);
     } catch (err) {
-      error('Failed to fetch product stores');
+      toast({ variant: 'destructive', title: 'Hata', description: 'Ürün-mağaza bağlantıları yüklenemedi' });
     }
-  }, [error]);
+  }, [toast]);
 
   const fetchIntegrations = useCallback(async () => {
     try {
       const response = await getIntegrations(1, 100);
       setIntegrations(response.data);
     } catch (err) {
-      error('Failed to fetch integrations');
+      toast({ variant: 'destructive', title: 'Hata', description: 'Entegrasyonlar yüklenemedi' });
     }
-  }, [error]);
+  }, [toast]);
 
   const fetchIntegrationStores = useCallback(async () => {
     try {
       const data = await getIntegrationStores();
       setIntegrationStores(data);
     } catch (err) {
-      error('Failed to fetch integration stores');
+      toast({ variant: 'destructive', title: 'Hata', description: 'Entegrasyon-mağaza bağlantıları yüklenemedi' });
     }
-  }, [error]);
+  }, [toast]);
 
   const fetchProductIntegrations = useCallback(async () => {
     try {
       const data = await getProductIntegrations();
       setProductIntegrations(data);
     } catch (err) {
-      error('Failed to fetch product integrations');
+      toast({ variant: 'destructive', title: 'Hata', description: 'Ürün-entegrasyon bağlantıları yüklenemedi' });
     }
-  }, [error]);
+  }, [toast]);
 
   useEffect(() => {
     fetchProducts();
@@ -357,14 +420,6 @@ export function ProductsTable() {
     setIsModalOpen(true);
   }, []);
 
-  const handleModalClose = useCallback(() => {
-    setIsModalOpen(false);
-  }, []);
-
-  const handleDeleteModalClose = useCallback(() => {
-    setIsDeleteModalOpen(false);
-  }, []);
-
   const handleEdit = useCallback((product: Product) => {
     setEditingProduct(product);
     const newData = {
@@ -386,7 +441,6 @@ export function ProductsTable() {
     formDataRef.current = newData;
     setInitialFormData(newData);
 
-    // Load SET components if product is SET type
     if ((product as any).productType === 'SET') {
       getProductSetItems(product.id).then(items => {
         setSetComponents(items.map((item, index) => ({
@@ -455,14 +509,13 @@ export function ProductsTable() {
       if (editingProduct) {
         const updated = await updateProduct(editingProduct.id, currentFormData);
         productId = updated.data.id;
-        success('Ürün başarıyla güncellendi');
+        toast({ title: 'Başarılı', description: 'Ürün başarıyla güncellendi', variant: 'success' });
       } else {
         const created = await createProduct(currentFormData);
         productId = created.data.id;
-        success('Ürün başarıyla oluşturuldu');
+        toast({ title: 'Başarılı', description: 'Ürün başarıyla oluşturuldu', variant: 'success' });
       }
 
-      // Save SET components if product type is SET
       if (currentFormData.productType === 'SET' && setComponents.length > 0) {
         await updateProductSetItems(productId, setComponents.filter(c => c.componentProductId));
       }
@@ -545,9 +598,9 @@ export function ProductsTable() {
       fetchProductStores();
       fetchProductIntegrations();
     } catch (err: any) {
-      error(err.message || 'Operation failed');
+      toast({ variant: 'destructive', title: 'Hata', description: err.message || 'İşlem başarısız' });
     }
-  }, [editingProduct, selectedStoreIds, storeConfigs, integrationConfigs, productStores, productIntegrations, fetchProducts, fetchProductStores, fetchProductIntegrations, success, error]);
+  }, [editingProduct, selectedStoreIds, storeConfigs, integrationConfigs, productStores, productIntegrations, fetchProducts, fetchProductStores, fetchProductIntegrations, toast, setComponents]);
 
   const updateFormField = useCallback(<K extends keyof ProductFormData>(
     field: K,
@@ -711,120 +764,29 @@ export function ProductsTable() {
     if (!deletingProductId) return;
     try {
       await deleteProduct(deletingProductId);
-      success('Ürün başarıyla silindi');
+      toast({ title: 'Başarılı', description: 'Ürün başarıyla silindi', variant: 'success' });
       setIsDeleteModalOpen(false);
       fetchProducts();
       fetchProductStores();
     } catch (err: any) {
-      error(err.message || 'Silme başarısız');
+      toast({ variant: 'destructive', title: 'Hata', description: err.message || 'Silme başarısız' });
     }
-  }, [deletingProductId, fetchProducts, fetchProductStores, success, error]);
-
-  const modalTitle = useMemo(() =>
-    editingProduct ? 'Ürün Düzenle' : 'Ürün Ekle',
-    [editingProduct]
-  );
-
-  const submitButtonText = useMemo(() =>
-    editingProduct ? 'Güncelle' : 'Oluştur',
-    [editingProduct]
-  );
-
-  const columns = useMemo<Column<Product>[]>(() => [
-    { key: 'name', header: 'Ürün Adı' },
-    {
-      key: 'brand',
-      header: 'Marka',
-      render: (row: Product) => row.brand?.name || '-'
-    },
-    {
-      key: 'category',
-      header: 'Kategori',
-      render: (row: Product) => row.category?.name || '-'
-    },
-    { key: 'barcode', header: 'Barkod' },
-    { key: 'sku', header: 'SKU' },
-    {
-      key: 'totalStockQuantity',
-      header: 'Stok',
-      render: (row: Product) => (
-        <div className="flex flex-col">
-          <span className="font-semibold text-sm">{row.totalStockQuantity}</span>
-          <span className="text-muted-foreground text-[10px] flex gap-1.5 whitespace-nowrap">
-            <span className="text-green-600 font-medium" title="Satılabilir">S: {row.totalSellableQuantity}</span>
-            <span className="text-orange-600 font-medium" title="Rezerve">R: {row.totalReservableQuantity}</span>
-          </span>
-        </div>
-      ),
-    },
-    {
-      key: 'storeCount',
-      header: 'Mağazalar',
-      render: (row: Product) => (
-        <span className="text-muted-foreground">{row.storeCount}</span>
-      ),
-    },
-    {
-      key: 'isActive',
-      header: 'Durum',
-      render: (row: Product) => (
-        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${row.isActive
-          ? 'bg-success/10 text-success border-success/20'
-          : 'bg-muted text-muted-foreground border-border'
-          }`}>
-          {row.isActive ? 'Aktif' : 'Pasif'}
-        </span>
-      ),
-    },
-    {
-      key: 'actions',
-      header: '',
-      align: 'right',
-      shrink: true,
-      render: (row: Product) => (
-        <div className="flex items-center justify-end space-x-1">
-          <button
-            onClick={() => handleEdit(row)}
-            className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
-            title="Edit"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-          </button>
-          <button
-            onClick={() => handleDelete(row.id)}
-            className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
-            title="Delete"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          </button>
-        </div>
-      ),
-    },
-  ], [handleEdit, handleDelete]);
-
-  const pagination = useMemo(() => ({
-    page,
-    limit: 10,
-    total,
-    totalPages: Math.ceil(total / 10),
-  }), [page, total]);
-
-  const allStoreOptions = useMemo(() =>
-    (stores || []).map((s) => ({ value: s.id, label: s.name })),
-    [stores]
-  );
+  }, [deletingProductId, fetchProducts, fetchProductStores, toast]);
 
   return (
-    <>
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h2 className="text-2xl font-semibold text-foreground">Ürünler</h2>
-          <p className="text-sm text-muted-foreground mt-1">Ürün kataloğunuzu ve fiyatlandırmayı yönetin</p>
-        </div>
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink href="/">Dashboard</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Ürünler</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
         <div className="flex gap-2">
           <input
             type="file"
@@ -834,259 +796,477 @@ export function ProductsTable() {
             onChange={handleImport}
           />
           <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-            </svg>
+            <Upload className="w-4 h-4 mr-2" />
             Excel Yükle
           </Button>
           <Button variant="outline" onClick={handleDownloadTemplate} title="Örnek Excel Şablonu İndir">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
+            <Download className="w-4 h-4" />
           </Button>
           <Button onClick={handleCreate}>
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
+            <Plus className="w-4 h-4 mr-2" />
             Ürün Ekle
           </Button>
         </div>
       </div>
 
-      <Table
-        columns={columns}
-        data={products}
-        keyExtractor={keyExtractor}
-        isLoading={loading}
-        pagination={pagination}
-        onPageChange={setPage}
-        emptyMessage="Henüz ürün yok. İlk ürününüzü ekleyin."
-      />
-
-      <Modal isOpen={isModalOpen} onClose={handleModalClose} title={modalTitle} size="full">
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Product Information */}
-          <div>
-            <h3 className="text-sm font-semibold text-foreground mb-3">Ürün Bilgileri</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Input
-                label="Ürün Adı"
-                value={formData.name}
-                onChange={(e) => updateFormField('name', e.target.value)}
-                required
-                placeholder="Ürün adı"
-              />
-              <Select
-                label="Marka"
-                value={formData.brandId}
-                onChange={(e) => updateFormField('brandId', e.target.value)}
+      {/* Filters */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Ürün Adı</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Ara..."
+                  value={filterName}
+                  onChange={(e) => setFilter('name', e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Durum</Label>
+              <Combobox
                 options={[
-                  { value: '', label: 'Marka Seçin' },
+                  { value: '', label: 'Tümü' },
+                  { value: 'true', label: 'Aktif' },
+                  { value: 'false', label: 'Pasif' },
+                ]}
+                value={filterIsActive}
+                onValueChange={(v) => setFilter('isActive', v)}
+                placeholder="Tümü"
+                searchPlaceholder="Ara..."
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Marka</Label>
+              <Combobox
+                options={[
+                  { value: '', label: 'Tümü' },
                   ...brands.map(b => ({ value: b.id, label: b.name }))
                 ]}
+                value={filterBrandId}
+                onValueChange={(v) => setFilter('brandId', v)}
+                placeholder="Tümü"
+                searchPlaceholder="Marka ara..."
               />
-              <Select
-                label="Kategori"
-                value={formData.categoryId}
-                onChange={(e) => updateFormField('categoryId', e.target.value)}
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Kategori</Label>
+              <Combobox
                 options={[
-                  { value: '', label: 'Kategori Seçin' },
+                  { value: '', label: 'Tümü' },
                   ...categories.map(c => ({ value: c.id, label: c.name }))
                 ]}
+                value={filterCategoryId}
+                onValueChange={(v) => setFilter('categoryId', v)}
+                placeholder="Tümü"
+                searchPlaceholder="Kategori ara..."
               />
-              <Input
-                label="Barkod"
-                value={formData.barcode}
-                onChange={(e) => updateFormField('barcode', e.target.value)}
-                placeholder="Barkod"
-              />
-              <Input
-                label="SKU"
-                value={formData.sku}
-                onChange={(e) => updateFormField('sku', e.target.value)}
-                placeholder="SKU"
-              />
-              <Select
-                label="KDV Oranı"
-                value={String(formData.vatRate)}
-                onChange={(e) => updateFormField('vatRate', parseFloat(e.target.value))}
-                options={VAT_RATES}
-              />
-              <Input
-                label="Desi"
-                value={formData.desi}
-                onChange={(e) => updateFormField('desi', parseFloat(e.target.value) || 0)}
-                type="number"
-                min="0"
-                step="0.1"
-                placeholder="Weight/Volume"
-              />
-              <Input
-                label="Alış Fiyatı"
-                value={formData.purchasePrice}
-                onChange={(e) => updateFormField('purchasePrice', parseFloat(e.target.value) || 0)}
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
-              />
-              <Input
-                label="Satış Fiyatı"
-                value={formData.salePrice}
-                onChange={(e) => updateFormField('salePrice', parseFloat(e.target.value) || 0)}
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
-              />
-              <Input
-                label="Son Satış Fiyatı"
-                value={formData.lastSalePrice}
-                onChange={(e) => updateFormField('lastSalePrice', parseFloat(e.target.value) || 0)}
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
-              />
-              <Select
-                label="Ürün Tipi"
-                value={formData.productType}
-                onChange={(e) => updateFormField('productType', e.target.value as 'SIMPLE' | 'SET')}
-                options={PRODUCT_TYPES}
-              />
-              {formData.productType === 'SET' && (
-                <Input
-                  label="Set Fiyatı"
-                  value={formData.setPrice}
-                  onChange={(e) => updateFormField('setPrice', parseFloat(e.target.value) || 0)}
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="0.00"
-                />
-              )}
-              <div className="md:col-span-3">
-                <Select
-                  label="Durum"
-                  value={formData.isActive ? 'Aktif' : 'Pasif'}
-                  onChange={(e) => updateFormField('isActive', e.target.value === 'Active')}
-                  options={[
-                    { value: 'Active', label: 'Aktif' },
-                    { value: 'Passive', label: 'Pasif' },
-                  ]}
-                />
-              </div>
             </div>
           </div>
+        </CardContent>
+      </Card>
 
-          {/* SET Components - only visible for SET type */}
-          {formData.productType === 'SET' && (
-            <div className="border-t border-border pt-4">
-              <h3 className="text-sm font-semibold text-foreground mb-3">Set Bileşenleri</h3>
-              <div className="space-y-3">
-                {setComponents.map((comp, index) => (
-                  <div key={index} className="flex items-center gap-3 p-3 bg-muted/30 rounded-lg">
-                    <div className="flex-1">
-                      <Select
-                        label="Ürün"
-                        value={comp.componentProductId}
-                        onChange={(e) => {
-                          const newComps = [...setComponents];
-                          newComps[index].componentProductId = e.target.value;
-                          setSetComponents(newComps);
-                        }}
-                        options={products.filter(p => (p as any).productType !== 'SET').map(p => ({ value: p.id, label: p.name }))}
-                      />
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Ürün Adı</TableHead>
+                <TableHead>Marka</TableHead>
+                <TableHead>Kategori</TableHead>
+                <TableHead>Barkod</TableHead>
+                <TableHead>Fiyatlar</TableHead>
+                <TableHead>Stok</TableHead>
+                <TableHead>Mağazalar</TableHead>
+                <TableHead>Durum</TableHead>
+                <TableHead className="text-right">İşlemler</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="h-24 text-center">
+                    <div className="flex items-center justify-center">
+                      <Loader2 className="w-6 h-6 animate-spin text-primary" />
                     </div>
-                    <div className="w-24">
-                      <Input
-                        label="Adet"
-                        type="number"
-                        min="1"
-                        value={comp.quantity}
-                        onChange={(e) => {
-                          const newComps = [...setComponents];
-                          newComps[index].quantity = parseInt(e.target.value) || 1;
-                          setSetComponents(newComps);
-                        }}
-                      />
-                    </div>
-                    <div className="w-32">
-                      <Input
-                        label="Fiyat Payı"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={comp.priceShare}
-                        onChange={(e) => {
-                          const newComps = [...setComponents];
-                          newComps[index].priceShare = parseFloat(e.target.value) || 0;
-                          setSetComponents(newComps);
-                        }}
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setSetComponents(setComponents.filter((_, i) => i !== index))}
-                      className="p-2 text-destructive hover:bg-destructive/10 rounded-md mt-5"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-                  </div>
-                ))}
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setSetComponents([...setComponents, { componentProductId: '', quantity: 1, priceShare: 0, sortOrder: setComponents.length }])}
-                >
-                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  Bileşen Ekle
-                </Button>
-                {setComponents.length > 0 && (
-                  <div className="text-sm text-muted-foreground">
-                    Toplam Fiyat Payı: {setComponents.reduce((sum, c) => sum + c.priceShare, 0).toFixed(2)} TL
-                    {formData.setPrice > 0 && ` / Set Fiyatı: ${formData.setPrice.toFixed(2)} TL`}
+                  </TableCell>
+                </TableRow>
+              ) : products.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                    Henüz ürün yok. İlk ürününüzü ekleyin.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                products.map((product) => (
+                  <TableRow key={product.id}>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <span className="font-medium">{product.name}</span>
+                        {product.sku && <span className="text-xs text-muted-foreground font-mono">{product.sku}</span>}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{product.brand?.name || '-'}</TableCell>
+                    <TableCell className="text-muted-foreground">{product.category?.name || '-'}</TableCell>
+                    <TableCell className="text-muted-foreground font-mono text-sm">{product.barcode || '-'}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-1.5 text-red-600 dark:text-red-400">
+                          <span className="text-xs">Alış:</span>
+                          <span className="text-xs font-medium">{product.purchasePrice ? `₺${product.purchasePrice.toLocaleString('tr-TR')}` : '-'}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
+                          <span className="text-xs">Satış:</span>
+                          <span className="text-xs font-medium">{product.salePrice ? `₺${product.salePrice.toLocaleString('tr-TR')}` : '-'}</span>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1 text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-muted-foreground w-16">Stok:</span>
+                          <span className="font-semibold text-blue-600 dark:text-blue-400">{product.totalStockQuantity}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-muted-foreground w-16">Satılabilir:</span>
+                          <span className="font-medium text-green-600 dark:text-green-400">{product.totalSellableQuantity}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-muted-foreground w-16">Rezerve:</span>
+                          <span className="font-medium text-orange-600 dark:text-orange-400">{product.totalReservableQuantity}</span>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{product.storeCount}</TableCell>
+                    <TableCell>
+                      <Badge variant={product.isActive ? 'default' : 'secondary'}
+                        className={product.isActive ? 'bg-green-100 text-green-800 hover:bg-green-200' : ''}>
+                        {product.isActive ? 'Aktif' : 'Pasif'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => handleEdit(product)}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={() => handleDelete(product.id)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <DataTablePagination
+        page={page}
+        pageSize={pageSize}
+        totalPages={totalPages}
+        totalItems={total}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
+      />
+
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingProduct ? 'Ürün Düzenle' : 'Ürün Ekle'}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Product Information */}
+            <div>
+              <h3 className="text-sm font-semibold text-foreground mb-3">Ürün Bilgileri</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Ürün Adı</Label>
+                  <Input
+                    value={formData.name}
+                    onChange={(e) => updateFormField('name', e.target.value)}
+                    required
+                    placeholder="Ürün adı"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Marka</Label>
+                  <Select value={formData.brandId} onValueChange={(v) => updateFormField('brandId', v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Marka Seçin" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {brands.map(b => (
+                        <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Kategori</Label>
+                  <Select value={formData.categoryId} onValueChange={(v) => updateFormField('categoryId', v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Kategori Seçin" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map(c => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Barkod</Label>
+                  <Input
+                    value={formData.barcode}
+                    onChange={(e) => updateFormField('barcode', e.target.value)}
+                    placeholder="Barkod"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>SKU</Label>
+                  <Input
+                    value={formData.sku}
+                    onChange={(e) => updateFormField('sku', e.target.value)}
+                    placeholder="SKU"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>KDV Oranı</Label>
+                  <Select value={String(formData.vatRate)} onValueChange={(v) => updateFormField('vatRate', parseFloat(v))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {VAT_RATES.map(r => (
+                        <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Desi</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={formData.desi}
+                    onChange={(e) => updateFormField('desi', parseFloat(e.target.value) || 0)}
+                    placeholder="Weight/Volume"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Alış Fiyatı</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formData.purchasePrice}
+                    onChange={(e) => updateFormField('purchasePrice', parseFloat(e.target.value) || 0)}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Satış Fiyatı</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formData.salePrice}
+                    onChange={(e) => updateFormField('salePrice', parseFloat(e.target.value) || 0)}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Son Satış Fiyatı</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formData.lastSalePrice}
+                    onChange={(e) => updateFormField('lastSalePrice', parseFloat(e.target.value) || 0)}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Ürün Tipi</Label>
+                  <Select value={formData.productType} onValueChange={(v) => updateFormField('productType', v as 'SIMPLE' | 'SET')}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PRODUCT_TYPES.map(t => (
+                        <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {formData.productType === 'SET' && (
+                  <div className="space-y-2">
+                    <Label>Set Fiyatı</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.setPrice}
+                      onChange={(e) => updateFormField('setPrice', parseFloat(e.target.value) || 0)}
+                      placeholder="0.00"
+                    />
                   </div>
                 )}
+                <div className="md:col-span-3 space-y-2">
+                  <Label>Durum</Label>
+                  <Select value={formData.isActive ? 'active' : 'passive'} onValueChange={(v) => updateFormField('isActive', v === 'active')}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Aktif</SelectItem>
+                      <SelectItem value="passive">Pasif</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
-          )}
 
-          {/* Store Configuration */}
-          <div className="border-t border-border pt-4">
-            <ProductStoreList
-              stores={stores}
-              selectedStoreIds={selectedStoreIds}
-              connectedStoreIds={connectedStoreIds}
-              storeConfigs={storeConfigs}
-              integrationConfigs={integrationConfigs}
-              getStoreIntegrations={getStoreIntegrations}
-              onStoreSelectionChange={handleStoreSelectionChange}
-              onStoreConfigChange={updateStoreConfig}
-              onIntegrationConfigChange={updateIntegrationConfig}
-            />
-          </div>
+            {/* SET Components - only visible for SET type */}
+            {formData.productType === 'SET' && (
+              <div className="border-t border-border pt-4">
+                <h3 className="text-sm font-semibold text-foreground mb-3">Set Bileşenleri</h3>
+                <div className="space-y-3">
+                  {setComponents.map((comp, index) => (
+                    <div key={index} className="flex items-center gap-3 p-3 bg-muted/30 rounded-lg">
+                      <div className="flex-1 space-y-2">
+                        <Label>Ürün</Label>
+                        <Select
+                          value={comp.componentProductId}
+                          onValueChange={(v) => {
+                            const newComps = [...setComponents];
+                            newComps[index].componentProductId = v;
+                            setSetComponents(newComps);
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Ürün seçin" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {products.filter(p => (p as any).productType !== 'SET').map(p => (
+                              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="w-24 space-y-2">
+                        <Label>Adet</Label>
+                        <Input
+                          type="number"
+                          min="1"
+                          value={comp.quantity}
+                          onChange={(e) => {
+                            const newComps = [...setComponents];
+                            newComps[index].quantity = parseInt(e.target.value) || 1;
+                            setSetComponents(newComps);
+                          }}
+                        />
+                      </div>
+                      <div className="w-32 space-y-2">
+                        <Label>Fiyat Payı</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={comp.priceShare}
+                          onChange={(e) => {
+                            const newComps = [...setComponents];
+                            newComps[index].priceShare = parseFloat(e.target.value) || 0;
+                            setSetComponents(newComps);
+                          }}
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="mt-5"
+                        onClick={() => setSetComponents(setComponents.filter((_, i) => i !== index))}
+                      >
+                        <Trash2 className="w-4 h-4 text-destructive" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setSetComponents([...setComponents, { componentProductId: '', quantity: 1, priceShare: 0, sortOrder: setComponents.length }])}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Bileşen Ekle
+                  </Button>
+                  {setComponents.length > 0 && (
+                    <div className="text-sm text-muted-foreground">
+                      Toplam Fiyat Payı: {setComponents.reduce((sum, c) => sum + c.priceShare, 0).toFixed(2)} TL
+                      {formData.setPrice > 0 && ` / Set Fiyatı: ${formData.setPrice.toFixed(2)} TL`}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-border">
-            <Button type="button" variant="outline" onClick={handleModalClose}>
-              İptal
-            </Button>
-            <Button type="submit" disabled={!canSubmit}>{submitButtonText}</Button>
-          </div>
-        </form>
-      </Modal>
+            {/* Store Configuration */}
+            <div className="border-t border-border pt-4">
+              <ProductStoreList
+                stores={stores}
+                selectedStoreIds={selectedStoreIds}
+                connectedStoreIds={connectedStoreIds}
+                storeConfigs={storeConfigs}
+                integrationConfigs={integrationConfigs}
+                getStoreIntegrations={getStoreIntegrations}
+                onStoreSelectionChange={handleStoreSelectionChange}
+                onStoreConfigChange={updateStoreConfig}
+                onIntegrationConfigChange={updateIntegrationConfig}
+              />
+            </div>
 
-      <ConfirmModal
-        isOpen={isDeleteModalOpen}
-        onClose={handleDeleteModalClose}
-        onConfirm={handleConfirmDelete}
-        title="Ürün Sil"
-        message="Bu ürünü silmek istediğinize emin misiniz? Bu işlem geri alınamaz."
-      />
-    </>
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
+                İptal
+              </Button>
+              <Button type="submit" disabled={!canSubmit}>{editingProduct ? 'Güncelle' : 'Oluştur'}</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Ürün Sil</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bu ürünü silmek istediğinize emin misiniz? Bu işlem geri alınamaz.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>İptal</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Sil
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div >
   );
 }

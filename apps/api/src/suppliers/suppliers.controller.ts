@@ -11,8 +11,18 @@ export class SuppliersController {
     }
 
     @Get()
-    async findAll(@Query('page') page = 1, @Query('limit') limit = 10) {
-        const { data, total } = await this.suppliersService.findAll(Number(page), Number(limit));
+    async findAll(
+        @Query('page') page = 1,
+        @Query('limit') limit = 10,
+        @Query('name') name?: string,
+        @Query('taxNumber') taxNumber?: string,
+        @Query('isActive') isActive?: string,
+    ) {
+        const { data, total } = await this.suppliersService.findAll(
+            Number(page),
+            Number(limit),
+            { name, taxNumber, isActive: isActive !== undefined ? isActive === 'true' : undefined }
+        );
         return {
             success: true,
             data,

@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, ILike, Between, FindOperator } from 'typeorm';
 import { PurchaseOrder } from './entities/purchase-order.entity';
 import { PurchaseOrderItem } from './entities/purchase-order-item.entity';
 import { GoodsReceipt } from './entities/goods-receipt.entity';
@@ -76,9 +76,31 @@ export class PurchasesService {
         return this.findPurchaseOrder(savedPo.id);
     }
 
-    async findAllPurchaseOrders(page = 1, limit = 10, status?: PurchaseOrderStatus): Promise<{ data: PurchaseOrder[]; total: number }> {
+    async findAllPurchaseOrders(
+        page = 1,
+        limit = 10,
+        status?: PurchaseOrderStatus,
+        search?: string,
+        supplierId?: string,
+        startDate?: string,
+        endDate?: string,
+    ): Promise<{ data: PurchaseOrder[]; total: number }> {
         const where: any = {};
+
         if (status) where.status = status;
+        if (supplierId) where.supplierId = supplierId;
+
+        if (search) {
+            where.orderNumber = ILike(`%${search}%`);
+            // Note: If we want to search notes OR orderNumber, we'd need an array of where objects (OR condition), 
+            // but combining with other AND filters (status, supplierId) is tricky in simple TypeORM syntax without QueryBuilder.
+            // For simplicity, let's search orderNumber. If user wants notes search, we might need QueryBuilder.
+            // Let's stick to orderNumber for now as it's the primary ID.
+        }
+
+        if (startDate && endDate) {
+            where.orderDate = Between(new Date(startDate), new Date(endDate));
+        }
 
         const [data, total] = await this.poRepository.findAndCount({
             where,
@@ -94,7 +116,7 @@ export class PurchasesService {
     async findPurchaseOrder(id: string): Promise<PurchaseOrder> {
         const po = await this.poRepository.findOne({
             where: { id },
-            relations: ['supplier', 'items', 'items.product', 'goodsReceipts', 'goodsReceipts.items'],
+            relations: ['supplier', 'items', 'items.product', 'goodsReceipts', 'goodsReceipts.items', 'goodsReceipts.items.product', 'goodsReceipts.items.shelf'],
         });
         if (!po) throw new NotFoundException(`Purchase Order #${id} not found`);
         return po;

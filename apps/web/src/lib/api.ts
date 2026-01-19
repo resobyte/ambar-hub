@@ -524,8 +524,24 @@ export async function updateIntegrationStore(id: string, data: {
 }
 
 // Product API
-export async function getProducts(page = 1, limit = 10): Promise<PaginationResponse<Product>> {
-  const res = await fetch(`${API_URL}/products?page=${page}&limit=${limit}`, {
+export interface ProductFilters {
+  name?: string;
+  isActive?: string;
+  brandId?: string;
+  categoryId?: string;
+}
+
+export async function getProducts(page = 1, limit = 10, filters?: ProductFilters): Promise<PaginationResponse<Product>> {
+  const url = new URL(`${API_URL}/products`, BASE_URL);
+  url.searchParams.append('page', String(page));
+  url.searchParams.append('limit', String(limit));
+
+  if (filters?.name) url.searchParams.append('name', filters.name);
+  if (filters?.isActive) url.searchParams.append('isActive', filters.isActive);
+  if (filters?.brandId) url.searchParams.append('brandId', filters.brandId);
+  if (filters?.categoryId) url.searchParams.append('categoryId', filters.categoryId);
+
+  const res = await fetch(url.toString(), {
     cache: 'no-store',
     credentials: 'include',
   });

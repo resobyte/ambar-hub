@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Order, OrderStatus, createInvoiceFromOrder, getInvoicePdf, Integration, Store } from '@/lib/api';
 import { useToast } from '@/components/ui/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -45,6 +45,7 @@ import {
 
 import { cn } from '@/lib/utils';
 import { DateRange } from 'react-day-picker';
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
 
 interface OrdersTableProps {
     orders: Order[];
@@ -90,8 +91,39 @@ export function OrdersTable({
     const [showPdfModal, setShowPdfModal] = useState(false);
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-    const [dateRange, setDateRange] = useState<DateRange | undefined>();
-    const [deliveryDateRange, setDeliveryDateRange] = useState<DateRange | undefined>();
+    const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
+        if (filters.startDate && filters.endDate) {
+            return { from: new Date(filters.startDate), to: new Date(filters.endDate) };
+        }
+        return undefined;
+    });
+    const [deliveryDateRange, setDeliveryDateRange] = useState<DateRange | undefined>(() => {
+        if (filters.startDeliveryDate && filters.endDeliveryDate) {
+            return { from: new Date(filters.startDeliveryDate), to: new Date(filters.endDeliveryDate) };
+        }
+        return undefined;
+    });
+
+    // Update local state when filters prop changes (e.g. initial load or URL change)
+    // Note: This might cause a re-render loop if onFilterChange updates filters immediately and we sync back. 
+    // But since filters come from parent (OrdersClient -> useTableQuery -> URL), it should be fine.
+    // However, to be safe and simple, we initialize state. If filters change externally, we might need useEffect.
+    // Let's rely on initialization for now as it solves the F5 refresh case. 
+    // If user navigates back/forward, they might not see date update without useEffect. 
+    // Let's add useEffect for full sync.
+    useEffect(() => {
+        if (filters.startDate && filters.endDate) {
+            setDateRange({ from: new Date(filters.startDate), to: new Date(filters.endDate) });
+        } else if (!filters.startDate && !filters.endDate) {
+            setDateRange(undefined);
+        }
+
+        if (filters.startDeliveryDate && filters.endDeliveryDate) {
+            setDeliveryDateRange({ from: new Date(filters.startDeliveryDate), to: new Date(filters.endDeliveryDate) });
+        } else if (!filters.startDeliveryDate && !filters.endDeliveryDate) {
+            setDeliveryDateRange(undefined);
+        }
+    }, [filters.startDate, filters.endDate, filters.startDeliveryDate, filters.endDeliveryDate]);
 
 
     const toggleSelect = (id: string) => {
@@ -216,6 +248,7 @@ export function OrdersTable({
                     title: "İşlem Tamamlandı",
                     description: `Başarılı: ${data.success?.length || 0}, Başarısız: ${data.failed?.length || 0}`,
                     duration: 5000,
+                    variant: 'success',
                 });
                 setSelectedIds(new Set());
             } else {
@@ -689,50 +722,14 @@ export function OrdersTable({
             </Card>
 
             {/* Pagination settings */}
-            <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-muted-foreground">Sayfa başına:</span>
-                    <Select
-                        value={String(pageSize)}
-                        onValueChange={(val) => onPageSizeChange(Number(val))}
-                    >
-                        <SelectTrigger className="h-8 w-[70px]">
-                            <SelectValue placeholder={String(pageSize)} />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="20">20</SelectItem>
-                            <SelectItem value="50">50</SelectItem>
-                            <SelectItem value="100">100</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-
-                <div className="flex items-center gap-4">
-                    <span className="text-sm font-medium text-muted-foreground">
-                        Sayfa {currentPage} / {totalPages}
-                    </span>
-                    <div className="flex gap-1">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => onPageChange(currentPage - 1)}
-                            disabled={currentPage <= 1}
-                            className="h-8 px-2"
-                        >
-                            <ChevronLeft className="h-4 w-4 mr-1" /> Önceki
-                        </Button>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => onPageChange(currentPage + 1)}
-                            disabled={currentPage >= totalPages}
-                            className="h-8 px-2"
-                        >
-                            Sonraki <ChevronRight className="h-4 w-4 ml-1" />
-                        </Button>
-                    </div>
-                </div>
-            </div>
+            <DataTablePagination
+                page={currentPage}
+                pageSize={pageSize}
+                totalPages={totalPages}
+                totalItems={totalPages * pageSize}
+                onPageChange={onPageChange}
+                onPageSizeChange={onPageSizeChange}
+            />
 
             {/* PDF Modal */}
             {showPdfModal && pdfHtml && (
