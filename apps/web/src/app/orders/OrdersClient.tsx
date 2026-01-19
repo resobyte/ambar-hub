@@ -59,7 +59,7 @@ export function OrdersClient() {
                 }
             });
 
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/orders?${params}`, {
+            const res = await fetch(`/api/orders?${params}`, {
                 credentials: 'include',
             });
             const data = await res.json();
@@ -98,7 +98,7 @@ export function OrdersClient() {
             if (filters.startDeliveryDate) params.append('startDeliveryDate', filters.startDeliveryDate);
             if (filters.endDeliveryDate) params.append('endDeliveryDate', filters.endDeliveryDate);
 
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/orders/export?${params}`, {
+            const res = await fetch(`/api/orders/export?${params}`, {
                 credentials: 'include',
             });
 

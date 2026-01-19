@@ -42,7 +42,10 @@ import { Loader2, Pencil, Trash2, Plus, Users, Search, X } from 'lucide-react';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { useTableQuery } from '@/hooks/use-table-query';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+const isServer = typeof window === 'undefined';
+const API_URL = isServer
+    ? (process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api')
+    : '/api';
 
 interface Supplier {
     id: string;

@@ -7,7 +7,10 @@ import { Select } from '@/components/common/Select';
 import { Modal } from '@/components/common/Modal';
 import { useToast } from '@/components/common/ToastContext';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+const isServer = typeof window === 'undefined';
+const API_URL = isServer
+    ? (process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api')
+    : '/api';
 
 interface Shelf {
     id: string;

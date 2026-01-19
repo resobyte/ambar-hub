@@ -236,7 +236,7 @@ export function OrdersTable({
 
         setBulkLoading(true);
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/invoices/create-bulk`, {
+            const res = await fetch(`/api/invoices/create-bulk`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
@@ -624,7 +624,7 @@ export function OrdersTable({
                                                                 onClick={async () => {
                                                                     // Same logic as before
                                                                     try {
-                                                                        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/orders/${order.id}/label`, {
+                                                                        const res = await fetch(`/api/orders/${order.id}/label`, {
                                                                             method: 'POST',
                                                                             headers: { 'Content-Type': 'application/json' },
                                                                         });

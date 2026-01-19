@@ -46,7 +46,7 @@ export function FetchOrderDialog({ open, onClose, onSuccess }: FetchOrderDialogP
 
         setIsLoading(true);
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/orders/fetch-trendyol?orderNumber=${orderNumber}`, {
+            const res = await fetch(`/api/orders/fetch-trendyol?orderNumber=${orderNumber}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
             });

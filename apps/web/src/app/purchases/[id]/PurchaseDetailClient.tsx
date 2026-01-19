@@ -40,7 +40,10 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Loader2, ArrowLeft, Package, History, AlertCircle } from 'lucide-react';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+const isServer = typeof window === 'undefined';
+const API_URL = isServer
+    ? (process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api')
+    : '/api';
 
 interface Product {
     id: string;
