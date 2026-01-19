@@ -100,22 +100,117 @@ export function Sidebar({ routes, currentPath, isMobileMenuOpen, onMobileMenuClo
     'Ayarlar': false
   });
 
+  // Initialize from localStorage on mount (client-side only)
+  useEffect(() => {
+    const savedState = localStorage.getItem('sidebarOpenGroups');
+    if (savedState) {
+      try {
+        setOpenGroups(JSON.parse(savedState));
+      } catch (e) {
+        console.error('Failed to parse sidebar state', e);
+      }
+    }
+  }, []);
+
   // Automatically open the group containing the current active route
   useEffect(() => {
-    Object.entries(groupedRoutes).forEach(([groupName, groupRoutes]) => {
-      const activeRoute = groupRoutes.some(route => currentPath.startsWith(route.path));
-      if (activeRoute && !openGroups[groupName]) {
-        setOpenGroups(prev => ({
-          ...prev,
-          [groupName]: true
-        }));
-      }
-    });
-  }, [currentPath, groupedRoutes]);
+    // Only auto-expand if we haven't just loaded from localStorage with an explicit state
+    // Actually, we want to ensure the USER finds their page. 
+    // But if the user says "stay closed", we should respect it.
+    // Compromise: We check if the group is active. 
+    // If it is active, we generally want it open.
+    // However, to respect "if I close it, keep it closed", we need to distinguish between "I navigated here" vs "I just refreshed".
+    // For now, let's keep the auto-expand but debounce it or check if it was explicitly closed? 
+    // The simplified requirement: "refresh atınca biri collapsable false ise öyle kalmaya devam etsin"
+    // This strictly means: Priority to localStorage.
 
+    // So we primarily rely on localStorage. 
+    // BUT, if I navigate via a Link to a new section, I expect it to open.
+    // If I refresh, I expect it to stay as is.
+
+    // We can solve this by NOT auto-expanding on mount if we have a saved state.
+    // But we SHOULD auto-expand if `currentPath` changes significantly.
+
+    // For simplicity and matching the user request "refresh... stay that way":
+    // We will trust the state we loaded. We won't force-open on mount.
+    // We will only force-open if the user NAVIGATES to a new module.
+    // But detecting "navigation" vs "mount" is tricky in useEffect.
+
+    // Let's rely on the user's manual toggle. If they open it, it saves. If they close it, it saves.
+    // If they navigate to a sub-page, standard UX is to expand it. 
+    // Let's try to be smart: 
+    // 1. Initial load: use localStorage.
+    // 2. If no localStorage, defaults.
+    // 3. If I change path (navigation), maybe expand? 
+
+    // User request: "refresh atınca...". This means on reload, respect stored value.
+    // So on mount, DO NOT override with auto-expand.
+    // Only auto-expand if the path CHANGE suggests we entered a new group.
+
+    // Implementing a check to skip the first run (mount) of this effect?
+    // Or just rely on the fact that if I am on a page, and I closed the menu, I probably want it closed.
+
+    // Let's implement the 'auto-expand on navigation' logic but respect persistence.
+    // Actually, if we just save every toggle to localStorage, that satisfies "refresh... stay that way".
+    // The only conflict is "auto-expand".
+    // If we remove the auto-expand effect completely, the user has full manual control.
+    // But navigation implies context switch.
+
+    // Proposal: Keep auto-expand, but maybe it only runs if the group was NOT explicitly closed by user?
+    // Hard to track "explicitly closed".
+
+    // Let's stick to the specific request: "refresh... stay".
+    // This implies that my previous `useEffect` which runs on mount (due to `currentPath` dependency) was the problem overriding the state.
+
+    // Logic:
+    // 1. Load from LS.
+    // 2. Expand only if group is active AND we didn't just load a "false" from LS.
+
+    // Actually, simply saving to LS and loading on mount is 90% of the solution.
+    // The `useEffect` for auto-expand will verify:
+    // If I am on `/orders`, and I navigate to `/inventory`, I want Inventory to open.
+    // If I refresh `/orders`, I want Orders to stay closed if I closed it.
+
+    // Let's try this:
+    // We use a ref to track if it's the initial mount.
+    // On initial mount, we load from LS and DO NOT auto-expand. 
+    // On subsequent path changes, we auto-expand.
+
+  }, []); // Logic moved below with Ref
+
+  const isMounted = useState(false); // actually we can use a ref
+
+  // We need to persist state changes
   const toggleGroup = (group: string) => {
-    setOpenGroups(prev => ({ ...prev, [group]: !prev[group] }));
+    setOpenGroups(prev => {
+      const newState = { ...prev, [group]: !prev[group] };
+      localStorage.setItem('sidebarOpenGroups', JSON.stringify(newState));
+      return newState;
+    });
   };
+
+  // Effect for Auto-Expand on Route Change (excluding initial mount)
+  // We need a ref to track the previous path or just to skip first run.
+  const [lastPath, setLastPath] = useState(currentPath);
+
+  useEffect(() => {
+    if (currentPath !== lastPath) {
+      // Path changed, let's check for auto-expand
+      Object.entries(groupedRoutes).forEach(([groupName, groupRoutes]) => {
+        const activeRoute = groupRoutes.some(route => currentPath.startsWith(route.path));
+        // Only expand if active and currently closed.
+        if (activeRoute && !openGroups[groupName]) {
+          setOpenGroups(prev => {
+            const newState = { ...prev, [groupName]: true };
+            localStorage.setItem('sidebarOpenGroups', JSON.stringify(newState));
+            return newState;
+          });
+        }
+      });
+      setLastPath(currentPath);
+    }
+  }, [currentPath, groupedRoutes, lastPath, openGroups]); // Added dependencies
+
 
   const handleLogout = () => {
     startTransition(async () => {
