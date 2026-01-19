@@ -2,6 +2,7 @@ import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, OneToMany, JoinColum
 import { BaseEntity } from '../../common/entities/base.entity';
 import { Supplier } from '../../suppliers/entities/supplier.entity';
 import { PurchaseOrderStatus } from '../enums/purchase-order-status.enum';
+import { PurchaseOrderType } from '../enums/purchase-order-type.enum';
 import { PurchaseOrderItem } from './purchase-order-item.entity';
 import { GoodsReceipt } from './goods-receipt.entity';
 
@@ -26,6 +27,16 @@ export class PurchaseOrder extends BaseEntity {
         default: PurchaseOrderStatus.DRAFT,
     })
     status: PurchaseOrderStatus;
+
+    @Column({
+        type: 'enum',
+        enum: PurchaseOrderType,
+        default: PurchaseOrderType.MANUAL,
+    })
+    type: PurchaseOrderType;
+
+    @Column({ name: 'invoice_number', nullable: true, length: 50 })
+    invoiceNumber: string;
 
     @Column('decimal', { name: 'total_amount', precision: 12, scale: 2, default: 0 })
     totalAmount: number;

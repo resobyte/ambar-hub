@@ -11,6 +11,11 @@ export class PurchasesController {
         return this.purchasesService.createPurchaseOrder(data);
     }
 
+    @Post('import-invoice')
+    importInvoice(@Body() body: { docNo: string }) {
+        return this.purchasesService.importInvoice(body.docNo);
+    }
+
     @Get()
     async findAllPurchaseOrders(
         @Query('page') page = 1,

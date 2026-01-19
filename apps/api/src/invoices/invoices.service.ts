@@ -1361,4 +1361,115 @@ export class InvoicesService {
 
         this.logger.log(`Incremented sequence ${field} for store ${storeId}: ${currentValue} -> ${nextValue}`);
     }
+
+    /**
+    * Get Invoice from Uyumsoft by Document Number (Fatura No)
+    */
+    async getInvoiceFromUyumsoft(docNo: string): Promise<any> {
+        const apiUrl = this.configService.get<string>('UYUMSOFT_API_URL')
+            || 'http://api-embeauty.eko.uyumcloud.com';
+
+        const { token, secretKey } = await this.getAccessToken();
+
+        try {
+            this.logger.log(`Fetching Invoice from Uyumsoft with DocNo: ${docNo}`);
+
+            const response = await axios.post(
+                `${apiUrl}/UyumApi/v1/PSM/GetInvoice`,
+                {
+                    value: {
+                        docNo: docNo
+                    }
+                },
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                        'UyumSecretKey': secretKey,
+                    }
+                }
+            );
+
+            // Check response structure
+            const result = response.data?.result;
+
+            // The response structure is { invoicE_M: [...], invoicE_D: [...] } based on user feedback
+            const masterList = result?.invoicE_M;
+            const detailList = result?.invoicE_D;
+
+            if (!masterList || !Array.isArray(masterList) || masterList.length === 0) {
+                throw new NotFoundException(`Invoice with number ${docNo} not found in Uyumsoft`);
+            }
+
+            const master = masterList[0];
+
+            // Validate 'MALALIS' (in catCode1)
+            // User JSON shows catCode1: "MALALIS" in master
+            if (master.catCode1 !== 'MALALIS') {
+                this.logger.warn(`Invoice found but catCode1 is not 'MALALIS'. Value: ${master.catCode1}`);
+                throw new BadRequestException(`Fatura bulundu (${docNo}) fakat Özel Kod 1 'MALALIS' değil. (Değer: ${master.catCode1 || 'Boş'})`);
+            }
+
+            // Parse Date: "18.01.2026" -> Date object
+            let orderDate = new Date();
+            if (master.docDate) {
+                const parts = master.docDate.split('.');
+                if (parts.length === 3) {
+                    orderDate = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
+                }
+            }
+
+            // Parse supplier info
+            // User JSON: entityTaxNo: "1601683910", entityName: "BEATRİS..."
+            // Also check vknTckn just in case
+
+            // Parse items
+            const items = (detailList || []).map((d: any) => {
+                // qty: "100,00000" -> replace , with .
+                const qty = parseFloat((d.qty || '0').replace(',', '.').replaceAll('.', '')); // Wait, standard TR format is 100.000,00 or simple 100,00 ?
+                // In the JSON: "qty": "100,00000" matches 100. "amt": "10000,00".
+                // It seems comma is decimal separator. Thousand separator is likely dot.
+                // Uyumsoft usually sends string with comma as decimal.
+                // Let's replace dot with nothing (thousand sep) and comma with dot (decimal).
+                // Actually, "100,00000" -> 100.
+                // "10000,00" -> 10000.
+
+                const parseMoney = (val: string) => {
+                    if (!val) return 0;
+                    // Remove all dots (thousand separators)
+                    // Replace comma with dot
+                    return parseFloat(val.replace(/\./g, '').replace(',', '.'));
+                };
+
+                return {
+                    itemCode: (d.itemCode || '').trim(),
+                    barcode: (d.barcode || d.dcardCode || '').trim(), // dcardCode seems to be barcode or main code
+                    name: (d.itemName || d.dcardName || '').trim(),
+                    quantity: parseMoney(d.qty),
+                    unitPrice: parseMoney(d.unitPrice),
+                };
+            });
+
+            // Parse address
+            const address = [master.address1, master.address2, master.cityName, master.countryName]
+                .filter(Boolean)
+                .join(' ');
+
+            return {
+                docNo: master.docNo,
+                date: orderDate,
+                taxNumber: master.entityTaxNo || master.vknTckn,
+                supplierName: master.entityName || master.title,
+                supplierAddress: address,
+                items: items
+            };
+
+        } catch (error) {
+            this.logger.error(`Failed to get invoice ${docNo} from Uyumsoft`, error);
+            if (error instanceof NotFoundException || error instanceof BadRequestException) {
+                throw error;
+            }
+            throw new Error(`Uyumsoft API Error: ${error.message}`);
+        }
+    }
 }

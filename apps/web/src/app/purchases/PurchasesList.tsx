@@ -47,6 +47,7 @@ interface Product {
     id: string;
     name: string;
     barcode: string;
+    sku: string;
 }
 
 interface Supplier {
@@ -72,6 +73,7 @@ interface PurchaseOrder {
     orderDate: string;
     expectedDate?: string;
     items: PurchaseOrderItem[];
+    type: string;
 }
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
@@ -96,6 +98,9 @@ export function PurchasesList() {
     const [total, setTotal] = useState(0);
     const [totalPages, setTotalPages] = useState(0);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isSelectionModalOpen, setIsSelectionModalOpen] = useState(false);
+    const [invoiceDocNo, setInvoiceDocNo] = useState('');
+    const [importing, setImporting] = useState(false);
     const { toast } = useToast();
 
     // Filters
@@ -110,7 +115,9 @@ export function PurchasesList() {
         orderDate: new Date().toISOString().split('T')[0],
         expectedDate: '',
         notes: '',
-        items: [{ productId: '', orderedQuantity: 1, unitPrice: 0 }],
+        type: 'MANUAL',
+        invoiceNumber: '',
+        items: [{ productId: '', productName: '', orderedQuantity: 1, unitPrice: 0 }],
     });
 
     const fetchData = useCallback(async () => {
@@ -147,21 +154,85 @@ export function PurchasesList() {
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
-    const handleCreate = () => {
+
+
+    const handleCreateClick = () => {
+        setIsSelectionModalOpen(true);
+    };
+
+    const handleManualCreate = () => {
+        setIsSelectionModalOpen(false);
         setFormData({
             supplierId: suppliers[0]?.id || '',
             orderDate: new Date().toISOString().split('T')[0],
             expectedDate: '',
             notes: '',
-            items: [{ productId: products[0]?.id || '', orderedQuantity: 1, unitPrice: 0 }],
+            type: 'MANUAL',
+            invoiceNumber: '',
+            items: [{ productId: products[0]?.id || '', productName: '', orderedQuantity: 1, unitPrice: 0 }],
         });
         setIsModalOpen(true);
+    };
+
+    const handleImportInvoice = async () => {
+        if (!invoiceDocNo) return;
+        setImporting(true);
+        try {
+            const res = await fetch(`${API_URL}/purchases/import-invoice`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ docNo: invoiceDocNo }),
+            });
+
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.message || 'Fatura bulunamadı veya uygun değil');
+            }
+
+            const resData = await res.json();
+            const data = resData.data || resData;
+
+            // Populate form data
+            setFormData({
+                supplierId: data.supplierId || '',
+                orderDate: data.orderDate ? new Date(data.orderDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                expectedDate: '',
+                notes: `Fatura No: ${data.invoiceNumber}`,
+                type: 'INVOICE',
+                invoiceNumber: data.invoiceNumber,
+                items: data.items.map((item: any) => {
+                    // Try to match product by ID (backend) or SKU/Barcode (frontend fallback)
+                    const matchedProduct = products.find(p =>
+                        p.id === item.productId ||
+                        (item.productCode && p.sku === item.productCode) ||
+                        (item.productCode && p.barcode === item.productCode)
+                    );
+
+                    return {
+                        productId: matchedProduct ? matchedProduct.id : (item.productId || ''),
+                        productName: item.productName || '',
+                        orderedQuantity: item.orderedQuantity,
+                        unitPrice: item.unitPrice,
+                    };
+                }),
+            });
+
+            setIsSelectionModalOpen(false);
+            setIsModalOpen(true);
+            toast({ title: 'Başarılı', description: 'Fatura bilgileri çekildi', variant: 'success' });
+
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Hata', description: error.message });
+        } finally {
+            setImporting(false);
+        }
     };
 
     const addItem = () => {
         setFormData({
             ...formData,
-            items: [...formData.items, { productId: products[0]?.id || '', orderedQuantity: 1, unitPrice: 0 }],
+            items: [...formData.items, { productId: products[0]?.id || '', productName: '', orderedQuantity: 1, unitPrice: 0 }],
         });
     };
 
@@ -217,7 +288,7 @@ export function PurchasesList() {
                         </BreadcrumbItem>
                     </BreadcrumbList>
                 </Breadcrumb>
-                <Button onClick={handleCreate}>
+                <Button onClick={handleCreateClick}>
                     <Plus className="w-4 h-4 mr-2" />
                     Yeni Satın Alma
                 </Button>
@@ -291,6 +362,7 @@ export function PurchasesList() {
                             <TableRow>
                                 <TableHead>Sipariş No</TableHead>
                                 <TableHead>Tedarikçi</TableHead>
+                                <TableHead>Tip</TableHead>
                                 <TableHead>Durum</TableHead>
                                 <TableHead>Toplam</TableHead>
                                 <TableHead>Sipariş Tarihi</TableHead>
@@ -319,6 +391,11 @@ export function PurchasesList() {
                                         <TableRow key={purchase.id}>
                                             <TableCell className="font-medium">{purchase.orderNumber}</TableCell>
                                             <TableCell className="text-muted-foreground">{purchase.supplier?.name || '-'}</TableCell>
+                                            <TableCell>
+                                                <Badge variant="secondary">
+                                                    {purchase.type === 'INVOICE' ? 'Fatura' : 'Manuel'}
+                                                </Badge>
+                                            </TableCell>
                                             <TableCell>
                                                 <Badge variant="outline" className={status.color}>
                                                     {status.label}
@@ -352,6 +429,47 @@ export function PurchasesList() {
                 onPageChange={setPage}
                 onPageSizeChange={setPageSize}
             />
+
+            <Dialog open={isSelectionModalOpen} onOpenChange={setIsSelectionModalOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Satın Alma Oluştur</DialogTitle>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                        <Button variant="outline" className="h-20 text-lg" onClick={handleManualCreate}>
+                            Manuel Oluştur
+                        </Button>
+                        <div className="relative">
+                            <div className="absolute inset-0 flex items-center">
+                                <span className="w-full border-t" />
+                            </div>
+                            <div className="relative flex justify-center text-xs uppercase">
+                                <span className="bg-background px-2 text-muted-foreground">
+                                    veya
+                                </span>
+                            </div>
+                        </div>
+                        <div className="space-y-4 border rounded-md p-4">
+                            <div className="space-y-2">
+                                <Label>Faturadan Çek (Uyumsoft)</Label>
+                                <div className="flex gap-2">
+                                    <Input
+                                        placeholder="Fatura No (örn: FAT2024...)"
+                                        value={invoiceDocNo}
+                                        onChange={(e) => setInvoiceDocNo(e.target.value)}
+                                    />
+                                    <Button onClick={handleImportInvoice} disabled={importing || !invoiceDocNo}>
+                                        {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Sorgula'}
+                                    </Button>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                    Sadece &quot;MALALIS&quot; özel kodlu faturalar kabul edilir.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
 
             <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
                 <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -412,6 +530,12 @@ export function PurchasesList() {
                                                 </SelectContent>
                                             </Select>
                                         </div>
+                                        {/* Show hint if product not matched but we have imported name */}
+                                        {!item.productId && (item as any).productName && (
+                                            <div className="text-xs text-amber-600 mt-1">
+                                                Faturadaki: {(item as any).productName}
+                                            </div>
+                                        )}
                                         <div className="w-20 space-y-2">
                                             {index === 0 && <Label>Adet</Label>}
                                             <Input

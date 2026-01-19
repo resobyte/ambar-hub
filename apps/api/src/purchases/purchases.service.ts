@@ -6,8 +6,12 @@ import { PurchaseOrderItem } from './entities/purchase-order-item.entity';
 import { GoodsReceipt } from './entities/goods-receipt.entity';
 import { GoodsReceiptItem } from './entities/goods-receipt-item.entity';
 import { PurchaseOrderStatus } from './enums/purchase-order-status.enum';
+import { PurchaseOrderType } from './enums/purchase-order-type.enum';
 import { GoodsReceiptStatus } from './enums/goods-receipt-status.enum';
 import { ShelvesService } from '../shelves/shelves.service';
+import { InvoicesService } from '../invoices/invoices.service';
+import { Product } from '../products/entities/product.entity';
+import { Supplier } from '../suppliers/entities/supplier.entity';
 
 @Injectable()
 export class PurchasesService {
@@ -21,6 +25,11 @@ export class PurchasesService {
         @InjectRepository(GoodsReceiptItem)
         private readonly grItemRepository: Repository<GoodsReceiptItem>,
         private readonly shelvesService: ShelvesService,
+        private readonly invoicesService: InvoicesService,
+        @InjectRepository(Supplier)
+        private readonly supplierRepository: Repository<Supplier>, // We'll need to inject Supplier Repo effectively, or use SupplierService. For now, assuming direct repo access is fine if module imports it, or we need to add SupplierModule. Let's check imports.
+        @InjectRepository(Product)
+        private readonly productRepository: Repository<Product>,
     ) { }
 
     // Generate unique order number
@@ -38,14 +47,105 @@ export class PurchasesService {
         return `${prefix}-${String(count + 1).padStart(5, '0')}`;
     }
 
+    async importInvoice(docNo: string) {
+        // Pre-check if invoice already exists
+        const existingPo = await this.poRepository.findOne({ where: { invoiceNumber: docNo } });
+        if (existingPo) {
+            throw new BadRequestException(`Fatura numarası (${docNo}) zaten sistemde mevcut!`);
+        }
+
+        // 1. Fetch from Uyumsoft
+        const invoice = await this.invoicesService.getInvoiceFromUyumsoft(docNo);
+
+        // 2. Identify Supplier
+        // Normalized invoice object has `taxNumber` and `supplierName`
+
+        let supplier: Supplier | null = null;
+        let supplierTaxId = invoice.taxNumber;
+
+        if (supplierTaxId) {
+            supplier = await this.supplierRepository.findOne({ where: { taxNumber: supplierTaxId } });
+        }
+
+        // If not found by VKN/TCKN, try Name
+        if (!supplier && invoice.supplierName) {
+            supplier = await this.supplierRepository.findOne({ where: { name: ILike(invoice.supplierName) } });
+        }
+
+        // If still not found, CREATE NEW SUPPLIER
+        if (!supplier && invoice.supplierName) {
+            const newSupplier = this.supplierRepository.create({
+                name: invoice.supplierName,
+                taxNumber: invoice.taxNumber,
+                address: invoice.supplierAddress,
+                isActive: true,
+            });
+            supplier = await this.supplierRepository.save(newSupplier);
+        }
+
+        // 3. Map Items
+        // Invoice items are already normalized in invoice.items
+        const mappedItems = [];
+
+        for (const line of invoice.items) {
+            // Find product by Barcode (line.barcode) or Code (line.itemCode)
+            const code = (line.productCode || line.itemCode || '').trim();
+            const barcode = (line.barcode || '').trim();
+
+            let product: Product | null = null;
+
+            // 1. Try matching 'barcode' field against DB barcode AND sku
+            if (barcode) {
+                product = await this.productRepository.findOne({ where: { barcode: ILike(barcode) } });
+
+                // If not found as barcode, maybe it is a SKU?
+                if (!product) {
+                    product = await this.productRepository.findOne({ where: { sku: ILike(barcode) } });
+                }
+            }
+
+            // 2. Try matching 'code' field against DB barcode AND sku
+            if (!product && code) {
+                product = await this.productRepository.findOne({ where: [{ barcode: ILike(code) }, { sku: ILike(code) }] });
+            }
+
+            mappedItems.push({
+                productId: product?.id || '',
+                productCode: code,
+                productName: line.name,
+                orderedQuantity: line.quantity || 0,
+                unitPrice: line.unitPrice || 0,
+                barcode: product?.barcode || barcode || '',
+            });
+        }
+
+        return {
+            invoiceNumber: invoice.docNo || docNo,
+            orderDate: invoice.date || invoice.docDate,
+            supplierId: supplier?.id || '',
+            supplierName: supplier?.name || invoice.supplierName || '',
+            items: mappedItems
+        };
+    }
+
     // Purchase Order CRUD
     async createPurchaseOrder(data: {
         supplierId: string;
         orderDate: Date;
         expectedDate?: Date;
         notes?: string;
+        type?: PurchaseOrderType;
+        invoiceNumber?: string;
         items: { productId: string; orderedQuantity: number; unitPrice: number }[];
     }): Promise<PurchaseOrder> {
+        // Validation: If INVOICE type, check duplicates
+        if (data.type === PurchaseOrderType.INVOICE && data.invoiceNumber) {
+            const existing = await this.poRepository.findOne({ where: { invoiceNumber: data.invoiceNumber } });
+            if (existing) {
+                throw new BadRequestException(`Fatura numarası (${data.invoiceNumber}) zaten sistemde mevcut!`);
+            }
+        }
+
         const orderNumber = await this.generateOrderNumber();
         const totalAmount = data.items.reduce((sum, item) => sum + item.orderedQuantity * item.unitPrice, 0);
 
@@ -57,6 +157,8 @@ export class PurchasesService {
             notes: data.notes,
             totalAmount,
             status: PurchaseOrderStatus.ORDERED,
+            type: data.type || PurchaseOrderType.MANUAL,
+            invoiceNumber: data.invoiceNumber,
         });
 
         const savedPo = await this.poRepository.save(po);
