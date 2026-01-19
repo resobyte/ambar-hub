@@ -49,7 +49,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
-import { Loader2, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Loader2, Plus, Pencil, Trash2, Eye } from 'lucide-react';
+import Link from 'next/link';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import {
   getIntegrations,
@@ -369,6 +370,11 @@ export function IntegrationsTable() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
+                        <Link href={`/integrations/${integration.id}`}>
+                          <Button variant="ghost" size="icon" title="Detay">
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                        </Link>
                         <Button
                           variant="ghost"
                           size="icon"
