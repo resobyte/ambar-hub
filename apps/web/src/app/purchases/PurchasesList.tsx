@@ -74,6 +74,7 @@ interface PurchaseOrder {
     expectedDate?: string;
     items: PurchaseOrderItem[];
     type: string;
+
 }
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
@@ -110,13 +111,23 @@ export function PurchasesList() {
     const startDate = filters.startDate ? new Date(filters.startDate) : undefined;
     const endDate = filters.endDate ? new Date(filters.endDate) : undefined;
 
-    const [formData, setFormData] = useState({
+    const [formData, setFormData] = useState<{
+        supplierId: string;
+        orderDate: string;
+        expectedDate: string;
+        notes: string;
+        type: string;
+        invoiceNumber: string;
+
+        items: { productId: string; productName: string; orderedQuantity: number; unitPrice: number }[];
+    }>({
         supplierId: '',
         orderDate: new Date().toISOString().split('T')[0],
         expectedDate: '',
         notes: '',
         type: 'MANUAL',
         invoiceNumber: '',
+
         items: [{ productId: '', productName: '', orderedQuantity: 1, unitPrice: 0 }],
     });
 
@@ -169,6 +180,7 @@ export function PurchasesList() {
             notes: '',
             type: 'MANUAL',
             invoiceNumber: '',
+
             items: [{ productId: products[0]?.id || '', productName: '', orderedQuantity: 1, unitPrice: 0 }],
         });
         setIsModalOpen(true);
@@ -201,6 +213,7 @@ export function PurchasesList() {
                 notes: `Fatura No: ${data.invoiceNumber}`,
                 type: 'INVOICE',
                 invoiceNumber: data.invoiceNumber,
+
                 items: data.items.map((item: any) => {
                     // Try to match product by ID (backend) or SKU/Barcode (frontend fallback)
                     const matchedProduct = products.find(p =>
@@ -408,9 +421,12 @@ export function PurchasesList() {
                                                 {new Date(purchase.orderDate).toLocaleDateString('tr-TR')}
                                             </TableCell>
                                             <TableCell className="text-right">
-                                                <Link href={`/purchases/${purchase.id}`}>
-                                                    <Button variant="ghost" size="sm">Detay</Button>
-                                                </Link>
+                                                <div className="flex justify-end gap-2">
+
+                                                    <Link href={`/purchases/${purchase.id}`}>
+                                                        <Button variant="ghost" size="sm">Detay</Button>
+                                                    </Link>
+                                                </div>
                                             </TableCell>
                                         </TableRow>
                                     );

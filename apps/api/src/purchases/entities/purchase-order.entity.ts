@@ -38,6 +38,9 @@ export class PurchaseOrder extends BaseEntity {
     @Column({ name: 'invoice_number', nullable: true, length: 50 })
     invoiceNumber: string;
 
+
+
+
     @Column('decimal', { name: 'total_amount', precision: 12, scale: 2, default: 0 })
     totalAmount: number;
 

@@ -1463,7 +1463,6 @@ export class InvoicesService {
                 supplierAddress: address,
                 items: items
             };
-
         } catch (error) {
             this.logger.error(`Failed to get invoice ${docNo} from Uyumsoft`, error);
             if (error instanceof NotFoundException || error instanceof BadRequestException) {
@@ -1472,4 +1471,8 @@ export class InvoicesService {
             throw new Error(`Uyumsoft API Error: ${error.message}`);
         }
     }
+
+    /**
+     * Get Invoice HTML from Uyumsoft
+     */
 }

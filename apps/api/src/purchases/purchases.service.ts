@@ -119,8 +119,10 @@ export class PurchasesService {
             });
         }
 
+
         return {
             invoiceNumber: invoice.docNo || docNo,
+
             orderDate: invoice.date || invoice.docDate,
             supplierId: supplier?.id || '',
             supplierName: supplier?.name || invoice.supplierName || '',
@@ -136,6 +138,7 @@ export class PurchasesService {
         notes?: string;
         type?: PurchaseOrderType;
         invoiceNumber?: string;
+
         items: { productId: string; orderedQuantity: number; unitPrice: number }[];
     }): Promise<PurchaseOrder> {
         // Validation: If INVOICE type, check duplicates
@@ -158,7 +161,8 @@ export class PurchasesService {
             totalAmount,
             status: PurchaseOrderStatus.ORDERED,
             type: data.type || PurchaseOrderType.MANUAL,
-            invoiceNumber: data.invoiceNumber,
+            invoiceNumber: data.invoiceNumber || '',
+
         });
 
         const savedPo = await this.poRepository.save(po);
