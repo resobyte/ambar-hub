@@ -58,14 +58,17 @@ export class RoutesController {
         @Query('storeId') storeId?: string,
         @Query('type') type?: string,
         @Query('productBarcodes') productBarcodes?: string,
+        @Query('limit') limit?: string,
     ) {
         const typeFilter = type ? type.split(',').filter(Boolean) : undefined;
         const barcodes = productBarcodes ? productBarcodes.split(',').filter(Boolean) : undefined;
+        const orderLimit = limit ? parseInt(limit, 10) : undefined;
 
         const suggestions = await this.routesService.getRouteSuggestions(
             storeId,
             typeFilter,
             barcodes,
+            orderLimit,
         );
 
         return {
@@ -76,6 +79,7 @@ export class RoutesController {
             },
         };
     }
+
 
     @Get(':id')
     async findOne(@Param('id', ParseUUIDPipe) id: string) {

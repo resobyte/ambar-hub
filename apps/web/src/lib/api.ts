@@ -1223,11 +1223,13 @@ export async function getRouteSuggestions(options?: {
   storeId?: string;
   type?: string;
   productBarcodes?: string[];
+  limit?: number;
 }): Promise<{ data: RouteSuggestion[]; meta: { total: number } }> {
   const params = new URLSearchParams();
-  if (options?.storeId) params.append('storeId', options.storeId);
-  if (options?.type) params.append('type', options.type);
+  if (options?.storeId && options.storeId !== 'all') params.append('storeId', options.storeId);
+  if (options?.type && options.type !== 'all') params.append('type', options.type);
   if (options?.productBarcodes?.length) params.append('productBarcodes', options.productBarcodes.join(','));
+  if (options?.limit) params.append('limit', String(options.limit));
 
   const res = await fetch(`${API_URL}/routes/suggestions?${params}`, {
     cache: 'no-store',
@@ -1238,6 +1240,7 @@ export async function getRouteSuggestions(options?: {
   }
   return res.json();
 }
+
 
 export async function printRouteLabel(routeId: string): Promise<string> {
   const res = await fetch(`${API_URL}/routes/${routeId}/print-label`, {

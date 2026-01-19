@@ -290,6 +290,7 @@ export class RoutesService {
         storeId?: string,
         typeFilter?: string[],
         productBarcodes?: string[],
+        orderLimit?: number,
     ): Promise<RouteSuggestion[]> {
         // Get all available orders
         const filter: RouteFilterDto = { storeId, productBarcodes };
@@ -380,8 +381,8 @@ export class RoutesService {
                 suggestions.push({
                     id: `suggestion-${++suggestionId}`,
                     type: 'mixed',
-                    name: `Çoklu Ürün Siparişleri (${multiProductOrders.length} sipariş)`,
-                    description: `${productMap.size} farklı ürün - Toplam ${totalQty} adet`,
+                    name: `Karma Siparişler (${multiProductOrders.length} sipariş)`,
+                    description: `Her siparişte birden fazla farklı ürün var`,
                     storeName,
                     storeId: storeKey !== 'no-store' ? storeKey : undefined,
                     orderCount: multiProductOrders.length,
@@ -395,6 +396,20 @@ export class RoutesService {
                     orders: multiProductOrders,
                     priority: 50, // Lower priority for mixed
                 });
+
+            }
+        }
+
+        // Apply FIFO limit to each suggestion's orders
+        if (orderLimit && orderLimit > 0) {
+            for (const suggestion of suggestions) {
+                if (suggestion.orders.length > orderLimit) {
+                    suggestion.orders = suggestion.orders.slice(0, orderLimit);
+                    suggestion.orderCount = suggestion.orders.length;
+                    suggestion.totalQuantity = suggestion.orders.reduce(
+                        (sum, o) => sum + o.totalQuantity, 0
+                    );
+                }
             }
         }
 
@@ -407,6 +422,7 @@ export class RoutesService {
 
         return suggestions.sort((a, b) => b.priority - a.priority);
     }
+
 
     async remove(id: string): Promise<void> {
         const route = await this.routeRepository.findOne({
