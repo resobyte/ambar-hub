@@ -240,6 +240,7 @@ export class IntegrationsService {
         listPrice?: number;
       } = {
         barcode: product.barcode,
+      };
 
       if (integrationStore.sendStock) {
         item.quantity = Math.max(0, Math.min(quantity, 20000));
