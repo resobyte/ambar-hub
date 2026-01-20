@@ -25,7 +25,7 @@ export function AppLayout({ children, user, currentPath }: AppLayoutProps) {
         onMobileMenuClose={closeMobileMenu}
       />
       <main className="flex-1 flex flex-col overflow-hidden">
-        <Topbar user={user} onMobileMenuOpen={openMobileMenu} />
+        {/* <Topbar user={user} onMobileMenuOpen={openMobileMenu} /> */}
         <div className="flex-1 overflow-auto p-6 md:p-8 bg-muted/20">
           {children}
         </div>
