@@ -128,17 +128,18 @@ export class PickingService {
             const productIds = products.map(p => p.id);
 
             if (productIds.length > 0) {
-                // Find shelf stocks for these products
-                const shelfStocks = await this.shelfStockRepository.find({
-                    where: { productId: In(productIds) },
-                    relations: [
-                        'shelf',
-                        'shelf.parent',
-                        'shelf.parent.parent',
-                        'shelf.parent.parent.parent',
-                        'shelf.parent.parent.parent.parent'
-                    ],
-                });
+                // Find shelf stocks for these products - ONLY from sellable shelves
+                const shelfStocks = await this.shelfStockRepository
+                    .createQueryBuilder('ss')
+                    .innerJoinAndSelect('ss.shelf', 'shelf')
+                    .leftJoinAndSelect('shelf.parent', 'parent1')
+                    .leftJoinAndSelect('parent1.parent', 'parent2')
+                    .leftJoinAndSelect('parent2.parent', 'parent3')
+                    .leftJoinAndSelect('parent3.parent', 'parent4')
+                    .where('ss.productId IN (:...productIds)', { productIds })
+                    .andWhere('ss.quantity > 0')
+                    .andWhere('shelf.isSellable = :isSellable', { isSellable: true })
+                    .getMany();
 
                 // Map product ID to shelf location (taking the one with most stock or first found)
                 const productShelfMap = new Map<string, string>();
@@ -152,7 +153,7 @@ export class PickingService {
                     stocksByProduct.get(stock.productId)?.push(stock);
                 }
 
-                // Determine best shelf for each product
+                // Determine best shelf for each product (only from sellable shelves)
                 for (const [productId, stocks] of stocksByProduct) {
                     // Sort by quantity desc to pick shelf with most stock
                     stocks.sort((a, b) => b.quantity - a.quantity);

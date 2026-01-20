@@ -11,6 +11,7 @@ import { RouteOrder } from './entities/route-order.entity';
 import { Order } from '../orders/entities/order.entity';
 import { OrderItem } from '../orders/entities/order-item.entity';
 import { Product } from '../products/entities/product.entity';
+import { ShelfStock } from '../shelves/entities/shelf-stock.entity';
 import { RouteStatus } from './enums/route-status.enum';
 import { OrderStatus } from '../orders/enums/order-status.enum';
 import { CreateRouteDto } from './dto/create-route.dto';
@@ -70,9 +71,11 @@ export class RoutesService {
         private readonly orderItemRepository: Repository<OrderItem>,
         @InjectRepository(Product)
         private readonly productRepository: Repository<Product>,
+        @InjectRepository(ShelfStock)
+        private readonly shelfStockRepository: Repository<ShelfStock>,
     ) { }
 
-    async create(dto: CreateRouteDto): Promise<RouteResponseDto> {
+    async create(dto: CreateRouteDto, userId?: string): Promise<RouteResponseDto> {
         // Validate orders exist and are in valid status
         const orders = await this.orderRepository.find({
             where: { id: In(dto.orderIds) },
@@ -99,11 +102,71 @@ export class RoutesService {
             throw new BadRequestException('Some orders are already in an active route');
         }
 
-        // Calculate totals
+        // Check if all products are on sellable shelves
+        const allProductBarcodes: string[] = [];
+        for (const order of orders) {
+            if (order.items) {
+                order.items.forEach(item => {
+                    if (item.barcode) allProductBarcodes.push(item.barcode);
+                });
+            }
+        }
+
+        if (allProductBarcodes.length > 0) {
+            // Get products by barcodes
+            const products = await this.productRepository.find({
+                where: { barcode: In(allProductBarcodes) },
+            });
+
+            const productIds = products.map(p => p.id);
+
+            if (productIds.length > 0) {
+                // Check shelf stocks for these products - only on sellable shelves
+                const shelfStocks = await this.shelfStockRepository
+                    .createQueryBuilder('ss')
+                    .innerJoin('ss.shelf', 'shelf')
+                    .where('ss.productId IN (:...productIds)', { productIds })
+                    .andWhere('ss.quantity > 0')
+                    .andWhere('shelf.isSellable = :isSellable', { isSellable: true })
+                    .select(['ss.productId', 'SUM(ss.quantity) as totalQty'])
+                    .groupBy('ss.productId')
+                    .getRawMany();
+
+                const sellableProductIds = new Set(shelfStocks.map(s => s.ss_product_id || s.productId));
+
+                // Find products that are NOT on sellable shelves
+                const unsellableProducts: string[] = [];
+                for (const product of products) {
+                    if (!sellableProductIds.has(product.id)) {
+                        unsellableProducts.push(product.name || product.barcode);
+                    }
+                }
+
+                if (unsellableProducts.length > 0) {
+                    throw new BadRequestException(
+                        `Şu ürünler satılabilir rafta değil: ${unsellableProducts.slice(0, 3).join(', ')}${unsellableProducts.length > 3 ? ` ve ${unsellableProducts.length - 3} ürün daha` : ''}`
+                    );
+                }
+            }
+        }
+
+        // Calculate totals and unique products
         let totalItemCount = 0;
+        const allBarcodes = new Set<string>();
+        let orderStartDate: Date | null = null;
+        let orderEndDate: Date | null = null;
+
         for (const order of orders) {
             if (order.items) {
                 totalItemCount += order.items.reduce((sum, item) => sum + (item.quantity || 1), 0);
+                order.items.forEach(item => {
+                    if (item.barcode) allBarcodes.add(item.barcode);
+                });
+            }
+            if (order.orderDate) {
+                const oDate = new Date(order.orderDate);
+                if (!orderStartDate || oDate < orderStartDate) orderStartDate = oDate;
+                if (!orderEndDate || oDate > orderEndDate) orderEndDate = oDate;
             }
         }
 
@@ -131,8 +194,12 @@ export class RoutesService {
             status: RouteStatus.COLLECTING,
             totalOrderCount: orders.length,
             totalItemCount,
+            uniqueProductCount: allBarcodes.size,
             pickedItemCount: 0,
             packedOrderCount: 0,
+            createdById: userId || null,
+            orderStartDate,
+            orderEndDate,
             isActive: true,
         });
 
@@ -164,7 +231,8 @@ export class RoutesService {
     async findAll(status?: RouteStatus[]): Promise<RouteResponseDto[]> {
         const queryBuilder = this.routeRepository
             .createQueryBuilder('route')
-            .leftJoinAndSelect('route.orders', 'orders')
+            .leftJoinAndSelect('route.routeOrders', 'routeOrders')
+            .leftJoinAndSelect('routeOrders.order', 'order')
             .where('route.isActive = :isActive', { isActive: true });
 
         if (status && status.length > 0) {
@@ -180,7 +248,7 @@ export class RoutesService {
     async findOne(id: string): Promise<RouteResponseDto> {
         const route = await this.routeRepository.findOne({
             where: { id },
-            relations: ['orders', 'orders.items', 'orders.store', 'orders.customer'],
+            relations: ['routeOrders', 'routeOrders.order', 'routeOrders.order.items', 'routeOrders.order.store', 'routeOrders.order.customer', 'createdBy'],
         });
 
         if (!route) {

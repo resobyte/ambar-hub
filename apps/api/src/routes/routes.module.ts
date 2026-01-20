@@ -5,6 +5,7 @@ import { RouteOrder } from './entities/route-order.entity';
 import { Order } from '../orders/entities/order.entity';
 import { OrderItem } from '../orders/entities/order-item.entity';
 import { Product } from '../products/entities/product.entity';
+import { ShelfStock } from '../shelves/entities/shelf-stock.entity';
 import { RoutesService } from './routes.service';
 import { RoutesController } from './routes.controller';
 
@@ -16,6 +17,7 @@ import { RoutesController } from './routes.controller';
             Order,
             OrderItem,
             Product,
+            ShelfStock,
         ]),
     ],
     controllers: [RoutesController],

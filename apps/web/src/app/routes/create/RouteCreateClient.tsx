@@ -227,14 +227,6 @@ export function RouteCreateClient() {
                 </BreadcrumbList>
             </Breadcrumb>
 
-            {/* Header */}
-            <div className="flex items-center gap-4">
-                <Button variant="ghost" size="sm" onClick={() => router.push('/routes')}>
-                    <ArrowLeft className="h-4 w-4 mr-2" />
-                    Geri
-                </Button>
-                <h1 className="text-2xl font-bold">Yeni Rota Oluştur</h1>
-            </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Order Selection - Left */}

@@ -7,6 +7,17 @@ const nextConfig = {
   experimental: {
     outputFileTracingRoot: path.join(__dirname, '../../'),
   },
+  compiler: {
+    removeConsole: process.env.NODE_ENV === 'production',
+  },
+  modularizeImports: {
+    'lucide-react': {
+      transform: 'lucide-react/dist/esm/icons/{{kebabCase member}}',
+    },
+    'date-fns': {
+      transform: 'date-fns/{{member}}',
+    },
+  },
   async rewrites() {
     return [
       {
