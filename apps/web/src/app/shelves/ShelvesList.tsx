@@ -77,6 +77,7 @@ interface Shelf {
     parentId: string | null;
     path: string;
     globalSlot: number;
+    rafId?: number;
     isSellable: boolean;
     isReservable: boolean;
     children?: Shelf[];
@@ -895,6 +896,7 @@ export function ShelvesList() {
                                             name: shelf.name,
                                             barcode: shelf.barcode,
                                             globalSlot: shelf.globalSlot,
+                                            rafId: shelf.rafId,
                                         }]));
                                         window.open(`/shelves/print?data=${data}`, '_blank');
                                     }}
@@ -1204,7 +1206,7 @@ export function ShelvesList() {
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                            const allShelves: Array<{ id: string; name: string; barcode: string; globalSlot: number | null }> = [];
+                            const allShelves: Array<{ id: string; name: string; barcode: string; globalSlot: number | null; rafId?: number }> = [];
                             const collectShelves = (items: Shelf[]) => {
                                 items.forEach(shelf => {
                                     allShelves.push({
@@ -1212,6 +1214,7 @@ export function ShelvesList() {
                                         name: shelf.name,
                                         barcode: shelf.barcode,
                                         globalSlot: shelf.globalSlot,
+                                        rafId: shelf.rafId,
                                     });
                                     if (shelf.children?.length) collectShelves(shelf.children);
                                 });

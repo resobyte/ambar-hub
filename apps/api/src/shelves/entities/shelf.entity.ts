@@ -47,6 +47,10 @@ export class Shelf extends BaseEntity {
     @Column({ name: 'global_slot', type: 'int', nullable: true })
     globalSlot: number | null;
 
+    // Raf ID for barcode printing (from Excel RAF ID column)
+    @Column({ name: 'raf_id', type: 'int', nullable: true, unique: true })
+    rafId: number | null;
+
     // Whether products on this shelf can be sold
     @Column({ name: 'is_sellable', default: true })
     isSellable: boolean;

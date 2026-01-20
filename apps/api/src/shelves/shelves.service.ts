@@ -55,6 +55,7 @@ export class ShelvesService {
             warehouseId: dto.warehouseId,
             path,
             globalSlot: dto.globalSlot ?? null,
+            rafId: dto.rafId ?? null,
             isSellable: isSellable ?? true,
             isReservable: isReservable ?? true,
             // Explicitly set parent to null for root shelves - required by TypeORM MaterializedPath
@@ -66,6 +67,13 @@ export class ShelvesService {
             const existing = await this.shelfRepository.findOne({ where: { globalSlot: dto.globalSlot } });
             if (existing) {
                 throw new BadRequestException(`Global slot ${dto.globalSlot} is already in use by shelf: ${existing.name}`);
+            }
+        }
+
+        if (dto.rafId) {
+            const existing = await this.shelfRepository.findOne({ where: { rafId: dto.rafId } });
+            if (existing) {
+                throw new BadRequestException(`Raf ID ${dto.rafId} is already in use by shelf: ${existing.name}`);
             }
         }
 
@@ -451,7 +459,8 @@ export class ShelvesService {
             try {
                 // Get column values (support both Turkish and English column names)
                 const name = row['RAF ADI'] || row['name'] || row['Name'];
-                const globalSlot = parseInt(row['RAF ID'] || row['GLOBAL SLOT'] || row['globalSlot'] || '0', 10);
+                const rafId = parseInt(row['RAF ID'] || row['rafId'] || '0', 10);
+                const globalSlot = parseInt(row['GLOBAL SLOT'] || row['globalSlot'] || '0', 10);
                 const typeStr = row['RAF TİPİ'] || row['type'] || row['Type'] || 'NORMAL';
                 const parentName = row['KÖK'] || row['parent'] || row['Parent'];
                 const collectableStr = row['TOPLANABİLİR'] || row['collectable'] || 'HAYIR';
@@ -466,12 +475,12 @@ export class ShelvesService {
                 const shelfType = mapShelfType(typeStr);
                 const rules = SHELF_TYPE_RULES[shelfType];
 
-                // Check if shelf exists by globalSlot
-                let existingShelf = globalSlot > 0
-                    ? await this.shelfRepository.findOne({ where: { globalSlot, warehouseId } })
+                // Check if shelf exists by rafId first, then by name
+                let existingShelf = rafId > 0
+                    ? await this.shelfRepository.findOne({ where: { rafId, warehouseId } })
                     : null;
 
-                // Also check by name if not found by globalSlot
+                // Also check by name if not found by rafId
                 if (!existingShelf) {
                     existingShelf = shelfNameMap.get(name) || null;
                 }
@@ -491,6 +500,7 @@ export class ShelvesService {
                     await this.update(existingShelf.id, {
                         name,
                         type: shelfType,
+                        rafId: rafId > 0 ? rafId : undefined,
                         globalSlot: globalSlot > 0 ? globalSlot : undefined,
                         isSellable,
                         isReservable: rules.isReservable,
@@ -504,6 +514,7 @@ export class ShelvesService {
                         name,
                         type: shelfType,
                         warehouseId,
+                        rafId: rafId > 0 ? rafId : undefined,
                         globalSlot: globalSlot > 0 ? globalSlot : undefined,
                         isSellable,
                         isReservable: rules.isReservable,

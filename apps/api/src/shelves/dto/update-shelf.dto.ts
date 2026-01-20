@@ -27,6 +27,10 @@ export class UpdateShelfDto {
     @IsOptional()
     globalSlot?: number;
 
+    @IsNumber()
+    @IsOptional()
+    rafId?: number;
+
     @IsBoolean()
     @IsOptional()
     isSellable?: boolean;

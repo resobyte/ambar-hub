@@ -9,6 +9,7 @@ interface ShelfData {
     name: string;
     barcode: string;
     globalSlot: number | null;
+    rafId: number | null;
 }
 
 export default function PrintBarcodesPage() {
@@ -33,10 +34,8 @@ export default function PrintBarcodesPage() {
         shelves.forEach(shelf => {
             const ref = barcodeRefs.current[shelf.id];
             if (ref) {
-                const barcodeValue = shelf.barcode
-                    .replace(/\s*>\s*/g, '-')
-                    .replace(/[^a-zA-Z0-9-]/g, '')
-                    .toUpperCase() || shelf.id.slice(0, 8);
+                // Use rafId (Excel RAF ID) as barcode value
+                const barcodeValue = shelf.rafId ? String(shelf.rafId) : (shelf.globalSlot ? String(shelf.globalSlot) : shelf.id.slice(0, 8));
                 JsBarcode(ref, barcodeValue, {
                     format: 'CODE128',
                     width: 1,
@@ -143,17 +142,17 @@ export default function PrintBarcodesPage() {
                         overflow: 'hidden',
                     }}
                 >
-                    <div style={{ 
-                        display: 'flex', 
-                        flexDirection: 'column', 
-                        alignItems: 'center', 
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
                         justifyContent: 'center',
                         width: '100%',
                         maxWidth: '51mm',
                     }}>
-                        <div style={{ 
-                            fontSize: '10px', 
-                            fontWeight: 'bold', 
+                        <div style={{
+                            fontSize: '10px',
+                            fontWeight: 'bold',
                             marginBottom: '4px',
                             textAlign: 'center',
                         }}>
@@ -163,6 +162,14 @@ export default function PrintBarcodesPage() {
                             ref={el => { barcodeRefs.current[shelf.id] = el; }}
                             style={{ display: 'block', margin: '0 auto', maxWidth: '100%' }}
                         />
+                        <div style={{
+                            fontSize: '8px',
+                            color: '#666',
+                            marginTop: '2px',
+                            textAlign: 'center',
+                        }}>
+                            {shelf.rafId || shelf.globalSlot || shelf.id.slice(0, 8)}
+                        </div>
                     </div>
                 </div>
             ))}

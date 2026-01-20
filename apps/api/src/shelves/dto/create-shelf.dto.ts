@@ -26,6 +26,10 @@ export class CreateShelfDto {
     @IsOptional()
     globalSlot?: number;
 
+    @IsNumber()
+    @IsOptional()
+    rafId?: number;
+
     @IsBoolean()
     @IsOptional()
     isSellable?: boolean;
