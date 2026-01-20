@@ -1200,6 +1200,10 @@ export async function getFilteredOrders(filter: {
   productBarcodes?: string[];
   overdue?: boolean;
   search?: string;
+  minTotalQuantity?: number;
+  maxTotalQuantity?: number;
+  micro?: boolean;
+  brand?: string;
 }): Promise<{ data: any[]; meta: { total: number } }> {
   const params = new URLSearchParams();
   if (filter.storeId) params.append('storeId', filter.storeId);
@@ -1208,6 +1212,10 @@ export async function getFilteredOrders(filter: {
   if (filter.productBarcodes?.length) params.append('productBarcodes', filter.productBarcodes.join(','));
   if (filter.overdue) params.append('overdue', 'true');
   if (filter.search) params.append('search', filter.search);
+  if (filter.minTotalQuantity !== undefined) params.append('minTotalQuantity', filter.minTotalQuantity.toString());
+  if (filter.maxTotalQuantity !== undefined) params.append('maxTotalQuantity', filter.maxTotalQuantity.toString());
+  if (filter.micro !== undefined) params.append('micro', filter.micro.toString());
+  if (filter.brand) params.append('brand', filter.brand);
 
   const res = await fetch(`${API_URL}/routes/filter-orders?${params}`, {
     cache: 'no-store',

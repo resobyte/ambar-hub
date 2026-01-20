@@ -239,6 +239,10 @@ export class RoutesService {
                 .andWhere('order.agreedDeliveryDate < :now', { now });
         }
 
+        if (filter.micro !== undefined) {
+            queryBuilder.andWhere('order.micro = :micro', { micro: filter.micro });
+        }
+
         const orders = await queryBuilder.orderBy('order.orderDate', 'ASC').getMany();
 
         let filteredOrders = orders;
@@ -280,6 +284,17 @@ export class RoutesService {
             });
         }
 
+        // Filter by brand (product name contains brand)
+        if (filter.brand && filter.brand.trim()) {
+            const brandLower = filter.brand.trim().toLowerCase();
+            filteredOrders = filteredOrders.filter(order => {
+                if (!order.items || order.items.length === 0) return false;
+                return order.items.some(item => 
+                    item.productName?.toLowerCase().includes(brandLower)
+                );
+            });
+        }
+
         return filteredOrders.map(order => ({
             id: order.id,
             orderNumber: order.orderNumber,
@@ -288,6 +303,7 @@ export class RoutesService {
             totalPrice: order.totalPrice,
             orderDate: order.orderDate,
             agreedDeliveryDate: order.agreedDeliveryDate,
+            micro: order.micro,
             store: order.store ? { id: order.store.id, name: order.store.name } : null,
             customer: order.customer ? {
                 firstName: order.customer.firstName,
@@ -298,6 +314,8 @@ export class RoutesService {
                 productName: item.productName,
                 quantity: item.quantity,
                 sku: item.sku,
+                productColor: item.productColor,
+                productSize: item.productSize,
             })) || [],
             uniqueProductCount: new Set(order.items?.map(i => i.barcode).filter(Boolean)).size,
             totalQuantity: order.items?.reduce((sum, i) => sum + (i.quantity || 1), 0) || 0,

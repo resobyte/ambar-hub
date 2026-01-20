@@ -132,18 +132,7 @@ export function ShelvesList() {
     const [productComboOpen, setProductComboOpen] = useState(false);
     const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
     const [stockSearchQuery, setStockSearchQuery] = useState('');
-    const stockSearchInputRef = useRef<HTMLInputElement>(null);
-    const stockSearchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const { toast } = useToast();
-
-    const handleStockSearch = useCallback((value: string) => {
-        if (stockSearchTimeoutRef.current) {
-            clearTimeout(stockSearchTimeoutRef.current);
-        }
-        stockSearchTimeoutRef.current = setTimeout(() => {
-            setStockSearchQuery(value);
-        }, 300);
-    }, []);
 
     const filteredStocks = useMemo(() => {
         if (!shelfStocks || shelfStocks.length === 0) return [];
@@ -245,9 +234,6 @@ export function ShelvesList() {
 
     useEffect(() => {
         setStockSearchQuery('');
-        if (stockSearchInputRef.current) {
-            stockSearchInputRef.current.value = '';
-        }
         if (selectedItem?.type === 'shelf') {
             fetchShelfStocks(selectedItem.data.id);
         } else {
@@ -821,11 +807,11 @@ export function ShelvesList() {
         </div>
     );
 
-    const RightPanel = () => {
-        const shelf = getSelectedShelf();
-        const warehouseId = getSelectedWarehouseId();
-        const warehouse = warehouses.find(w => w.id === warehouseId);
+    const shelf = getSelectedShelf();
+    const rightPanelWarehouseId = getSelectedWarehouseId();
+    const rightPanelWarehouse = warehouses.find(w => w.id === rightPanelWarehouseId);
 
+    const rightPanelContent = useMemo(() => {
         if (!selectedItem) {
             return (
                 <div className="flex-1 flex items-center justify-center bg-muted/30">
@@ -850,18 +836,18 @@ export function ShelvesList() {
                             <BreadcrumbItem>
                                 <BreadcrumbLink href="/shelves">Raflar</BreadcrumbLink>
                             </BreadcrumbItem>
-                            {warehouse && (
+                            {rightPanelWarehouse && (
                                 <>
                                     <BreadcrumbSeparator />
                                     <BreadcrumbItem>
                                         {selectedItem.type === 'warehouse' ? (
-                                            <BreadcrumbPage>{warehouse.name}</BreadcrumbPage>
+                                            <BreadcrumbPage>{rightPanelWarehouse.name}</BreadcrumbPage>
                                         ) : (
                                             <BreadcrumbLink
                                                 className="cursor-pointer"
-                                                onClick={() => selectWarehouse(warehouse)}
+                                                onClick={() => selectWarehouse(rightPanelWarehouse)}
                                             >
-                                                {warehouse.name}
+                                                {rightPanelWarehouse.name}
                                             </BreadcrumbLink>
                                         )}
                                     </BreadcrumbItem>
@@ -908,7 +894,7 @@ export function ShelvesList() {
                                 <Button
                                     variant="outline"
                                     size="sm"
-                                    onClick={() => handleDelete(shelf.id, warehouseId!)}
+                                    onClick={() => handleDelete(shelf.id, rightPanelWarehouseId!)}
                                     className="text-destructive hover:text-destructive"
                                 >
                                     <Trash2 className="w-4 h-4 mr-2" />
@@ -1072,7 +1058,7 @@ export function ShelvesList() {
                                         <Button
                                             variant="outline"
                                             size="sm"
-                                            onClick={() => handleCreate(warehouseId!, shelf.id)}
+                                            onClick={() => handleCreate(rightPanelWarehouseId!, shelf.id)}
                                         >
                                             <Plus className="w-4 h-4 mr-2" />
                                             Alt Raf Ekle
@@ -1084,7 +1070,7 @@ export function ShelvesList() {
                                                 <Card
                                                     key={child.id}
                                                     className="cursor-pointer hover:shadow-sm transition-all hover:border-primary/50"
-                                                    onClick={() => selectShelf(child, warehouseId!)}
+                                                    onClick={() => selectShelf(child, rightPanelWarehouseId!)}
                                                 >
                                                     <CardContent className="p-3 flex items-center justify-between">
                                                         <div className="flex items-center gap-2">
@@ -1103,7 +1089,7 @@ export function ShelvesList() {
                             <Card>
                                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
                                     <div>
-                                        <CardTitle className="text-lg">Raf Stok Durumu</CardTitle>
+                                        <CardTitle className="text-lg">Bu Rafta ({shelf?.name})</CardTitle>
                                         <p className="text-sm text-muted-foreground mt-1">
                                             {shelfStocks?.length || 0} farklı ürün, toplam {shelfStocks?.reduce((sum: number, s: StockItem) => sum + (s.quantity || 0), 0).toLocaleString('tr-TR')} adet
                                         </p>
@@ -1121,13 +1107,12 @@ export function ShelvesList() {
                                     {shelfStocks && shelfStocks.length > 0 && (
                                         <div className="relative mb-4">
                                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                            <input
-                                                ref={stockSearchInputRef}
+                                            <Input
                                                 type="text"
                                                 placeholder="Stok ara (isim, barkod, SKU)..."
-                                                defaultValue=""
-                                                onChange={(e) => handleStockSearch(e.target.value)}
-                                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 pl-10"
+                                                value={stockSearchQuery}
+                                                onChange={(e) => setStockSearchQuery(e.target.value)}
+                                                className="pl-10"
                                             />
                                         </div>
                                     )}
@@ -1192,7 +1177,7 @@ export function ShelvesList() {
                                 <div className="flex justify-center">
                                     <Button
                                         variant="outline"
-                                        onClick={() => handleCreate(warehouseId!, shelf?.id)}
+                                        onClick={() => handleCreate(rightPanelWarehouseId!, shelf?.id)}
                                     >
                                         <Plus className="w-4 h-4 mr-2" />
                                         Alt Raf Ekle
@@ -1246,7 +1231,7 @@ export function ShelvesList() {
                 </div>
             </div>
         );
-    };
+    }, [selectedItem, shelf, rightPanelWarehouse, rightPanelWarehouseId, shelfStocks, filteredStocks, loadingStocks, stockSearchQuery, shelvesMap, loadingWarehouse]);
 
     return (
         <div className="h-[calc(100vh-6rem)]">
@@ -1287,7 +1272,7 @@ export function ShelvesList() {
                         <LeftPanel />
                     </div>
                     <div className={`${isMobilePanelOpen ? 'flex' : 'hidden md:flex'} flex-1`}>
-                        <RightPanel />
+                        {rightPanelContent}
                     </div>
                 </div>
             </Card>
@@ -1435,7 +1420,7 @@ export function ShelvesList() {
             </Dialog>
 
             <Dialog open={isTransferModalOpen} onOpenChange={setIsTransferModalOpen}>
-                <DialogContent className="sm:max-w-md">
+                <DialogContent className="sm:max-w-lg">
                     <DialogHeader>
                         <DialogTitle>Stok Transferi</DialogTitle>
                     </DialogHeader>
@@ -1450,16 +1435,16 @@ export function ShelvesList() {
                                     else setSourceStocks([]);
                                 }}
                             >
-                                <SelectTrigger>
+                                <SelectTrigger className="w-full">
                                     <SelectValue placeholder="Seçiniz" />
                                 </SelectTrigger>
-                                <SelectContent>
+                                <SelectContent className="max-h-60">
                                     {globalShelves
                                         .filter((s: Shelf) => s.type !== 'WAREHOUSE')
                                         .sort((a, b) => a.name.localeCompare(b.name))
                                         .map((s: Shelf) => (
-                                            <SelectItem key={s.id} value={s.id}>
-                                                {s.name} {s.barcode && `[${s.barcode}]`}
+                                            <SelectItem key={s.id} value={s.id} className="truncate">
+                                                <span className="truncate">{s.name} {s.barcode && `[${s.barcode}]`}</span>
                                             </SelectItem>
                                         ))}
                                 </SelectContent>
@@ -1473,13 +1458,14 @@ export function ShelvesList() {
                                 onValueChange={(v) => setTransferFormData({ ...transferFormData, productId: v })}
                                 disabled={!transferFormData.fromShelfId || !sourceStocks?.length}
                             >
-                                <SelectTrigger>
+                                <SelectTrigger className="w-full">
                                     <SelectValue placeholder="Seçiniz" />
                                 </SelectTrigger>
-                                <SelectContent>
+                                <SelectContent className="max-h-60">
                                     {(sourceStocks || []).map((s: StockItem) => (
                                         <SelectItem key={s.productId} value={s.productId}>
-                                            {s.product?.name} (Mevcut: {s.quantity})
+                                            <span className="truncate">{s.product?.name}</span>
+                                            <span className="ml-2 text-muted-foreground">(Mevcut: {s.quantity})</span>
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
@@ -1492,16 +1478,16 @@ export function ShelvesList() {
                                 value={transferFormData.toShelfId}
                                 onValueChange={(v) => setTransferFormData({ ...transferFormData, toShelfId: v })}
                             >
-                                <SelectTrigger>
+                                <SelectTrigger className="w-full">
                                     <SelectValue placeholder="Seçiniz" />
                                 </SelectTrigger>
-                                <SelectContent>
+                                <SelectContent className="max-h-60">
                                     {globalShelves
                                         .filter((s: Shelf) => s.id !== transferFormData.fromShelfId && s.type !== 'WAREHOUSE')
                                         .sort((a, b) => a.name.localeCompare(b.name))
                                         .map((s: Shelf) => (
                                             <SelectItem key={s.id} value={s.id}>
-                                                {s.name} {s.barcode && `[${s.barcode}]`}
+                                                <span className="truncate">{s.name} {s.barcode && `[${s.barcode}]`}</span>
                                             </SelectItem>
                                         ))}
                                 </SelectContent>
@@ -1515,16 +1501,17 @@ export function ShelvesList() {
                                 value={transferFormData.quantity}
                                 onChange={(e) => setTransferFormData({ ...transferFormData, quantity: parseInt(e.target.value) || 0 })}
                                 min={1}
+                                className="w-full"
                             />
                             {sourceStocks?.find((s: StockItem) => s.productId === transferFormData.productId) && (
-                                <div className="flex items-center justify-between mt-1 px-1">
-                                    <span className="text-xs text-muted-foreground">
+                                <div className="flex items-center justify-between mt-2">
+                                    <span className="text-sm text-muted-foreground">
                                         Mevcut: {sourceStocks.find((s: StockItem) => s.productId === transferFormData.productId)?.quantity}
                                     </span>
                                     <Button
                                         type="button"
                                         variant="link"
-                                        className="h-auto p-0 text-xs"
+                                        className="h-auto p-0 text-sm"
                                         onClick={() => {
                                             const stock = sourceStocks.find((s: StockItem) => s.productId === transferFormData.productId);
                                             if (stock) {
@@ -1538,7 +1525,7 @@ export function ShelvesList() {
                             )}
                         </div>
 
-                        <div className="flex justify-end gap-2 pt-4">
+                        <div className="flex justify-end gap-2 pt-4 border-t">
                             <Button variant="outline" onClick={() => setIsTransferModalOpen(false)}>İptal</Button>
                             <Button onClick={handleTransfer}>Transfer Et</Button>
                         </div>

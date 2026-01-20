@@ -43,7 +43,13 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Slider } from '@/components/ui/slider';
-import { Loader2, ArrowLeft, Plus, Check, X } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import {
+    Collapsible,
+    CollapsibleContent,
+    CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import { Loader2, ArrowLeft, Plus, Check, X, ChevronDown, ChevronRight, Globe, Filter, Package } from 'lucide-react';
 
 interface FilteredOrder {
     id: string;
@@ -53,6 +59,7 @@ interface FilteredOrder {
     totalPrice: number;
     orderDate: string;
     agreedDeliveryDate: string | null;
+    micro: boolean;
     store: { id: string; name: string } | null;
     customer: { firstName: string; lastName: string } | null;
     items: {
@@ -60,6 +67,8 @@ interface FilteredOrder {
         productName: string;
         quantity: number;
         sku: string;
+        productColor?: string;
+        productSize?: string;
     }[];
     uniqueProductCount: number;
     totalQuantity: number;
@@ -77,6 +86,14 @@ export function RouteCreateClient() {
     const [storeFilter, setStoreFilter] = useState<string>('');
     const [typeFilter, setTypeFilter] = useState<string>('');
     const [searchFilter, setSearchFilter] = useState<string>('');
+    const [minQuantityFilter, setMinQuantityFilter] = useState<string>('');
+    const [maxQuantityFilter, setMaxQuantityFilter] = useState<string>('');
+    const [microFilter, setMicroFilter] = useState<string>('');
+    const [brandFilter, setBrandFilter] = useState<string>('');
+    const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+
+    // Expanded orders (to show items)
+    const [expandedOrderIds, setExpandedOrderIds] = useState<Set<string>>(new Set());
 
     // Selection
     const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
@@ -92,6 +109,10 @@ export function RouteCreateClient() {
                 storeId: storeFilter && storeFilter !== 'all' ? storeFilter : undefined,
                 type: typeFilter && typeFilter !== 'all' ? typeFilter : undefined,
                 search: searchFilter || undefined,
+                minTotalQuantity: minQuantityFilter ? parseInt(minQuantityFilter) : undefined,
+                maxTotalQuantity: maxQuantityFilter ? parseInt(maxQuantityFilter) : undefined,
+                micro: microFilter === 'yes' ? true : microFilter === 'no' ? false : undefined,
+                brand: brandFilter || undefined,
             });
             setOrders(response.data || []);
         } catch (err) {
@@ -99,7 +120,7 @@ export function RouteCreateClient() {
         } finally {
             setLoading(false);
         }
-    }, [storeFilter, typeFilter, searchFilter]);
+    }, [storeFilter, typeFilter, searchFilter, minQuantityFilter, maxQuantityFilter, microFilter, brandFilter]);
 
     const fetchStores = useCallback(async () => {
         try {
@@ -112,6 +133,16 @@ export function RouteCreateClient() {
 
     useEffect(() => { fetchOrders(); }, [fetchOrders]);
     useEffect(() => { fetchStores(); }, [fetchStores]);
+
+    const toggleOrderExpanded = (orderId: string) => {
+        const newSet = new Set(expandedOrderIds);
+        if (newSet.has(orderId)) {
+            newSet.delete(orderId);
+        } else {
+            newSet.add(orderId);
+        }
+        setExpandedOrderIds(newSet);
+    };
 
     const handleSelectAll = () => {
         const limitedOrders = orders.slice(0, fifoLimit);
@@ -211,9 +242,22 @@ export function RouteCreateClient() {
                     {/* Filters */}
                     <Card>
                         <CardHeader className="pb-3">
-                            <CardTitle className="text-base">Sipariş Filtreleri</CardTitle>
+                            <div className="flex items-center justify-between">
+                                <CardTitle className="text-base flex items-center gap-2">
+                                    <Filter className="h-4 w-4" />
+                                    Sipariş Filtreleri
+                                </CardTitle>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                                >
+                                    {showAdvancedFilters ? 'Gizle' : 'Gelişmiş Filtreler'}
+                                    {showAdvancedFilters ? <ChevronDown className="h-4 w-4 ml-1" /> : <ChevronRight className="h-4 w-4 ml-1" />}
+                                </Button>
+                            </div>
                         </CardHeader>
-                        <CardContent>
+                        <CardContent className="space-y-4">
                             <div className="flex items-center gap-4 flex-wrap">
                                 <div className="flex-1 min-w-[200px]">
                                     <Input
@@ -247,6 +291,69 @@ export function RouteCreateClient() {
                                     </SelectContent>
                                 </Select>
                             </div>
+
+                            {showAdvancedFilters && (
+                                <div className="pt-4 border-t space-y-4">
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                        <div className="space-y-2">
+                                            <Label className="text-xs text-muted-foreground">Min Adet</Label>
+                                            <Input
+                                                type="number"
+                                                placeholder="Min"
+                                                value={minQuantityFilter}
+                                                onChange={(e) => setMinQuantityFilter(e.target.value)}
+                                                min={1}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs text-muted-foreground">Max Adet</Label>
+                                            <Input
+                                                type="number"
+                                                placeholder="Max"
+                                                value={maxQuantityFilter}
+                                                onChange={(e) => setMaxQuantityFilter(e.target.value)}
+                                                min={1}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs text-muted-foreground">Marka/Ürün</Label>
+                                            <Input
+                                                placeholder="Marka ara..."
+                                                value={brandFilter}
+                                                onChange={(e) => setBrandFilter(e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs text-muted-foreground">Mikro İhracat</Label>
+                                            <Select value={microFilter} onValueChange={setMicroFilter}>
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Tümü" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="all">Tümü</SelectItem>
+                                                    <SelectItem value="yes">Mikro İhracat</SelectItem>
+                                                    <SelectItem value="no">Normal</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-end">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => {
+                                                setMinQuantityFilter('');
+                                                setMaxQuantityFilter('');
+                                                setBrandFilter('');
+                                                setMicroFilter('');
+                                            }}
+                                        >
+                                            <X className="h-3 w-3 mr-1" />
+                                            Filtreleri Temizle
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
 
@@ -287,7 +394,8 @@ export function RouteCreateClient() {
                     <Card>
                         <CardHeader className="pb-3">
                             <div className="flex items-center justify-between">
-                                <CardTitle className="text-base">
+                                <CardTitle className="text-base flex items-center gap-2">
+                                    <Package className="h-4 w-4" />
                                     Siparişler ({orders.length} toplam)
                                 </CardTitle>
                                 <div className="flex gap-2">
@@ -303,10 +411,11 @@ export function RouteCreateClient() {
                             </div>
                         </CardHeader>
                         <CardContent className="p-0">
-                            <div className="max-h-[400px] overflow-auto">
+                            <div className="max-h-[500px] overflow-auto">
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
+                                            <TableHead className="w-10"></TableHead>
                                             <TableHead className="w-10"></TableHead>
                                             <TableHead>Sipariş No</TableHead>
                                             <TableHead>Mağaza</TableHead>
@@ -319,47 +428,116 @@ export function RouteCreateClient() {
                                     <TableBody>
                                         {loading ? (
                                             <TableRow>
-                                                <TableCell colSpan={7} className="text-center py-8">
+                                                <TableCell colSpan={8} className="text-center py-8">
                                                     <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                                                 </TableCell>
                                             </TableRow>
                                         ) : orders.length === 0 ? (
                                             <TableRow>
-                                                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                                                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                                                     Uygun sipariş bulunamadı
                                                 </TableCell>
                                             </TableRow>
                                         ) : (
                                             orders.map((order) => (
-                                                <TableRow
-                                                    key={order.id}
-                                                    className={selectedOrderIds.has(order.id) ? 'bg-primary/5' : ''}
-                                                >
-                                                    <TableCell>
-                                                        <Checkbox
-                                                            checked={selectedOrderIds.has(order.id)}
-                                                            onCheckedChange={() => handleToggleOrder(order.id)}
-                                                        />
-                                                    </TableCell>
-                                                    <TableCell className="font-medium">
-                                                        {order.orderNumber}
-                                                    </TableCell>
-                                                    <TableCell>{order.store?.name || '-'}</TableCell>
-                                                    <TableCell>
-                                                        {order.customer
-                                                            ? `${order.customer.firstName} ${order.customer.lastName}`
-                                                            : '-'}
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <Badge variant="outline">
-                                                            {order.uniqueProductCount} ürün
-                                                        </Badge>
-                                                    </TableCell>
-                                                    <TableCell>{order.totalQuantity}</TableCell>
-                                                    <TableCell className="text-muted-foreground text-sm">
-                                                        {new Date(order.orderDate).toLocaleDateString('tr-TR')}
-                                                    </TableCell>
-                                                </TableRow>
+                                                <>
+                                                    <TableRow
+                                                        key={order.id}
+                                                        className={`${selectedOrderIds.has(order.id) ? 'bg-primary/5' : ''} ${expandedOrderIds.has(order.id) ? 'border-b-0' : ''}`}
+                                                    >
+                                                        <TableCell>
+                                                            <Checkbox
+                                                                checked={selectedOrderIds.has(order.id)}
+                                                                onCheckedChange={() => handleToggleOrder(order.id)}
+                                                            />
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="h-6 w-6 p-0"
+                                                                onClick={() => toggleOrderExpanded(order.id)}
+                                                            >
+                                                                {expandedOrderIds.has(order.id) ? (
+                                                                    <ChevronDown className="h-4 w-4" />
+                                                                ) : (
+                                                                    <ChevronRight className="h-4 w-4" />
+                                                                )}
+                                                            </Button>
+                                                        </TableCell>
+                                                        <TableCell className="font-medium">
+                                                            <div className="flex items-center gap-2">
+                                                                {order.orderNumber}
+                                                                {order.micro && (
+                                                                    <Badge variant="secondary" className="text-xs">
+                                                                        <Globe className="h-3 w-3 mr-1" />
+                                                                        Mikro
+                                                                    </Badge>
+                                                                )}
+                                                            </div>
+                                                        </TableCell>
+                                                        <TableCell>{order.store?.name || '-'}</TableCell>
+                                                        <TableCell>
+                                                            {order.customer
+                                                                ? `${order.customer.firstName} ${order.customer.lastName}`
+                                                                : '-'}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Badge variant="outline">
+                                                                {order.uniqueProductCount} ürün
+                                                            </Badge>
+                                                        </TableCell>
+                                                        <TableCell>{order.totalQuantity}</TableCell>
+                                                        <TableCell className="text-muted-foreground text-sm">
+                                                            {new Date(order.orderDate).toLocaleDateString('tr-TR')}
+                                                        </TableCell>
+                                                    </TableRow>
+                                                    {expandedOrderIds.has(order.id) && (
+                                                        <TableRow key={`${order.id}-items`} className="bg-muted/30">
+                                                            <TableCell colSpan={8} className="p-0">
+                                                                <div className="px-12 py-3 space-y-2">
+                                                                    <div className="text-xs font-medium text-muted-foreground mb-2">
+                                                                        Sipariş İçeriği ({order.items.length} kalem)
+                                                                    </div>
+                                                                    <div className="grid gap-2">
+                                                                        {order.items.map((item, idx) => (
+                                                                            <div
+                                                                                key={`${order.id}-item-${idx}`}
+                                                                                className="flex items-center justify-between bg-background rounded-lg px-3 py-2 border"
+                                                                            >
+                                                                                <div className="flex-1 min-w-0">
+                                                                                    <p className="text-sm font-medium truncate">
+                                                                                        {item.productName}
+                                                                                    </p>
+                                                                                    <div className="flex items-center gap-2 mt-1">
+                                                                                        <span className="text-xs text-muted-foreground">
+                                                                                            {item.barcode || item.sku}
+                                                                                        </span>
+                                                                                        {item.productColor && (
+                                                                                            <Badge variant="outline" className="text-xs">
+                                                                                                {item.productColor}
+                                                                                            </Badge>
+                                                                                        )}
+                                                                                        {item.productSize && (
+                                                                                            <Badge variant="outline" className="text-xs">
+                                                                                                {item.productSize}
+                                                                                            </Badge>
+                                                                                        )}
+                                                                                    </div>
+                                                                                </div>
+                                                                                <div className="ml-4 flex items-center">
+                                                                                    <Badge>
+                                                                                        {item.quantity} adet
+                                                                                    </Badge>
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    )}
+                                                </>
                                             ))
                                         )}
                                     </TableBody>
