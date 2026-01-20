@@ -52,6 +52,9 @@ import {
     Check,
     PanelLeftClose,
     PanelLeft,
+    Upload,
+    FileSpreadsheet,
+    Download,
 } from 'lucide-react';
 
 const isServer = typeof window === 'undefined';
@@ -132,13 +135,21 @@ export function ShelvesList() {
     const [productComboOpen, setProductComboOpen] = useState(false);
     const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
     const [stockSearchQuery, setStockSearchQuery] = useState('');
+
+    // Excel Import states
+    const [isExcelImportOpen, setIsExcelImportOpen] = useState(false);
+    const [excelImportWarehouseId, setExcelImportWarehouseId] = useState('');
+    const [excelFile, setExcelFile] = useState<File | null>(null);
+    const [excelImporting, setExcelImporting] = useState(false);
+    const [importResult, setImportResult] = useState<{ success: number; updated: number; errors: string[] } | null>(null);
+
     const { toast } = useToast();
 
     const filteredStocks = useMemo(() => {
         if (!shelfStocks || shelfStocks.length === 0) return [];
         if (!stockSearchQuery) return shelfStocks;
         const query = stockSearchQuery.toLowerCase();
-        return shelfStocks.filter((stock: StockItem) => 
+        return shelfStocks.filter((stock: StockItem) =>
             stock.product?.name?.toLowerCase().includes(query) ||
             stock.product?.barcode?.toLowerCase().includes(query) ||
             stock.product?.sku?.toLowerCase().includes(query)
@@ -481,7 +492,7 @@ export function ShelvesList() {
 
         setSearchingProduct(true);
         try {
-            const res = await fetch(`${API_URL}/shelves/search-product-by-ids`, { 
+            const res = await fetch(`${API_URL}/shelves/search-product-by-ids`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
@@ -532,7 +543,7 @@ export function ShelvesList() {
         });
 
         const shelves = await fetchWarehouseShelves(warehouseId);
-        
+
         const findShelf = (items: Shelf[]): Shelf | null => {
             for (const shelf of items) {
                 if (shelf.id === shelfId) return shelf;
@@ -559,7 +570,7 @@ export function ShelvesList() {
 
         const shelvesToSearch = shelves || shelvesMap[warehouseId] || [];
         const shelf = findShelf(shelvesToSearch);
-        
+
         if (shelf) {
             const parentIds = findParentIds(shelvesToSearch, shelfId);
             setExpandedShelves(prev => {
@@ -567,7 +578,7 @@ export function ShelvesList() {
                 parentIds.forEach(id => next.add(id));
                 return next;
             });
-            
+
             selectShelf(shelf, warehouseId);
             toast({ title: 'Raf bulundu', description: `${shelf.name} rafına gidildi` });
         } else {
@@ -665,8 +676,8 @@ export function ShelvesList() {
                         <Folder className="w-4 h-4 text-amber-500 flex-shrink-0" />
                     )}
                     <span className="ml-2 truncate flex-1 font-medium">{shelf.name}</span>
-                    <Badge 
-                        variant="outline" 
+                    <Badge
+                        variant="outline"
                         className={`ml-2 text-xs flex-shrink-0 ${isSelected ? 'border-primary-foreground/50 text-primary-foreground' : ''}`}
                     >
                         {totalStock.toLocaleString('tr-TR')}
@@ -719,89 +730,89 @@ export function ShelvesList() {
                         </Button>
                     </div>
 
-            <ScrollArea className="flex-1">
-                <div className="p-3">
-                    {loading ? (
-                        <div className="flex items-center justify-center py-8">
-                            <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                        </div>
-                    ) : warehouses.length === 0 ? (
-                        <div className="text-center py-8 text-muted-foreground">
-                            <Warehouse className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                            <p>Depo bulunamadı</p>
-                        </div>
-                    ) : (
-                        warehouses.map((warehouse) => {
-                            const isExpanded = expandedWarehouses.has(warehouse.id);
-                            const isSelected = selectedItem?.type === 'warehouse' && selectedItem.data.id === warehouse.id;
-                            const isLoading = loadingWarehouse === warehouse.id;
-                            const shelves = shelvesMap[warehouse.id] || [];
-                            const filteredShelves = filterItems(shelves, searchQuery);
+                    <ScrollArea className="flex-1">
+                        <div className="p-3">
+                            {loading ? (
+                                <div className="flex items-center justify-center py-8">
+                                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                                </div>
+                            ) : warehouses.length === 0 ? (
+                                <div className="text-center py-8 text-muted-foreground">
+                                    <Warehouse className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                                    <p>Depo bulunamadı</p>
+                                </div>
+                            ) : (
+                                warehouses.map((warehouse) => {
+                                    const isExpanded = expandedWarehouses.has(warehouse.id);
+                                    const isSelected = selectedItem?.type === 'warehouse' && selectedItem.data.id === warehouse.id;
+                                    const isLoading = loadingWarehouse === warehouse.id;
+                                    const shelves = shelvesMap[warehouse.id] || [];
+                                    const filteredShelves = filterItems(shelves, searchQuery);
 
-                            return (
-                                <div key={warehouse.id} className="mb-2">
-                                    <div
-                                        className={`flex items-center py-2.5 px-3 cursor-pointer rounded-lg text-sm transition-colors
+                                    return (
+                                        <div key={warehouse.id} className="mb-2">
+                                            <div
+                                                className={`flex items-center py-2.5 px-3 cursor-pointer rounded-lg text-sm transition-colors
                                             ${isSelected ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
-                                        onClick={() => selectWarehouse(warehouse)}
-                                    >
-                                        <button
-                                            onClick={(e) => toggleWarehouse(warehouse.id, e)}
-                                            className="w-5 h-5 flex items-center justify-center mr-2 flex-shrink-0"
-                                        >
-                                            {isLoading ? (
-                                                <Loader2 className="w-4 h-4 animate-spin" />
-                                            ) : isExpanded ? (
-                                                <ChevronDown className="w-4 h-4" />
-                                            ) : (
-                                                <ChevronRight className="w-4 h-4" />
-                                            )}
-                                        </button>
-                                        <Warehouse className={`w-5 h-5 flex-shrink-0 ${isSelected ? 'text-primary-foreground' : 'text-blue-500'}`} />
-                                        <span className="ml-2 font-semibold truncate">{warehouse.name}</span>
-                                    </div>
+                                                onClick={() => selectWarehouse(warehouse)}
+                                            >
+                                                <button
+                                                    onClick={(e) => toggleWarehouse(warehouse.id, e)}
+                                                    className="w-5 h-5 flex items-center justify-center mr-2 flex-shrink-0"
+                                                >
+                                                    {isLoading ? (
+                                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                                    ) : isExpanded ? (
+                                                        <ChevronDown className="w-4 h-4" />
+                                                    ) : (
+                                                        <ChevronRight className="w-4 h-4" />
+                                                    )}
+                                                </button>
+                                                <Warehouse className={`w-5 h-5 flex-shrink-0 ${isSelected ? 'text-primary-foreground' : 'text-blue-500'}`} />
+                                                <span className="ml-2 font-semibold truncate">{warehouse.name}</span>
+                                            </div>
 
-                                    {isExpanded && (
-                                        <div className="ml-3 mt-1">
-                                            {isLoading ? (
-                                                <div className="py-3 pl-4 text-sm text-muted-foreground flex items-center gap-2">
-                                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                                    Yükleniyor...
+                                            {isExpanded && (
+                                                <div className="ml-3 mt-1">
+                                                    {isLoading ? (
+                                                        <div className="py-3 pl-4 text-sm text-muted-foreground flex items-center gap-2">
+                                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                                            Yükleniyor...
+                                                        </div>
+                                                    ) : filteredShelves.length === 0 ? (
+                                                        <div className="py-3 pl-4 text-sm text-muted-foreground">
+                                                            {searchQuery ? 'Sonuç bulunamadı' : 'Raf yok'}
+                                                        </div>
+                                                    ) : (
+                                                        filteredShelves.map(shelf => renderTreeItem(shelf, warehouse.id))
+                                                    )}
                                                 </div>
-                                            ) : filteredShelves.length === 0 ? (
-                                                <div className="py-3 pl-4 text-sm text-muted-foreground">
-                                                    {searchQuery ? 'Sonuç bulunamadı' : 'Raf yok'}
-                                                </div>
-                                            ) : (
-                                                filteredShelves.map(shelf => renderTreeItem(shelf, warehouse.id))
                                             )}
                                         </div>
-                                    )}
-                                </div>
-                            );
-                        })
-                    )}
-                </div>
-            </ScrollArea>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </ScrollArea>
 
-            <div className="p-3 border-t border-border">
-                <Button
-                    variant="outline"
-                    className="w-full"
-                    size="sm"
-                    onClick={() => {
-                        const warehouseId = getSelectedWarehouseId();
-                        const parentId = getSelectedShelf()?.id;
-                        if (warehouseId) {
-                            handleCreate(warehouseId, parentId);
-                        }
-                    }}
-                    disabled={!getSelectedWarehouseId()}
-                >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Yeni Raf
-                </Button>
-            </div>
+                    <div className="p-3 border-t border-border">
+                        <Button
+                            variant="outline"
+                            className="w-full"
+                            size="sm"
+                            onClick={() => {
+                                const warehouseId = getSelectedWarehouseId();
+                                const parentId = getSelectedShelf()?.id;
+                                if (warehouseId) {
+                                    handleCreate(warehouseId, parentId);
+                                }
+                            }}
+                            disabled={!getSelectedWarehouseId()}
+                        >
+                            <Plus className="w-4 h-4 mr-2" />
+                            Yeni Raf
+                        </Button>
+                    </div>
                 </>
             )}
         </div>
@@ -1251,6 +1262,18 @@ export function ShelvesList() {
                 <div className="flex items-center gap-2">
                     <Button
                         variant="outline"
+                        onClick={() => {
+                            setIsExcelImportOpen(true);
+                            setExcelFile(null);
+                            setExcelImportWarehouseId('');
+                            setImportResult(null);
+                        }}
+                    >
+                        <Upload className="h-4 w-4 mr-2" />
+                        Excel İçe Aktar
+                    </Button>
+                    <Button
+                        variant="outline"
                         onClick={() => setIsProductSearchOpen(true)}
                     >
                         <Search className="h-4 w-4 mr-2" />
@@ -1317,8 +1340,8 @@ export function ShelvesList() {
                                                         key={t.value}
                                                         value={t.label}
                                                         onSelect={() => {
-                                                            setFormData({ 
-                                                                ...formData, 
+                                                            setFormData({
+                                                                ...formData,
                                                                 type: t.value,
                                                                 isSellable: t.defaultSellable
                                                             });
@@ -1356,7 +1379,7 @@ export function ShelvesList() {
                                             aria-expanded={parentShelfComboOpen}
                                             className="w-full justify-between"
                                         >
-                                            {formData.parentId 
+                                            {formData.parentId
                                                 ? getFlatShelves(formData.warehouseId).find(s => s.id === formData.parentId)?.name || 'Kök Raf'
                                                 : 'Kök Raf'
                                             }
@@ -1594,8 +1617,8 @@ export function ShelvesList() {
                                         </CommandList>
                                         {selectedProducts.length > 0 && (
                                             <div className="border-t p-2">
-                                                <Button 
-                                                    size="sm" 
+                                                <Button
+                                                    size="sm"
                                                     className="w-full"
                                                     onClick={() => setProductComboOpen(false)}
                                                 >
@@ -1625,8 +1648,8 @@ export function ShelvesList() {
                             </div>
                         )}
 
-                        <Button 
-                            onClick={() => searchProductInShelves()} 
+                        <Button
+                            onClick={() => searchProductInShelves()}
                             className="w-full"
                             disabled={searchingProduct || selectedProducts.length === 0}
                         >
@@ -1680,6 +1703,203 @@ export function ShelvesList() {
                                 <p>Raflarda stok bulunamadı</p>
                             </div>
                         )}
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Excel Import Dialog */}
+            <Dialog open={isExcelImportOpen} onOpenChange={setIsExcelImportOpen}>
+                <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <FileSpreadsheet className="h-5 w-5" />
+                            Excel&apos;den Raf İçe Aktar
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <Label>Depo Seçin</Label>
+                            <Select
+                                value={excelImportWarehouseId}
+                                onValueChange={setExcelImportWarehouseId}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Hangi depoya aktarılacak?" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {warehouses.map((warehouse) => (
+                                        <SelectItem key={warehouse.id} value={warehouse.id}>
+                                            <div className="flex items-center gap-2">
+                                                <Warehouse className="h-4 w-4" />
+                                                {warehouse.name}
+                                            </div>
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Excel Dosyası</Label>
+                            <div className="border-2 border-dashed rounded-lg p-6 text-center hover:border-primary/50 transition-colors">
+                                <input
+                                    type="file"
+                                    accept=".xlsx,.xls"
+                                    onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) {
+                                            setExcelFile(file);
+                                            setImportResult(null);
+                                        }
+                                    }}
+                                    className="hidden"
+                                    id="excel-file-input"
+                                />
+                                <label htmlFor="excel-file-input" className="cursor-pointer">
+                                    {excelFile ? (
+                                        <div className="flex items-center justify-center gap-2">
+                                            <FileSpreadsheet className="h-8 w-8 text-green-500" />
+                                            <span className="font-medium">{excelFile.name}</span>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                                            <p className="text-sm text-muted-foreground">
+                                                Dosya seçmek için tıklayın veya sürükleyin
+                                            </p>
+                                            <p className="text-xs text-muted-foreground mt-1">
+                                                .xlsx veya .xls
+                                            </p>
+                                        </>
+                                    )}
+                                </label>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Button
+                                variant="link"
+                                size="sm"
+                                className="p-0 h-auto"
+                                onClick={async () => {
+                                    try {
+                                        const res = await fetch(`${API_URL}/shelves/import/template`, {
+                                            credentials: 'include',
+                                        });
+                                        if (!res.ok) throw new Error('Template indirilemedi');
+                                        const blob = await res.blob();
+                                        const url = window.URL.createObjectURL(blob);
+                                        const a = document.createElement('a');
+                                        a.href = url;
+                                        a.download = 'raf_sablonu.xlsx';
+                                        a.click();
+                                        window.URL.revokeObjectURL(url);
+                                    } catch {
+                                        toast({ variant: 'destructive', title: 'Hata', description: 'Şablon indirilemedi' });
+                                    }
+                                }}
+                            >
+                                <Download className="h-3 w-3 mr-1" />
+                                Örnek şablonu indir
+                            </Button>
+                        </div>
+
+                        {importResult && (
+                            <div className="rounded-lg border p-4 space-y-2">
+                                <div className="flex items-center gap-4 text-sm">
+                                    <div className="flex items-center gap-1">
+                                        <Check className="h-4 w-4 text-green-500" />
+                                        <span className="font-medium">{importResult.success}</span>
+                                        <span className="text-muted-foreground">yeni</span>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                        <Pencil className="h-4 w-4 text-blue-500" />
+                                        <span className="font-medium">{importResult.updated}</span>
+                                        <span className="text-muted-foreground">güncellendi</span>
+                                    </div>
+                                </div>
+                                {importResult.errors.length > 0 && (
+                                    <div className="mt-2 text-sm">
+                                        <p className="font-medium text-destructive">Hatalar:</p>
+                                        <ul className="list-disc list-inside text-muted-foreground max-h-32 overflow-y-auto">
+                                            {importResult.errors.map((err, idx) => (
+                                                <li key={idx}>{err}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="flex justify-end gap-2">
+                            <Button
+                                variant="outline"
+                                onClick={() => setIsExcelImportOpen(false)}
+                            >
+                                İptal
+                            </Button>
+                            <Button
+                                disabled={!excelFile || !excelImportWarehouseId || excelImporting}
+                                onClick={async () => {
+                                    if (!excelFile || !excelImportWarehouseId) return;
+
+                                    setExcelImporting(true);
+                                    try {
+                                        const formData = new FormData();
+                                        formData.append('file', excelFile);
+                                        formData.append('warehouseId', excelImportWarehouseId);
+
+                                        const res = await fetch(`${API_URL}/shelves/import`, {
+                                            method: 'POST',
+                                            credentials: 'include',
+                                            body: formData,
+                                        });
+
+                                        if (!res.ok) {
+                                            const err = await res.json();
+                                            throw new Error(err.message || 'İçe aktarma başarısız');
+                                        }
+
+                                        const result = await res.json();
+                                        setImportResult(result);
+
+                                        toast({
+                                            title: 'Başarılı',
+                                            description: `${result.success} yeni raf oluşturuldu, ${result.updated} raf güncellendi`,
+                                            variant: 'success',
+                                        });
+
+                                        // Refresh shelves for the warehouse
+                                        await refreshWarehouseShelves(excelImportWarehouseId);
+                                        setExpandedWarehouses(prev => {
+                                            const next = new Set(prev);
+                                            next.add(excelImportWarehouseId);
+                                            return next;
+                                        });
+                                    } catch (err: any) {
+                                        toast({
+                                            variant: 'destructive',
+                                            title: 'Hata',
+                                            description: err.message || 'İçe aktarma başarısız',
+                                        });
+                                    } finally {
+                                        setExcelImporting(false);
+                                    }
+                                }}
+                            >
+                                {excelImporting ? (
+                                    <>
+                                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                        İçe Aktarılıyor...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Upload className="h-4 w-4 mr-2" />
+                                        İçe Aktar
+                                    </>
+                                )}
+                            </Button>
+                        </div>
                     </div>
                 </DialogContent>
             </Dialog>

@@ -1,4 +1,6 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseInterceptors, UploadedFile, Res } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { Response } from 'express';
 import { ShelvesService } from './shelves.service';
 import { CreateShelfDto } from './dto/create-shelf.dto';
 import { UpdateShelfDto } from './dto/update-shelf.dto';
@@ -10,6 +12,26 @@ export class ShelvesController {
     @Post()
     create(@Body() dto: CreateShelfDto) {
         return this.shelvesService.create(dto);
+    }
+
+    @Post('import')
+    @UseInterceptors(FileInterceptor('file'))
+    async importExcel(
+        @UploadedFile() file: Express.Multer.File,
+        @Body('warehouseId') warehouseId: string,
+    ) {
+        return this.shelvesService.importExcel(file.buffer, warehouseId);
+    }
+
+    @Get('import/template')
+    async downloadTemplate(@Res() res: Response) {
+        const buffer = await this.shelvesService.generateExcelTemplate();
+        res.set({
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition': 'attachment; filename=raf_sablonu.xlsx',
+            'Content-Length': buffer.length,
+        });
+        res.end(buffer);
     }
 
     @Get()

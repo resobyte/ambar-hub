@@ -8,6 +8,7 @@ import { UpdateShelfDto } from './dto/update-shelf.dto';
 import { ShelfType, SHELF_TYPE_RULES } from './enums/shelf-type.enum';
 import { ProductStore } from '../product-stores/entities/product-store.entity';
 import { Warehouse } from '../warehouses/entities/warehouse.entity';
+import * as XLSX from 'xlsx';
 
 @Injectable()
 export class ShelvesService {
@@ -93,13 +94,32 @@ export class ShelvesService {
         // Get root shelves for warehouse
         const roots = await this.shelfRepository.find({
             where: { warehouseId, parentId: IsNull() },
-            order: { sortOrder: 'ASC' },
+            order: { sortOrder: 'ASC', name: 'ASC' },
         });
 
         // Build tree for each root
         const trees = await Promise.all(
             roots.map(root => this.shelfRepository.findDescendantsTree(root))
         );
+
+        // Natural sort comparator (A1, A2, A10 instead of A1, A10, A2)
+        const naturalSort = (a: Shelf, b: Shelf): number => {
+            return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+        };
+
+        // Sort children recursively
+        const sortTree = (shelves: Shelf[]): Shelf[] => {
+            shelves.sort(naturalSort);
+            for (const shelf of shelves) {
+                if (shelf.children?.length) {
+                    shelf.children = sortTree(shelf.children);
+                }
+            }
+            return shelves;
+        };
+
+        // Sort all trees
+        const sortedTrees = sortTree(trees);
 
         // Get all shelf IDs in the tree
         const getAllIds = (shelves: Shelf[]): string[] => {
@@ -113,7 +133,7 @@ export class ShelvesService {
             return ids;
         };
 
-        const allIds = getAllIds(trees);
+        const allIds = getAllIds(sortedTrees);
 
         if (allIds.length > 0) {
             // Get stock sums for all shelves
@@ -138,10 +158,10 @@ export class ShelvesService {
                 }
             };
 
-            attachStocks(trees);
+            attachStocks(sortedTrees);
         }
 
-        return trees;
+        return sortedTrees;
     }
 
     async findOne(id: string): Promise<Shelf> {
@@ -383,5 +403,163 @@ export class ShelvesService {
                 barcode: stock.product?.barcode || '',
             },
         }));
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Excel Import / Export
+    // ─────────────────────────────────────────────────────────────
+
+    async importExcel(fileBuffer: Buffer, warehouseId: string): Promise<{
+        success: number;
+        updated: number;
+        errors: string[];
+    }> {
+        const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const data: any[] = XLSX.utils.sheet_to_json(worksheet);
+
+        let successCount = 0;
+        let updatedCount = 0;
+        const errors: string[] = [];
+
+        // Map to store created shelves by name for parent lookup
+        const shelfNameMap = new Map<string, Shelf>();
+
+        // First pass: Load existing shelves into map
+        const existingShelves = await this.shelfRepository.find({ where: { warehouseId } });
+        for (const shelf of existingShelves) {
+            shelfNameMap.set(shelf.name, shelf);
+        }
+
+        // Helper to map RAF TİPİ to ShelfType
+        const mapShelfType = (type: string): ShelfType => {
+            const typeMap: Record<string, ShelfType> = {
+                'NORMAL': ShelfType.NORMAL,
+                'HASARLI': ShelfType.DAMAGED,
+                'PAKETLEME': ShelfType.PACKING,
+                'TOPLAMA': ShelfType.PICKING,
+                'MAL KABUL': ShelfType.RECEIVING,
+                'İADE': ShelfType.RETURN,
+                'İADE HASARLI': ShelfType.RETURN_DAMAGED,
+            };
+            return typeMap[type?.toUpperCase()] || ShelfType.NORMAL;
+        };
+
+        // Process each row
+        for (const [index, row] of data.entries()) {
+            try {
+                // Get column values (support both Turkish and English column names)
+                const name = row['RAF ADI'] || row['name'] || row['Name'];
+                const globalSlot = parseInt(row['RAF ID'] || row['GLOBAL SLOT'] || row['globalSlot'] || '0', 10);
+                const typeStr = row['RAF TİPİ'] || row['type'] || row['Type'] || 'NORMAL';
+                const parentName = row['KÖK'] || row['parent'] || row['Parent'];
+                const collectableStr = row['TOPLANABİLİR'] || row['collectable'] || 'HAYIR';
+
+                if (!name) {
+                    errors.push(`Satır ${index + 2}: Raf adı eksik.`);
+                    continue;
+                }
+
+                // Determine isSellable based on TOPLANABİLİR
+                const isSellable = collectableStr?.toUpperCase() === 'EVET';
+                const shelfType = mapShelfType(typeStr);
+                const rules = SHELF_TYPE_RULES[shelfType];
+
+                // Check if shelf exists by globalSlot
+                let existingShelf = globalSlot > 0
+                    ? await this.shelfRepository.findOne({ where: { globalSlot, warehouseId } })
+                    : null;
+
+                // Also check by name if not found by globalSlot
+                if (!existingShelf) {
+                    existingShelf = shelfNameMap.get(name) || null;
+                }
+
+                // Find parent shelf if KÖK is specified
+                let parentId: string | undefined;
+                if (parentName) {
+                    const parentShelf = shelfNameMap.get(parentName);
+                    if (parentShelf) {
+                        parentId = parentShelf.id;
+                    }
+                    // If parent not found yet, it will be linked in second pass
+                }
+
+                if (existingShelf) {
+                    // Update existing shelf
+                    await this.update(existingShelf.id, {
+                        name,
+                        type: shelfType,
+                        globalSlot: globalSlot > 0 ? globalSlot : undefined,
+                        isSellable,
+                        isReservable: rules.isReservable,
+                        parentId,
+                    });
+                    shelfNameMap.set(name, existingShelf);
+                    updatedCount++;
+                } else {
+                    // Create new shelf
+                    const newShelf = await this.create({
+                        name,
+                        type: shelfType,
+                        warehouseId,
+                        globalSlot: globalSlot > 0 ? globalSlot : undefined,
+                        isSellable,
+                        isReservable: rules.isReservable,
+                        parentId,
+                    });
+                    shelfNameMap.set(name, newShelf);
+                    successCount++;
+                }
+            } catch (err: any) {
+                errors.push(`Satır ${index + 2}: ${err.message}`);
+            }
+        }
+
+        // Second pass: Fix parent relationships for shelves whose parents were created after them
+        for (const [index, row] of data.entries()) {
+            try {
+                const name = row['RAF ADI'] || row['name'] || row['Name'];
+                const parentName = row['KÖK'] || row['parent'] || row['Parent'];
+
+                if (!name || !parentName) continue;
+
+                const shelf = shelfNameMap.get(name);
+                const parentShelf = shelfNameMap.get(parentName);
+
+                if (shelf && parentShelf && shelf.parentId !== parentShelf.id) {
+                    await this.update(shelf.id, { parentId: parentShelf.id });
+                }
+            } catch (err: any) {
+                // Ignore errors in second pass, they were already reported
+            }
+        }
+
+        return { success: successCount, updated: updatedCount, errors };
+    }
+
+    async generateExcelTemplate(): Promise<Buffer> {
+        const headers = [
+            'RAF ADI',
+            'RAF ID',
+            'RAF TİPİ',
+            'KÖK',
+            'GLOBAL SLOT',
+            'TOPLANABİLİR',
+        ];
+
+        const exampleRows = [
+            ['MERKEZ', 1000, 'NORMAL', '', 1000, 'HAYIR'],
+            ['A', 1001, 'NORMAL', 'MERKEZ', 1001, 'HAYIR'],
+            ['A1', 1002, 'NORMAL', 'A', 1002, 'HAYIR'],
+            ['A1-1', 1003, 'NORMAL', 'A1', 1003, 'EVET'],
+        ];
+
+        const worksheet = XLSX.utils.aoa_to_sheet([headers, ...exampleRows]);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Raflar');
+
+        return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
     }
 }
