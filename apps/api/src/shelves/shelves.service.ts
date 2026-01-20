@@ -319,4 +319,69 @@ export class ShelvesService {
             order: { name: 'ASC' },
         });
     }
+
+    async searchProductInShelves(query: string): Promise<Array<{
+        shelf: Shelf;
+        warehouse: { id: string; name: string };
+        quantity: number;
+        product: { name: string; barcode: string };
+    }>> {
+        const stocks = await this.shelfStockRepository
+            .createQueryBuilder('stock')
+            .leftJoinAndSelect('stock.product', 'product')
+            .leftJoinAndSelect('stock.shelf', 'shelf')
+            .leftJoinAndSelect('shelf.warehouse', 'warehouse')
+            .where('product.name LIKE :query', { query: `%${query}%` })
+            .orWhere('product.barcode LIKE :query', { query: `%${query}%` })
+            .orWhere('product.sku LIKE :query', { query: `%${query}%` })
+            .andWhere('stock.quantity > 0')
+            .orderBy('stock.quantity', 'DESC')
+            .getMany();
+
+        return stocks.map(stock => ({
+            shelf: stock.shelf,
+            warehouse: {
+                id: stock.shelf?.warehouse?.id || stock.shelf?.warehouseId || '',
+                name: stock.shelf?.warehouse?.name || 'Bilinmeyen Depo',
+            },
+            quantity: stock.quantity,
+            product: {
+                name: stock.product?.name || 'Bilinmeyen Ürün',
+                barcode: stock.product?.barcode || '',
+            },
+        }));
+    }
+
+    async searchProductsByIds(productIds: string[]): Promise<Array<{
+        shelf: Shelf;
+        warehouse: { id: string; name: string };
+        quantity: number;
+        product: { name: string; barcode: string };
+    }>> {
+        if (!productIds || productIds.length === 0) return [];
+
+        const stocks = await this.shelfStockRepository
+            .createQueryBuilder('stock')
+            .leftJoinAndSelect('stock.product', 'product')
+            .leftJoinAndSelect('stock.shelf', 'shelf')
+            .leftJoinAndSelect('shelf.warehouse', 'warehouse')
+            .where('stock.productId IN (:...productIds)', { productIds })
+            .andWhere('stock.quantity > 0')
+            .orderBy('product.name', 'ASC')
+            .addOrderBy('stock.quantity', 'DESC')
+            .getMany();
+
+        return stocks.map(stock => ({
+            shelf: stock.shelf,
+            warehouse: {
+                id: stock.shelf?.warehouse?.id || stock.shelf?.warehouseId || '',
+                name: stock.shelf?.warehouse?.name || 'Bilinmeyen Depo',
+            },
+            quantity: stock.quantity,
+            product: {
+                name: stock.product?.name || 'Bilinmeyen Ürün',
+                barcode: stock.product?.barcode || '',
+            },
+        }));
+    }
 }

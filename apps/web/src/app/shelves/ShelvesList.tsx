@@ -1,16 +1,69 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Button } from '@/components/common/Button';
-import { Input } from '@/components/common/Input';
-import { Select } from '@/components/common/Select';
-import { Modal } from '@/components/common/Modal';
-import { useToast } from '@/components/common/ToastContext';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import {
+    Breadcrumb,
+    BreadcrumbItem,
+    BreadcrumbLink,
+    BreadcrumbList,
+    BreadcrumbPage,
+    BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
+import { useToast } from '@/components/ui/use-toast';
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import {
+    ChevronRight,
+    ChevronDown,
+    Search,
+    Plus,
+    Pencil,
+    Trash2,
+    ArrowRightLeft,
+    Warehouse,
+    FolderOpen,
+    Folder,
+    Package,
+    Loader2,
+    Printer,
+    ChevronsUpDown,
+    X,
+    Check,
+    PanelLeftClose,
+    PanelLeft,
+} from 'lucide-react';
 
 const isServer = typeof window === 'undefined';
 const API_URL = isServer
     ? (process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api')
     : '/api';
+
+interface StockItem {
+    quantity: number;
+    productId: string;
+    product?: { id?: string; name: string; barcode: string; sku?: string };
+}
 
 interface Shelf {
     id: string;
@@ -25,86 +78,83 @@ interface Shelf {
     isReservable: boolean;
     children?: Shelf[];
     warehouse?: { name: string };
-    stocks?: { quantity: number }[];
+    stocks?: StockItem[];
 }
 
-interface Warehouse {
+interface WarehouseType {
     id: string;
     name: string;
     address?: string;
 }
 
-// Selected item can be either a warehouse or a shelf
+interface ProductItem {
+    id: string;
+    name: string;
+    barcode: string;
+    sku?: string;
+}
+
 type SelectedItem =
-    | { type: 'warehouse'; data: Warehouse }
+    | { type: 'warehouse'; data: WarehouseType }
     | { type: 'shelf'; data: Shelf; warehouseId: string };
 
 const SHELF_TYPES = [
-    { value: 'NORMAL', label: 'Normal' },
-    { value: 'DAMAGED', label: 'Hasarlı' },
-    { value: 'PACKING', label: 'Paketleme' },
-    { value: 'PICKING', label: 'Toplama' },
-    { value: 'RECEIVING', label: 'Mal Kabul' },
+    { value: 'NORMAL', label: 'Normal', defaultSellable: true },
+    { value: 'DAMAGED', label: 'Hasarlı', defaultSellable: false },
+    { value: 'PACKING', label: 'Paketleme', defaultSellable: false },
+    { value: 'PICKING', label: 'Toplama', defaultSellable: true },
+    { value: 'RECEIVING', label: 'Mal Kabul', defaultSellable: false },
+    { value: 'RETURN', label: 'İade', defaultSellable: false },
+    { value: 'RETURN_DAMAGED', label: 'İade Hasarlı', defaultSellable: false },
 ];
 
-// Warehouse/Building icon
-const WarehouseIcon = () => (
-    <svg className="w-5 h-5 text-blue-500" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M22 8.5L12 3 2 8.5 12 14l10-5.5v8.5h2V8.5zM6 18v-4.93l6 3.31 6-3.31V18c0 1.1-.9 2-2 2H8c-1.1 0-2-.9-2-2z" />
-    </svg>
-);
-
-// Folder icon component
-const FolderIcon = ({ isExpanded, hasChildren }: { isExpanded: boolean; hasChildren: boolean }) => {
-    if (!hasChildren) {
-        return (
-            <svg className="w-5 h-5 text-yellow-500" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
-            </svg>
-        );
-    }
-
-    if (isExpanded) {
-        return (
-            <svg className="w-5 h-5 text-yellow-500" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V6h5.17l2 2H20v10z" />
-            </svg>
-        );
-    }
-
-    return (
-        <svg className="w-5 h-5 text-yellow-500" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
-        </svg>
-    );
-};
-
-// Chevron icons
-const ChevronRight = () => (
-    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-    </svg>
-);
-
-const ChevronDown = () => (
-    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-    </svg>
-);
-
 export function ShelvesList() {
-    const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+    const [warehouses, setWarehouses] = useState<WarehouseType[]>([]);
     const [shelvesMap, setShelvesMap] = useState<Record<string, Shelf[]>>({});
     const [loading, setLoading] = useState(true);
     const [loadingWarehouse, setLoadingWarehouse] = useState<string | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-    const [detailsShelf, setDetailsShelf] = useState<Shelf | null>(null);
     const [editingShelf, setEditingShelf] = useState<Shelf | null>(null);
     const [expandedWarehouses, setExpandedWarehouses] = useState<Set<string>>(new Set());
     const [expandedShelves, setExpandedShelves] = useState<Set<string>>(new Set());
     const [selectedItem, setSelectedItem] = useState<SelectedItem | null>(null);
-    const { success, error } = useToast();
+    const [searchQuery, setSearchQuery] = useState('');
+    const [shelfStocks, setShelfStocks] = useState<Shelf['stocks']>([]);
+    const [loadingStocks, setLoadingStocks] = useState(false);
+    const [isMobilePanelOpen, setIsMobilePanelOpen] = useState(false);
+    const [productSearchQuery, setProductSearchQuery] = useState('');
+    const [productSearchResults, setProductSearchResults] = useState<Array<{ shelf: Shelf; warehouse: WarehouseType; quantity: number; product: { name: string; barcode: string } }>>([]);
+    const [isProductSearchOpen, setIsProductSearchOpen] = useState(false);
+    const [searchingProduct, setSearchingProduct] = useState(false);
+    const [allProducts, setAllProducts] = useState<ProductItem[]>([]);
+    const [selectedProducts, setSelectedProducts] = useState<ProductItem[]>([]);
+    const [productsLoading, setProductsLoading] = useState(false);
+    const [productComboOpen, setProductComboOpen] = useState(false);
+    const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
+    const [stockSearchQuery, setStockSearchQuery] = useState('');
+    const stockSearchInputRef = useRef<HTMLInputElement>(null);
+    const stockSearchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const { toast } = useToast();
+
+    const handleStockSearch = useCallback((value: string) => {
+        if (stockSearchTimeoutRef.current) {
+            clearTimeout(stockSearchTimeoutRef.current);
+        }
+        stockSearchTimeoutRef.current = setTimeout(() => {
+            setStockSearchQuery(value);
+        }, 300);
+    }, []);
+
+    const filteredStocks = useMemo(() => {
+        if (!shelfStocks || shelfStocks.length === 0) return [];
+        if (!stockSearchQuery) return shelfStocks;
+        const query = stockSearchQuery.toLowerCase();
+        return shelfStocks.filter((stock: StockItem) => 
+            stock.product?.name?.toLowerCase().includes(query) ||
+            stock.product?.barcode?.toLowerCase().includes(query) ||
+            stock.product?.sku?.toLowerCase().includes(query)
+        );
+    }, [shelfStocks, stockSearchQuery]);
 
     const [formData, setFormData] = useState({
         name: '',
@@ -112,11 +162,13 @@ export function ShelvesList() {
         parentId: '',
         globalSlot: 0,
         warehouseId: '',
+        isSellable: true,
     });
+    const [shelfTypeComboOpen, setShelfTypeComboOpen] = useState(false);
+    const [parentShelfComboOpen, setParentShelfComboOpen] = useState(false);
 
-    // Transfer state
     const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
-    const [sourceStocks, setSourceStocks] = useState<any[]>([]);
+    const [sourceStocks, setSourceStocks] = useState<Shelf['stocks']>([]);
     const [transferFormData, setTransferFormData] = useState({
         fromShelfId: '',
         toShelfId: '',
@@ -131,25 +183,22 @@ export function ShelvesList() {
             const res = await fetch(`${API_URL}/warehouses?page=1&limit=100`, { credentials: 'include' });
             const data = await res.json();
             setWarehouses(data.data || []);
-        } catch (err) {
-            error('Depolar yüklenemedi');
+        } catch {
+            toast({ variant: 'destructive', title: 'Hata', description: 'Depolar yüklenemedi' });
         } finally {
             setLoading(false);
         }
     };
 
-    // Track which warehouses are being fetched to prevent duplicate requests
     const fetchingRef = useRef<Set<string>>(new Set());
-    // Keep a ref to current shelvesMap to avoid stale closure issues
     const shelvesMapRef = useRef(shelvesMap);
     shelvesMapRef.current = shelvesMap;
 
-    const fetchWarehouseShelves = async (warehouseId: string, forceRefresh = false) => {
-        // Prevent duplicate requests
-        if (fetchingRef.current.has(warehouseId)) return;
-
-        // Don't fetch if already loaded and not forcing refresh (use ref for current value)
-        if (!forceRefresh && shelvesMapRef.current[warehouseId] !== undefined) return;
+    const fetchWarehouseShelves = async (warehouseId: string, forceRefresh = false): Promise<Shelf[] | null> => {
+        if (fetchingRef.current.has(warehouseId)) return null;
+        if (!forceRefresh && shelvesMapRef.current[warehouseId] !== undefined) {
+            return shelvesMapRef.current[warehouseId];
+        }
 
         fetchingRef.current.add(warehouseId);
         setLoadingWarehouse(warehouseId);
@@ -157,14 +206,15 @@ export function ShelvesList() {
         try {
             const res = await fetch(`${API_URL}/shelves/tree/${warehouseId}`, { credentials: 'include' });
             const json = await res.json();
-            // API returns { success: true, data: [...] } or just [...] for tree endpoint
             const shelves = Array.isArray(json) ? json : (json.data || []);
             setShelvesMap(prev => ({
                 ...prev,
                 [warehouseId]: shelves,
             }));
-        } catch (err) {
-            error('Raflar yüklenemedi');
+            return shelves;
+        } catch {
+            toast({ variant: 'destructive', title: 'Hata', description: 'Raflar yüklenemedi' });
+            return null;
         } finally {
             fetchingRef.current.delete(warehouseId);
             setLoadingWarehouse(null);
@@ -175,9 +225,35 @@ export function ShelvesList() {
         return fetchWarehouseShelves(warehouseId, true);
     };
 
+    const fetchShelfStocks = async (shelfId: string) => {
+        setLoadingStocks(true);
+        try {
+            const res = await fetch(`${API_URL}/shelves/${shelfId}/stock`, { credentials: 'include' });
+            const json = await res.json();
+            const data = json.data || json;
+            setShelfStocks(Array.isArray(data) ? data : []);
+        } catch {
+            setShelfStocks([]);
+        } finally {
+            setLoadingStocks(false);
+        }
+    };
+
     useEffect(() => {
         fetchWarehouses();
     }, []);
+
+    useEffect(() => {
+        setStockSearchQuery('');
+        if (stockSearchInputRef.current) {
+            stockSearchInputRef.current.value = '';
+        }
+        if (selectedItem?.type === 'shelf') {
+            fetchShelfStocks(selectedItem.data.id);
+        } else {
+            setShelfStocks([]);
+        }
+    }, [selectedItem]);
 
     const toggleWarehouse = async (warehouseId: string, e?: React.MouseEvent) => {
         e?.stopPropagation();
@@ -187,7 +263,6 @@ export function ShelvesList() {
             newExpanded.delete(warehouseId);
         } else {
             newExpanded.add(warehouseId);
-            // Fetch shelves when expanding
             await fetchWarehouseShelves(warehouseId);
         }
 
@@ -204,17 +279,17 @@ export function ShelvesList() {
         });
     };
 
-    const selectWarehouse = (warehouse: Warehouse) => {
+    const selectWarehouse = (warehouse: WarehouseType) => {
         setSelectedItem({ type: 'warehouse', data: warehouse });
+        setIsMobilePanelOpen(true);
+        if (!expandedWarehouses.has(warehouse.id)) {
+            toggleWarehouse(warehouse.id);
+        }
     };
 
     const selectShelf = (shelf: Shelf, warehouseId: string) => {
         setSelectedItem({ type: 'shelf', data: shelf, warehouseId });
-    };
-
-    const showShelfDetails = (shelf: Shelf) => {
-        setDetailsShelf(shelf);
-        setIsDetailsOpen(true);
+        setIsMobilePanelOpen(true);
     };
 
     const handleCreate = (warehouseId?: string, parentId?: string) => {
@@ -225,6 +300,7 @@ export function ShelvesList() {
             parentId: parentId || '',
             globalSlot: 0,
             warehouseId: warehouseId || '',
+            isSellable: true,
         });
         setIsModalOpen(true);
     };
@@ -237,6 +313,7 @@ export function ShelvesList() {
             parentId: shelf.parentId || '',
             globalSlot: shelf.globalSlot ?? 0,
             warehouseId: shelf.warehouseId,
+            isSellable: shelf.isSellable ?? true,
         });
         setIsModalOpen(true);
     };
@@ -259,26 +336,23 @@ export function ShelvesList() {
             });
 
             if (!res.ok) throw new Error('Failed');
-            success(editingShelf ? 'Raf güncellendi' : 'Raf oluşturuldu');
+            toast({ title: 'Başarılı', description: editingShelf ? 'Raf güncellendi' : 'Raf oluşturuldu', variant: 'success' });
             setIsModalOpen(false);
 
-            // Refresh the warehouse's shelves and ensure it's expanded
             if (formData.warehouseId) {
-                // Ensure warehouse is expanded
                 setExpandedWarehouses(prev => {
                     const next = new Set(prev);
                     next.add(formData.warehouseId);
                     return next;
                 });
-                // Force refresh by clearing cache first (both state and ref)
                 const clearedMap = { ...shelvesMapRef.current };
                 delete clearedMap[formData.warehouseId];
                 shelvesMapRef.current = clearedMap;
                 setShelvesMap(clearedMap);
                 await refreshWarehouseShelves(formData.warehouseId);
             }
-        } catch (err) {
-            error('İşlem başarısız');
+        } catch {
+            toast({ variant: 'destructive', title: 'Hata', description: 'İşlem başarısız' });
         }
     };
 
@@ -286,15 +360,14 @@ export function ShelvesList() {
         if (!confirm('Bu rafı silmek istediğinize emin misiniz?')) return;
         try {
             await fetch(`${API_URL}/shelves/${id}`, { method: 'DELETE', credentials: 'include' });
-            success('Raf silindi');
+            toast({ title: 'Başarılı', description: 'Raf silindi', variant: 'success' });
             setSelectedItem(null);
             await refreshWarehouseShelves(warehouseId);
-        } catch (err) {
-            error('Silme başarısız');
+        } catch {
+            toast({ variant: 'destructive', title: 'Hata', description: 'Silme başarısız' });
         }
     };
 
-    // Flatten all loaded shelves for dropdown
     const getAllShelves = useCallback(() => {
         const flat: Shelf[] = [];
         const process = (list: Shelf[]) => {
@@ -315,35 +388,35 @@ export function ShelvesList() {
             const json = await res.json();
             const data = json.data || json;
             setGlobalShelves(Array.isArray(data) ? data : []);
-        } catch (err) {
+        } catch {
             console.error('Raf listesi alınamadı');
         }
     };
 
     const fetchSourceStocks = async (shelfId: string) => {
-        setLoading(true);
         try {
             const res = await fetch(`${API_URL}/shelves/${shelfId}/stock`, { credentials: 'include' });
             const json = await res.json();
             const data = json.data || json;
             setSourceStocks(Array.isArray(data) ? data : []);
-        } catch (err) {
-            error('Raf stok bilgisi alınamadı');
+        } catch {
+            toast({ variant: 'destructive', title: 'Hata', description: 'Raf stok bilgisi alınamadı' });
             setSourceStocks([]);
-        } finally {
-            setLoading(false);
         }
     };
 
-    const openTransferModal = async () => {
-        const shelf = getSelectedShelf();
-
+    const openTransferModal = async (preselectedShelfId?: string, preselectedProductId?: string) => {
         setIsTransferModalOpen(true);
-        fetchGlobalShelves(); // Fetch all shelves for the dropdowns
+        fetchGlobalShelves();
 
-        if (shelf) {
-            setTransferFormData({ fromShelfId: shelf.id, toShelfId: '', productId: '', quantity: 0 });
-            await fetchSourceStocks(shelf.id);
+        if (preselectedShelfId) {
+            setTransferFormData({
+                fromShelfId: preselectedShelfId,
+                toShelfId: '',
+                productId: preselectedProductId || '',
+                quantity: 0
+            });
+            await fetchSourceStocks(preselectedShelfId);
         } else {
             setTransferFormData({ fromShelfId: '', toShelfId: '', productId: '', quantity: 0 });
             setSourceStocks([]);
@@ -352,12 +425,12 @@ export function ShelvesList() {
 
     const handleTransfer = async () => {
         if (!transferFormData.fromShelfId || !transferFormData.toShelfId || !transferFormData.productId || transferFormData.quantity <= 0) {
-            error('Lütfen tüm alanları doldurun');
+            toast({ variant: 'destructive', title: 'Hata', description: 'Lütfen tüm alanları doldurun' });
             return;
         }
 
         if (transferFormData.fromShelfId === transferFormData.toShelfId) {
-            error('Kaynak ve hedef raf aynı olamaz');
+            toast({ variant: 'destructive', title: 'Hata', description: 'Kaynak ve hedef raf aynı olamaz' });
             return;
         }
 
@@ -371,10 +444,9 @@ export function ShelvesList() {
 
             if (!res.ok) throw new Error('Transfer failed');
 
-            success('Transfer başarılı');
+            toast({ title: 'Başarılı', description: 'Transfer başarılı', variant: 'success' });
             setIsTransferModalOpen(false);
 
-            // Refresh logic
             const allShelves = getAllShelves();
             const sourceShelf = allShelves.find(s => s.id === transferFormData.fromShelfId);
             if (sourceShelf?.warehouseId) {
@@ -384,12 +456,139 @@ export function ShelvesList() {
             if (targetShelf?.warehouseId && targetShelf.warehouseId !== sourceShelf?.warehouseId) {
                 await fetchWarehouseShelves(targetShelf.warehouseId, true);
             }
-        } catch (err) {
-            error('Transfer başarısız');
+
+            if (selectedItem?.type === 'shelf') {
+                fetchShelfStocks(selectedItem.data.id);
+            }
+        } catch {
+            toast({ variant: 'destructive', title: 'Hata', description: 'Transfer başarısız' });
         }
     };
 
-    // Calculate total stock for a shelf
+    const fetchAllProducts = useCallback(async () => {
+        if (allProducts.length > 0 || productsLoading) return;
+        setProductsLoading(true);
+        try {
+            const res = await fetch(`${API_URL}/products?limit=1000`, { credentials: 'include' });
+            const json = await res.json();
+            const data = json.data?.items || json.data || json.items || [];
+            setAllProducts(Array.isArray(data) ? data : []);
+        } catch {
+            toast({ variant: 'destructive', title: 'Hata', description: 'Ürünler yüklenemedi' });
+        } finally {
+            setProductsLoading(false);
+        }
+    }, [allProducts.length, productsLoading, toast]);
+
+    useEffect(() => {
+        if (isProductSearchOpen && allProducts.length === 0) {
+            fetchAllProducts();
+        }
+    }, [isProductSearchOpen, allProducts.length, fetchAllProducts]);
+
+    const searchProductInShelves = async (productIds?: string[]) => {
+        const ids = productIds || selectedProducts.map(p => p.id);
+        if (ids.length === 0) {
+            setProductSearchResults([]);
+            return;
+        }
+
+        setSearchingProduct(true);
+        try {
+            const res = await fetch(`${API_URL}/shelves/search-product-by-ids`, { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ productIds: ids })
+            });
+            const json = await res.json();
+            const data = json.data || json;
+            setProductSearchResults(Array.isArray(data) ? data : []);
+        } catch {
+            setProductSearchResults([]);
+            toast({ variant: 'destructive', title: 'Hata', description: 'Ürün araması başarısız' });
+        } finally {
+            setSearchingProduct(false);
+        }
+    };
+
+    const toggleProductSelection = (product: ProductItem) => {
+        setSelectedProducts(prev => {
+            const isSelected = prev.some(p => p.id === product.id);
+            if (isSelected) {
+                return prev.filter(p => p.id !== product.id);
+            }
+            return [...prev, product];
+        });
+    };
+
+    const removeSelectedProduct = (productId: string) => {
+        setSelectedProducts(prev => prev.filter(p => p.id !== productId));
+    };
+
+    const goToShelfWithProduct = async (shelfId: string, warehouseId: string) => {
+        const warehouse = warehouses.find(w => w.id === warehouseId);
+        if (!warehouse) {
+            toast({ variant: 'destructive', title: 'Hata', description: 'Depo bulunamadı' });
+            return;
+        }
+
+        setIsProductSearchOpen(false);
+        setProductSearchQuery('');
+        setProductSearchResults([]);
+        setSelectedProducts([]);
+        setProductComboOpen(false);
+
+        setExpandedWarehouses(prev => {
+            const next = new Set(prev);
+            next.add(warehouseId);
+            return next;
+        });
+
+        const shelves = await fetchWarehouseShelves(warehouseId);
+        
+        const findShelf = (items: Shelf[]): Shelf | null => {
+            for (const shelf of items) {
+                if (shelf.id === shelfId) return shelf;
+                if (shelf.children) {
+                    const found = findShelf(shelf.children);
+                    if (found) return found;
+                }
+            }
+            return null;
+        };
+
+        const findParentIds = (items: Shelf[], targetId: string, parents: string[] = []): string[] => {
+            for (const shelf of items) {
+                if (shelf.id === targetId) return parents;
+                if (shelf.children) {
+                    const result = findParentIds(shelf.children, targetId, [...parents, shelf.id]);
+                    if (result.length > 0 || shelf.children.some(c => c.id === targetId)) {
+                        return result.length > 0 ? result : [...parents, shelf.id];
+                    }
+                }
+            }
+            return [];
+        };
+
+        const shelvesToSearch = shelves || shelvesMap[warehouseId] || [];
+        const shelf = findShelf(shelvesToSearch);
+        
+        if (shelf) {
+            const parentIds = findParentIds(shelvesToSearch, shelfId);
+            setExpandedShelves(prev => {
+                const next = new Set(prev);
+                parentIds.forEach(id => next.add(id));
+                return next;
+            });
+            
+            selectShelf(shelf, warehouseId);
+            toast({ title: 'Raf bulundu', description: `${shelf.name} rafına gidildi` });
+        } else {
+            toast({ variant: 'destructive', title: 'Hata', description: 'Raf bulunamadı' });
+        }
+    };
+
     const getTotalStock = (shelf: Shelf): number => {
         let total = shelf.stocks?.reduce((sum, s) => sum + s.quantity, 0) || 0;
         if (shelf.children) {
@@ -400,7 +599,6 @@ export function ShelvesList() {
         return total;
     };
 
-    // Get flat list of shelves for parent selection
     const getFlatShelves = (warehouseId: string): { id: string; name: string }[] => {
         const result: { id: string; name: string }[] = [];
         const flattenShelves = (items: Shelf[], prefix = '') => {
@@ -413,62 +611,25 @@ export function ShelvesList() {
         return result;
     };
 
-    const renderShelfTree = (items: Shelf[], warehouseId: string, level = 0) => (
-        <>
-            {items.map((shelf) => {
-                const hasChildren = shelf.children && shelf.children.length > 0;
-                const isExpanded = expandedShelves.has(shelf.id);
-                const isSelected = selectedItem?.type === 'shelf' && selectedItem.data.id === shelf.id;
-                const totalStock = getTotalStock(shelf);
+    const filterItems = (items: Shelf[], query: string): Shelf[] => {
+        if (!query) return items;
+        const lowerQuery = query.toLowerCase();
 
-                return (
-                    <div key={shelf.id}>
-                        <div
-                            className={`flex items-center py-1.5 cursor-pointer hover:bg-muted/50 rounded transition-colors ${isSelected ? 'bg-primary/20' : ''}`}
-                            onClick={() => selectShelf(shelf, warehouseId)}
-                            onDoubleClick={() => showShelfDetails(shelf)}
-                            style={{ paddingLeft: 24 + level * 20 }}
-                        >
-                            {/* Expand/Collapse button */}
-                            {hasChildren ? (
-                                <button
-                                    onClick={(e) => toggleShelf(shelf.id, e)}
-                                    className="w-4 h-4 flex items-center justify-center text-muted-foreground hover:text-foreground mr-1"
-                                >
-                                    {isExpanded ? <ChevronDown /> : <ChevronRight />}
-                                </button>
-                            ) : (
-                                <div className="w-4 mr-1" />
-                            )}
+        return items.reduce<Shelf[]>((acc, shelf) => {
+            const matchesName = shelf.name.toLowerCase().includes(lowerQuery);
+            const matchesBarcode = shelf.barcode?.toLowerCase().includes(lowerQuery);
+            const filteredChildren = shelf.children ? filterItems(shelf.children, query) : [];
 
-                            {/* Folder Icon */}
-                            <FolderIcon isExpanded={isExpanded} hasChildren={!!hasChildren} />
+            if (matchesName || matchesBarcode || filteredChildren.length > 0) {
+                acc.push({
+                    ...shelf,
+                    children: filteredChildren.length > 0 ? filteredChildren : shelf.children
+                });
+            }
+            return acc;
+        }, []);
+    };
 
-                            {/* Shelf name and stock count */}
-                            <span className={`ml-2 text-sm ${isSelected ? 'font-semibold' : ''}`}>
-                                {shelf.name}
-                                <span className="text-muted-foreground ml-1">({totalStock.toLocaleString('tr-TR')})</span>
-                            </span>
-                        </div>
-
-                        {/* Children */}
-                        {hasChildren && isExpanded && (
-                            <div className="relative">
-                                {/* Vertical tree line */}
-                                <div
-                                    className="absolute left-0 top-0 bottom-0 border-l border-gray-300 dark:border-gray-600"
-                                    style={{ marginLeft: 24 + level * 20 + 7 }}
-                                />
-                                {renderShelfTree(shelf.children!, warehouseId, level + 1)}
-                            </div>
-                        )}
-                    </div>
-                );
-            })}
-        </>
-    );
-
-    // Get action button state based on selected item
     const getSelectedWarehouseId = (): string | null => {
         if (!selectedItem) return null;
         if (selectedItem.type === 'warehouse') return selectedItem.data.id;
@@ -480,19 +641,168 @@ export function ShelvesList() {
         return null;
     };
 
-    return (
-        <div className="p-6">
-            <div className="flex justify-between items-center mb-6">
-                <div>
-                    <h2 className="text-2xl font-semibold text-foreground">Depo & Raf Ağacı</h2>
-                    <p className="text-sm text-muted-foreground">Depo ve raflarınızı Windows Dosya Yöneticisi stilinde yönetin</p>
-                </div>
-            </div>
+    const getShelfTypeBadgeVariant = (type: string): "default" | "secondary" | "destructive" | "outline" => {
+        switch (type) {
+            case 'NORMAL': return 'default';
+            case 'DAMAGED': return 'destructive';
+            default: return 'secondary';
+        }
+    };
 
-            {/* Action buttons */}
-            <div className="flex items-center gap-2 mb-4 flex-wrap">
+    const renderTreeItem = (shelf: Shelf, warehouseId: string, level = 0) => {
+        const hasChildren = shelf.children && shelf.children.length > 0;
+        const isExpanded = expandedShelves.has(shelf.id);
+        const isSelected = selectedItem?.type === 'shelf' && selectedItem.data.id === shelf.id;
+        const totalStock = getTotalStock(shelf);
+
+        return (
+            <div key={shelf.id}>
+                <div
+                    className={`flex items-center py-2 px-2 cursor-pointer rounded-md text-sm transition-colors
+                        ${isSelected ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+                    onClick={() => selectShelf(shelf, warehouseId)}
+                    style={{ paddingLeft: 8 + level * 20 }}
+                >
+                    {hasChildren ? (
+                        <button
+                            onClick={(e) => toggleShelf(shelf.id, e)}
+                            className="w-5 h-5 flex items-center justify-center mr-1 flex-shrink-0 hover:bg-muted-foreground/10 rounded"
+                        >
+                            {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                        </button>
+                    ) : (
+                        <div className="w-5 mr-1 flex-shrink-0" />
+                    )}
+                    {hasChildren && isExpanded ? (
+                        <FolderOpen className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                    ) : (
+                        <Folder className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                    )}
+                    <span className="ml-2 truncate flex-1 font-medium">{shelf.name}</span>
+                    <Badge 
+                        variant="outline" 
+                        className={`ml-2 text-xs flex-shrink-0 ${isSelected ? 'border-primary-foreground/50 text-primary-foreground' : ''}`}
+                    >
+                        {totalStock.toLocaleString('tr-TR')}
+                    </Badge>
+                </div>
+
+                {hasChildren && isExpanded && (
+                    <div>
+                        {shelf.children!.map(child => renderTreeItem(child, warehouseId, level + 1))}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    const LeftPanel = () => (
+        <div className={`flex-shrink-0 border-r border-border flex flex-col h-full bg-card transition-all duration-300 ${isLeftPanelCollapsed ? 'w-12' : 'w-full md:w-80 lg:w-96'}`}>
+            {isLeftPanelCollapsed ? (
+                <div className="flex flex-col items-center py-4 gap-4">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setIsLeftPanelCollapsed(false)}
+                        title="Paneli Aç"
+                    >
+                        <PanelLeft className="w-5 h-5" />
+                    </Button>
+                </div>
+            ) : (
+                <>
+                    <div className="p-3 border-b border-border flex items-center gap-2">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                            <Input
+                                type="text"
+                                placeholder="Depo veya raf ara..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="pl-10 h-9"
+                            />
+                        </div>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setIsLeftPanelCollapsed(true)}
+                            title="Paneli Kapat"
+                            className="flex-shrink-0"
+                        >
+                            <PanelLeftClose className="w-5 h-5" />
+                        </Button>
+                    </div>
+
+            <ScrollArea className="flex-1">
+                <div className="p-3">
+                    {loading ? (
+                        <div className="flex items-center justify-center py-8">
+                            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                        </div>
+                    ) : warehouses.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                            <Warehouse className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                            <p>Depo bulunamadı</p>
+                        </div>
+                    ) : (
+                        warehouses.map((warehouse) => {
+                            const isExpanded = expandedWarehouses.has(warehouse.id);
+                            const isSelected = selectedItem?.type === 'warehouse' && selectedItem.data.id === warehouse.id;
+                            const isLoading = loadingWarehouse === warehouse.id;
+                            const shelves = shelvesMap[warehouse.id] || [];
+                            const filteredShelves = filterItems(shelves, searchQuery);
+
+                            return (
+                                <div key={warehouse.id} className="mb-2">
+                                    <div
+                                        className={`flex items-center py-2.5 px-3 cursor-pointer rounded-lg text-sm transition-colors
+                                            ${isSelected ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+                                        onClick={() => selectWarehouse(warehouse)}
+                                    >
+                                        <button
+                                            onClick={(e) => toggleWarehouse(warehouse.id, e)}
+                                            className="w-5 h-5 flex items-center justify-center mr-2 flex-shrink-0"
+                                        >
+                                            {isLoading ? (
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                            ) : isExpanded ? (
+                                                <ChevronDown className="w-4 h-4" />
+                                            ) : (
+                                                <ChevronRight className="w-4 h-4" />
+                                            )}
+                                        </button>
+                                        <Warehouse className={`w-5 h-5 flex-shrink-0 ${isSelected ? 'text-primary-foreground' : 'text-blue-500'}`} />
+                                        <span className="ml-2 font-semibold truncate">{warehouse.name}</span>
+                                    </div>
+
+                                    {isExpanded && (
+                                        <div className="ml-3 mt-1">
+                                            {isLoading ? (
+                                                <div className="py-3 pl-4 text-sm text-muted-foreground flex items-center gap-2">
+                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                    Yükleniyor...
+                                                </div>
+                                            ) : filteredShelves.length === 0 ? (
+                                                <div className="py-3 pl-4 text-sm text-muted-foreground">
+                                                    {searchQuery ? 'Sonuç bulunamadı' : 'Raf yok'}
+                                                </div>
+                                            ) : (
+                                                filteredShelves.map(shelf => renderTreeItem(shelf, warehouse.id))
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+            </ScrollArea>
+
+            <div className="p-3 border-t border-border">
                 <Button
                     variant="outline"
+                    className="w-full"
+                    size="sm"
                     onClick={() => {
                         const warehouseId = getSelectedWarehouseId();
                         const parentId = getSelectedShelf()?.id;
@@ -502,383 +812,890 @@ export function ShelvesList() {
                     }}
                     disabled={!getSelectedWarehouseId()}
                 >
-                    + Yeni Raf
+                    <Plus className="w-4 h-4 mr-2" />
+                    Yeni Raf
                 </Button>
-                <Button
-                    variant="outline"
-                    onClick={() => {
-                        const shelf = getSelectedShelf();
-                        if (shelf) handleEdit(shelf);
-                    }}
-                    disabled={!getSelectedShelf()}
-                >
-                    Düzenle
-                </Button>
-                <Button
-                    variant="outline"
-                    onClick={() => {
-                        const shelf = getSelectedShelf();
-                        if (shelf && selectedItem?.type === 'shelf') {
-                            handleDelete(shelf.id, selectedItem.warehouseId);
-                        }
-                    }}
-                    disabled={!getSelectedShelf()}
-                >
-                    Sil
-                </Button>
-                <Button
-                    variant="outline"
-                    onClick={() => {
-                        // Collect all shelves from all expanded warehouses
-                        const allShelves: Array<{ id: string; name: string; barcode: string; globalSlot: number | null }> = [];
-
-                        const collectShelves = (items: Shelf[]) => {
-                            items.forEach(shelf => {
-                                allShelves.push({
-                                    id: shelf.id,
-                                    name: shelf.name,
-                                    barcode: shelf.barcode,
-                                    globalSlot: shelf.globalSlot,
-                                });
-                                if (shelf.children && shelf.children.length > 0) {
-                                    collectShelves(shelf.children);
-                                }
-                            });
-                        };
-
-                        // Collect from all warehouses that have shelves loaded
-                        Object.values(shelvesMap).forEach(shelves => {
-                            if (shelves && shelves.length > 0) {
-                                collectShelves(shelves);
-                            }
-                        });
-
-                        if (allShelves.length === 0) {
-                            error('Yazdırılacak raf bulunamadı. Önce bir depoyu genişletin.');
-                            return;
-                        }
-
-                        // Open print page in new window
-                        const data = encodeURIComponent(JSON.stringify(allShelves));
-                        window.open(`/shelves/print?data=${data}`, '_blank');
-                    }}
-                >
-                    Barkodları Yazdır
-                </Button>
-                <Button
-                    variant="outline"
-                    onClick={openTransferModal}
-                >
-                    Transfer Et
-                </Button>
-
-
-                {selectedItem && (
-                    <span className="text-sm text-muted-foreground ml-4">
-                        Seçili: {selectedItem.type === 'warehouse' ? selectedItem.data.name : selectedItem.data.name}
-                    </span>
-                )}
             </div>
+                </>
+            )}
+        </div>
+    );
 
-            {loading ? (
-                <div className="text-center py-10 text-muted-foreground">Yükleniyor...</div>
-            ) : warehouses.length === 0 ? (
-                <div className="text-center py-10 text-muted-foreground">Henüz depo yok</div>
-            ) : (
-                <div className="bg-card rounded-lg border border-border overflow-auto max-h-[600px]">
-                    {/* Tree view */}
-                    <div className="p-2">
-                        {warehouses.map((warehouse) => {
-                            const isExpanded = expandedWarehouses.has(warehouse.id);
-                            const isSelected = selectedItem?.type === 'warehouse' && selectedItem.data.id === warehouse.id;
-                            const isLoading = loadingWarehouse === warehouse.id;
-                            const shelves = shelvesMap[warehouse.id] || [];
+    const RightPanel = () => {
+        const shelf = getSelectedShelf();
+        const warehouseId = getSelectedWarehouseId();
+        const warehouse = warehouses.find(w => w.id === warehouseId);
 
-                            return (
-                                <div key={warehouse.id}>
-                                    {/* Warehouse row */}
-                                    <div
-                                        className={`flex items-center py-2 px-2 cursor-pointer hover:bg-muted/50 rounded transition-colors ${isSelected ? 'bg-primary/20' : ''}`}
-                                        onClick={() => selectWarehouse(warehouse)}
-                                        onDoubleClick={() => toggleWarehouse(warehouse.id)}
-                                    >
-                                        {/* Expand/Collapse button */}
-                                        <button
-                                            onClick={(e) => toggleWarehouse(warehouse.id, e)}
-                                            className="w-4 h-4 flex items-center justify-center text-muted-foreground hover:text-foreground mr-1"
-                                        >
-                                            {isLoading ? (
-                                                <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24">
-                                                    <circle
-                                                        className="opacity-25"
-                                                        cx="12"
-                                                        cy="12"
-                                                        r="10"
-                                                        stroke="currentColor"
-                                                        strokeWidth="4"
-                                                        fill="none"
-                                                    />
-                                                    <path
-                                                        className="opacity-75"
-                                                        fill="currentColor"
-                                                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                                    />
-                                                </svg>
-                                            ) : isExpanded ? (
-                                                <ChevronDown />
-                                            ) : (
-                                                <ChevronRight />
-                                            )}
-                                        </button>
-
-                                        {/* Warehouse Icon */}
-                                        <WarehouseIcon />
-
-                                        {/* Warehouse name */}
-                                        <span className={`ml-2 text-sm font-medium ${isSelected ? 'font-semibold' : ''}`}>
-                                            {warehouse.name}
-                                        </span>
-                                        {warehouse.address && (
-                                            <span className="text-muted-foreground text-xs ml-2">
-                                                ({warehouse.address})
-                                            </span>
-                                        )}
-                                    </div>
-
-                                    {/* Shelves tree */}
-                                    {isExpanded && (
-                                        <div className="relative">
-                                            {/* Vertical tree line */}
-                                            <div
-                                                className="absolute left-0 top-0 bottom-0 border-l border-gray-300 dark:border-gray-600"
-                                                style={{ marginLeft: 11 }}
-                                            />
-                                            {isLoading ? (
-                                                <div className="py-2 pl-8 text-sm text-muted-foreground">
-                                                    Raflar yükleniyor...
-                                                </div>
-                                            ) : shelves.length === 0 ? (
-                                                <div className="py-2 pl-8 text-sm text-muted-foreground">
-                                                    Bu depoda henüz raf yok
-                                                </div>
-                                            ) : (
-                                                renderShelfTree(shelves, warehouse.id)
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
+        if (!selectedItem) {
+            return (
+                <div className="flex-1 flex items-center justify-center bg-muted/30">
+                    <div className="text-center text-muted-foreground">
+                        <Warehouse className="w-20 h-20 mx-auto mb-4 opacity-20" />
+                        <p className="text-xl font-medium">Bir depo veya raf seçin</p>
+                        <p className="text-sm mt-2">Detayları görmek için sol panelden seçim yapın</p>
                     </div>
                 </div>
-            )}
+            );
+        }
 
-            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingShelf ? 'Raf Düzenle' : 'Yeni Raf'}>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <Input
-                        label="Raf Adı"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        required
-                    />
-                    <Select
-                        label="Raf Tipi"
-                        value={formData.type}
-                        onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                        options={SHELF_TYPES}
-                    />
-                    {formData.warehouseId && (
-                        <Select
-                            label="Üst Raf (opsiyonel)"
-                            value={formData.parentId}
-                            onChange={(e) => setFormData({ ...formData, parentId: e.target.value })}
-                            options={[
-                                { value: '', label: 'Kök Raf' },
-                                ...getFlatShelves(formData.warehouseId)
-                                    .filter(s => s.id !== editingShelf?.id)
-                                    .map(s => ({ value: s.id, label: s.name })),
-                            ]}
-                        />
-                    )}
-                    <Input
-                        label="Global Slot"
-                        type="number"
-                        value={formData.globalSlot}
-                        onChange={(e) => setFormData({ ...formData, globalSlot: parseInt(e.target.value) || 0 })}
-                    />
-                    <div className="flex justify-end gap-2">
-                        <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
-                            İptal
-                        </Button>
-                        <Button type="submit">{editingShelf ? 'Güncelle' : 'Oluştur'}</Button>
-                    </div>
-                </form>
-            </Modal>
+        return (
+            <div className="flex-1 flex flex-col overflow-hidden">
+                <div className="p-4 border-b border-border bg-card">
+                    <Breadcrumb>
+                        <BreadcrumbList>
+                            <BreadcrumbItem>
+                                <BreadcrumbLink href="/">Dashboard</BreadcrumbLink>
+                            </BreadcrumbItem>
+                            <BreadcrumbSeparator />
+                            <BreadcrumbItem>
+                                <BreadcrumbLink href="/shelves">Raflar</BreadcrumbLink>
+                            </BreadcrumbItem>
+                            {warehouse && (
+                                <>
+                                    <BreadcrumbSeparator />
+                                    <BreadcrumbItem>
+                                        {selectedItem.type === 'warehouse' ? (
+                                            <BreadcrumbPage>{warehouse.name}</BreadcrumbPage>
+                                        ) : (
+                                            <BreadcrumbLink
+                                                className="cursor-pointer"
+                                                onClick={() => selectWarehouse(warehouse)}
+                                            >
+                                                {warehouse.name}
+                                            </BreadcrumbLink>
+                                        )}
+                                    </BreadcrumbItem>
+                                </>
+                            )}
+                            {selectedItem.type === 'shelf' && (
+                                <>
+                                    <BreadcrumbSeparator />
+                                    <BreadcrumbItem>
+                                        <BreadcrumbPage>{selectedItem.data.name}</BreadcrumbPage>
+                                    </BreadcrumbItem>
+                                </>
+                            )}
+                        </BreadcrumbList>
+                    </Breadcrumb>
 
-            {/* Details Modal */}
-            <Modal isOpen={isDetailsOpen} onClose={() => setIsDetailsOpen(false)} title="Raf Detayları">
-                {detailsShelf && (
-                    <div className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="text-sm text-muted-foreground">Raf Adı</label>
-                                <p className="font-medium">{detailsShelf.name}</p>
-                            </div>
-                            <div>
-                                <label className="text-sm text-muted-foreground">Barkod</label>
-                                <p className="font-medium font-mono">{detailsShelf.barcode}</p>
-                            </div>
-                            <div>
-                                <label className="text-sm text-muted-foreground">Tip</label>
-                                <p className="font-medium">
-                                    <span className={`inline-block px-2 py-0.5 rounded text-xs ${detailsShelf.type === 'NORMAL' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                                        detailsShelf.type === 'DAMAGED' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                                            detailsShelf.type === 'PACKING' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
-                                                detailsShelf.type === 'PICKING' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' :
-                                                    'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
-                                        }`}>
-                                        {SHELF_TYPES.find(t => t.value === detailsShelf.type)?.label || detailsShelf.type}
-                                    </span>
-                                </p>
-                            </div>
-                            <div>
-                                <label className="text-sm text-muted-foreground">Global Slot</label>
-                                <p className="font-medium">{detailsShelf.globalSlot}</p>
-                            </div>
-                        </div>
+                    <div className="flex items-center justify-between mt-4">
+                        <h2 className="text-2xl font-bold">
+                            {selectedItem.type === 'warehouse' ? selectedItem.data.name : selectedItem.data.name}
+                        </h2>
 
-                        <div>
-                            <label className="text-sm text-muted-foreground">Yol</label>
-                            <p className="font-medium font-mono text-sm bg-muted px-2 py-1 rounded">{detailsShelf.path}</p>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
+                        {shelf && (
                             <div className="flex items-center gap-2">
-                                <span className={`w-3 h-3 rounded-full ${detailsShelf.isSellable ? 'bg-green-500' : 'bg-red-500'}`} />
-                                <span className="text-sm">{detailsShelf.isSellable ? 'Satılabilir' : 'Satılamaz'}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <span className={`w-3 h-3 rounded-full ${detailsShelf.isReservable ? 'bg-green-500' : 'bg-red-500'}`} />
-                                <span className="text-sm">{detailsShelf.isReservable ? 'Rezerve Edilebilir' : 'Rezerve Edilemez'}</span>
-                            </div>
-                        </div>
-
-                        <div className="border-t pt-4">
-                            <label className="text-sm text-muted-foreground">Stok Miktarı</label>
-                            <p className="text-2xl font-bold">{getTotalStock(detailsShelf).toLocaleString('tr-TR')}</p>
-                        </div>
-
-                        {detailsShelf.children && detailsShelf.children.length > 0 && (
-                            <div className="border-t pt-4">
-                                <label className="text-sm text-muted-foreground">Alt Raflar</label>
-                                <p className="font-medium">{detailsShelf.children.length} adet</p>
-                            </div>
-                        )}
-
-                        <div className="flex justify-end gap-2 pt-4 border-t">
-                            <Button variant="outline" onClick={() => setIsDetailsOpen(false)}>
-                                Kapat
-                            </Button>
-                            <Button onClick={() => {
-                                setIsDetailsOpen(false);
-                                handleEdit(detailsShelf);
-                            }}>
-                                Düzenle
-                            </Button>
-                        </div>
-                    </div>
-                )}
-            </Modal>
-
-            {/* Transfer Modal */}
-            <Modal isOpen={isTransferModalOpen} onClose={() => setIsTransferModalOpen(false)} title="Stok Transferi">
-                <div className="space-y-4">
-                    <div>
-                        <Select
-                            label="Kaynak Raf"
-                            value={transferFormData.fromShelfId}
-                            onChange={(e) => {
-                                const newId = e.target.value;
-                                setTransferFormData({ ...transferFormData, fromShelfId: newId, productId: '', quantity: 0 });
-                                if (newId) fetchSourceStocks(newId);
-                                else setSourceStocks([]);
-                            }}
-                            options={[
-                                { value: '', label: 'Seçiniz' },
-                                ...globalShelves
-                                    .filter((s: Shelf) => s.type !== 'WAREHOUSE' && s.stocks && s.stocks.length > 0 && s.stocks[0].quantity > 0)
-                                    .map((s: Shelf) => ({ value: s.id, label: s.name + (s.barcode ? ` [${s.barcode}]` : '') }))
-                                    .sort((a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label))
-                            ]}
-                        />
-                    </div>
-
-                    <div>
-                        <Select
-                            label="Ürün Seçin"
-                            value={transferFormData.productId}
-                            onChange={(e) => setTransferFormData({ ...transferFormData, productId: e.target.value })}
-                            options={[
-                                { value: '', label: 'Seçiniz' },
-                                ...sourceStocks.map((s: any) => ({
-                                    value: s.productId,
-                                    label: `${s.product?.name} (Mevcut: ${s.quantity})`
-                                }))
-                            ]}
-                            disabled={!transferFormData.fromShelfId || sourceStocks.length === 0}
-                        />
-                    </div>
-
-                    <div>
-                        <Select
-                            label="Hedef Raf"
-                            value={transferFormData.toShelfId}
-                            onChange={(e) => setTransferFormData({ ...transferFormData, toShelfId: e.target.value })}
-                            options={[
-                                { value: '', label: 'Seçiniz' },
-                                ...globalShelves
-                                    .filter((s: Shelf) => s.id !== transferFormData.fromShelfId && s.type !== 'WAREHOUSE')
-                                    .map((s: Shelf) => ({ value: s.id, label: s.name + (s.barcode ? ` [${s.barcode}]` : '') }))
-                                    .sort((a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label))
-                            ]}
-                        />
-                    </div>
-
-                    <div>
-                        <Input
-                            label="Transfer Miktarı"
-                            type="number"
-                            value={transferFormData.quantity}
-                            onChange={(e) => setTransferFormData({ ...transferFormData, quantity: parseInt(e.target.value) || 0 })}
-                            min={1}
-                        />
-                        {sourceStocks.find(s => s.productId === transferFormData.productId) && (
-                            <div className="flex items-center justify-between mt-1 px-1">
-                                <span className="text-xs text-muted-foreground">
-                                    Mevcut: {sourceStocks.find(s => s.productId === transferFormData.productId)?.quantity}
-                                </span>
+                                <Button variant="outline" size="sm" onClick={() => handleEdit(shelf)}>
+                                    <Pencil className="w-4 h-4 mr-2" />
+                                    Düzenle
+                                </Button>
                                 <Button
-                                    variant="ghost"
-                                    className="h-auto p-0 text-xs text-primary hover:bg-transparent hover:underline"
+                                    variant="outline"
+                                    size="sm"
                                     onClick={() => {
-                                        const stock = sourceStocks.find(s => s.productId === transferFormData.productId);
-                                        if (stock) {
-                                            setTransferFormData({ ...transferFormData, quantity: stock.quantity });
-                                        }
+                                        const data = encodeURIComponent(JSON.stringify([{
+                                            id: shelf.id,
+                                            name: shelf.name,
+                                            barcode: shelf.barcode,
+                                            globalSlot: shelf.globalSlot,
+                                        }]));
+                                        window.open(`/shelves/print?data=${data}`, '_blank');
                                     }}
                                 >
-                                    Hepsini Seç
+                                    <Printer className="w-4 h-4 mr-2" />
+                                    Yazdır
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleDelete(shelf.id, warehouseId!)}
+                                    className="text-destructive hover:text-destructive"
+                                >
+                                    <Trash2 className="w-4 h-4 mr-2" />
+                                    Sil
                                 </Button>
                             </div>
                         )}
                     </div>
+                </div>
 
-                    <div className="flex justify-end gap-2 mt-6 pt-4 border-t">
-                        <Button variant="outline" onClick={() => setIsTransferModalOpen(false)}>İptal</Button>
-                        <Button onClick={handleTransfer}>Transfer Et</Button>
+                <ScrollArea className="flex-1 p-4" style={{ overflowAnchor: 'none' }}>
+                    {selectedItem.type === 'warehouse' ? (
+                        <div className="space-y-6">
+                            <Card>
+                                <CardContent className="p-6">
+                                    <div className="flex items-start gap-5">
+                                        <div className="w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center flex-shrink-0">
+                                            <Warehouse className="w-9 h-9 text-blue-500" />
+                                        </div>
+                                        <div className="flex-1">
+                                            <h3 className="font-bold text-xl">{selectedItem.data.name}</h3>
+                                            {selectedItem.data.address && (
+                                                <p className="text-muted-foreground mt-1">{selectedItem.data.address}</p>
+                                            )}
+                                            <div className="flex items-center gap-4 mt-4">
+                                                <div className="bg-muted rounded-lg px-4 py-2">
+                                                    <span className="text-sm text-muted-foreground">Toplam Raf</span>
+                                                    <p className="font-bold text-lg">{(shelvesMap[selectedItem.data.id] || []).length}</p>
+                                                </div>
+                                                <div className="bg-primary/10 rounded-lg px-4 py-2">
+                                                    <span className="text-sm text-muted-foreground">Toplam Stok</span>
+                                                    <p className="font-bold text-lg text-primary">
+                                                        {(shelvesMap[selectedItem.data.id] || []).reduce((sum, s) => sum + getTotalStock(s), 0).toLocaleString('tr-TR')}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+                                    <div>
+                                        <CardTitle className="text-lg">Kök Raflar</CardTitle>
+                                        <p className="text-sm text-muted-foreground mt-1">Depodaki ana raf grupları</p>
+                                    </div>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => handleCreate(selectedItem.data.id)}
+                                    >
+                                        <Plus className="w-4 h-4 mr-2" />
+                                        Raf Ekle
+                                    </Button>
+                                </CardHeader>
+                                <CardContent>
+                                    {loadingWarehouse === selectedItem.data.id ? (
+                                        <div className="flex items-center justify-center py-12">
+                                            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                                        </div>
+                                    ) : (shelvesMap[selectedItem.data.id] || []).length === 0 ? (
+                                        <div className="text-center py-12 text-muted-foreground">
+                                            <Folder className="w-16 h-16 mx-auto mb-4 opacity-20" />
+                                            <p>Bu depoda henüz raf yok</p>
+                                            <p className="text-sm mt-1">Yukarıdaki butonu kullanarak ilk rafı ekleyin</p>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                            {(shelvesMap[selectedItem.data.id] || []).map(shelf => (
+                                                <Card
+                                                    key={shelf.id}
+                                                    className="cursor-pointer hover:shadow-md transition-all hover:border-primary/50"
+                                                    onClick={() => selectShelf(shelf, selectedItem.data.id)}
+                                                >
+                                                    <CardContent className="p-4">
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex items-center gap-3 min-w-0">
+                                                                <div className="w-11 h-11 bg-amber-500/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                                                                    {shelf.children?.length ? (
+                                                                        <FolderOpen className="w-6 h-6 text-amber-500" />
+                                                                    ) : (
+                                                                        <Folder className="w-6 h-6 text-amber-500" />
+                                                                    )}
+                                                                </div>
+                                                                <div className="min-w-0">
+                                                                    <p className="font-semibold truncate">{shelf.name}</p>
+                                                                    <p className="text-xs text-muted-foreground font-mono">{shelf.barcode}</p>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-3">
+                                                                <Badge variant={getShelfTypeBadgeVariant(shelf.type)}>
+                                                                    {SHELF_TYPES.find(t => t.value === shelf.type)?.label}
+                                                                </Badge>
+                                                                <span className="text-lg font-bold text-primary">
+                                                                    {getTotalStock(shelf).toLocaleString('tr-TR')}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </CardContent>
+                                                </Card>
+                                            ))}
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </div>
+                    ) : (
+                        <div className="space-y-6">
+                            <Card>
+                                <CardHeader className="flex flex-row items-start justify-between space-y-0">
+                                    <CardTitle className="text-lg">Raf Detayları</CardTitle>
+                                    <Badge variant={getShelfTypeBadgeVariant(shelf?.type || '')}>
+                                        {SHELF_TYPES.find(t => t.value === shelf?.type)?.label || shelf?.type}
+                                    </Badge>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                                        <div className="bg-muted/50 rounded-xl p-4 min-h-[88px]">
+                                            <span className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Barkod</span>
+                                            <p className="font-mono font-semibold mt-2 text-sm break-all">{shelf?.barcode || '-'}</p>
+                                        </div>
+                                        <div className="bg-muted/50 rounded-xl p-4 min-h-[88px]">
+                                            <span className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Global Slot</span>
+                                            <p className="font-semibold mt-2">{shelf?.globalSlot ?? '-'}</p>
+                                        </div>
+                                        <div className="bg-primary/10 rounded-xl p-4 min-h-[88px]">
+                                            <span className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Toplam Stok</span>
+                                            <p className="font-bold text-2xl text-primary mt-2">{getTotalStock(shelf!).toLocaleString('tr-TR')}</p>
+                                        </div>
+                                        <div className="bg-muted/50 rounded-xl p-4 min-h-[88px]">
+                                            <span className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Alt Raf</span>
+                                            <p className="font-semibold mt-2">{shelf?.children?.length || 0} adet</p>
+                                        </div>
+                                    </div>
+
+                                    <Separator className="my-4" />
+
+                                    <div className="flex items-center gap-8">
+                                        <div className="flex items-center gap-2">
+                                            <div className={`w-3 h-3 rounded-full ${shelf?.isSellable ? 'bg-green-500' : 'bg-red-500'}`} />
+                                            <span className="text-sm font-medium">{shelf?.isSellable ? 'Satılabilir' : 'Satılamaz'}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <div className={`w-3 h-3 rounded-full ${shelf?.isReservable ? 'bg-green-500' : 'bg-red-500'}`} />
+                                            <span className="text-sm font-medium">{shelf?.isReservable ? 'Rezerve Edilebilir' : 'Rezerve Edilemez'}</span>
+                                        </div>
+                                        {shelf?.path && (
+                                            <div className="flex-1 text-right">
+                                                <Badge variant="outline" className="font-mono">{shelf.path}</Badge>
+                                            </div>
+                                        )}
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            {shelf?.children && shelf.children.length > 0 && (
+                                <Card>
+                                    <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                                        <CardTitle className="text-lg">Alt Raflar ({shelf.children.length})</CardTitle>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => handleCreate(warehouseId!, shelf.id)}
+                                        >
+                                            <Plus className="w-4 h-4 mr-2" />
+                                            Alt Raf Ekle
+                                        </Button>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                            {shelf.children.map(child => (
+                                                <Card
+                                                    key={child.id}
+                                                    className="cursor-pointer hover:shadow-sm transition-all hover:border-primary/50"
+                                                    onClick={() => selectShelf(child, warehouseId!)}
+                                                >
+                                                    <CardContent className="p-3 flex items-center justify-between">
+                                                        <div className="flex items-center gap-2">
+                                                            <Folder className="w-4 h-4 text-amber-500" />
+                                                            <span className="font-medium text-sm">{child.name}</span>
+                                                        </div>
+                                                        <Badge variant="outline">{getTotalStock(child).toLocaleString('tr-TR')}</Badge>
+                                                    </CardContent>
+                                                </Card>
+                                            ))}
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            )}
+
+                            <Card>
+                                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                                    <div>
+                                        <CardTitle className="text-lg">Raf Stok Durumu</CardTitle>
+                                        <p className="text-sm text-muted-foreground mt-1">
+                                            {shelfStocks?.length || 0} farklı ürün, toplam {shelfStocks?.reduce((sum: number, s: StockItem) => sum + (s.quantity || 0), 0).toLocaleString('tr-TR')} adet
+                                        </p>
+                                    </div>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => openTransferModal(shelf?.id)}
+                                    >
+                                        <ArrowRightLeft className="w-4 h-4 mr-2" />
+                                        Transfer
+                                    </Button>
+                                </CardHeader>
+                                <CardContent>
+                                    {shelfStocks && shelfStocks.length > 0 && (
+                                        <div className="relative mb-4">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                            <input
+                                                ref={stockSearchInputRef}
+                                                type="text"
+                                                placeholder="Stok ara (isim, barkod, SKU)..."
+                                                defaultValue=""
+                                                onChange={(e) => handleStockSearch(e.target.value)}
+                                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 pl-10"
+                                            />
+                                        </div>
+                                    )}
+                                    {loadingStocks ? (
+                                        <div className="flex items-center justify-center py-12">
+                                            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                                        </div>
+                                    ) : !shelfStocks || shelfStocks.length === 0 ? (
+                                        <div className="text-center py-12 text-muted-foreground">
+                                            <Package className="w-16 h-16 mx-auto mb-4 opacity-20" />
+                                            <p>Bu rafta stok bulunmuyor</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {filteredStocks.map((stock: StockItem) => (
+                                                <Card key={stock.product?.id || stock.productId} className="hover:shadow-sm transition-all group">
+                                                    <CardContent className="p-4">
+                                                        <div className="flex items-center justify-between gap-4">
+                                                            <div className="flex items-center gap-4 flex-1 min-w-0">
+                                                                <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                                                                    <Package className="w-6 h-6 text-primary" />
+                                                                </div>
+                                                                <div className="min-w-0 flex-1">
+                                                                    <p className="font-semibold truncate">{stock.product?.name || 'Bilinmeyen Ürün'}</p>
+                                                                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                                                        {stock.product?.barcode && (
+                                                                            <Badge variant="outline" className="font-mono text-xs">
+                                                                                {stock.product.barcode}
+                                                                            </Badge>
+                                                                        )}
+                                                                        {stock.product?.sku && (
+                                                                            <span className="text-xs text-muted-foreground">SKU: {stock.product.sku}</span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="text-right flex-shrink-0">
+                                                                <p className="text-2xl font-bold text-primary">{stock.quantity?.toLocaleString('tr-TR')}</p>
+                                                                <p className="text-xs text-muted-foreground">adet</p>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex justify-end mt-3">
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                                                onClick={() => openTransferModal(shelf?.id, stock.productId)}
+                                                            >
+                                                                <ArrowRightLeft className="w-4 h-4 mr-2" />
+                                                                Transfer
+                                                            </Button>
+                                                        </div>
+                                                    </CardContent>
+                                                </Card>
+                                            ))}
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+
+                            {!shelf?.children?.length && (
+                                <div className="flex justify-center">
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => handleCreate(warehouseId!, shelf?.id)}
+                                    >
+                                        <Plus className="w-4 h-4 mr-2" />
+                                        Alt Raf Ekle
+                                    </Button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </ScrollArea>
+
+                <div className="p-4 border-t border-border bg-card flex items-center justify-between">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                            const allShelves: Array<{ id: string; name: string; barcode: string; globalSlot: number | null }> = [];
+                            const collectShelves = (items: Shelf[]) => {
+                                items.forEach(shelf => {
+                                    allShelves.push({
+                                        id: shelf.id,
+                                        name: shelf.name,
+                                        barcode: shelf.barcode,
+                                        globalSlot: shelf.globalSlot,
+                                    });
+                                    if (shelf.children?.length) collectShelves(shelf.children);
+                                });
+                            };
+                            Object.values(shelvesMap).forEach(shelves => {
+                                if (shelves?.length) collectShelves(shelves);
+                            });
+                            if (allShelves.length === 0) {
+                                toast({ variant: 'destructive', title: 'Hata', description: 'Yazdırılacak raf bulunamadı' });
+                                return;
+                            }
+                            const data = encodeURIComponent(JSON.stringify(allShelves));
+                            window.open(`/shelves/print?data=${data}`, '_blank');
+                        }}
+                    >
+                        <Printer className="w-4 h-4 mr-2" />
+                        Barkodları Yazdır
+                    </Button>
+
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openTransferModal()}
+                    >
+                        <ArrowRightLeft className="w-4 h-4 mr-2" />
+                        Genel Transfer
+                    </Button>
+                </div>
+            </div>
+        );
+    };
+
+    return (
+        <div className="h-[calc(100vh-6rem)]">
+            <div className="flex items-center justify-between mb-4">
+                <Breadcrumb>
+                    <BreadcrumbList>
+                        <BreadcrumbItem>
+                            <BreadcrumbLink href="/">Ana Sayfa</BreadcrumbLink>
+                        </BreadcrumbItem>
+                        <BreadcrumbSeparator />
+                        <BreadcrumbItem>
+                            <BreadcrumbPage>Raflar</BreadcrumbPage>
+                        </BreadcrumbItem>
+                    </BreadcrumbList>
+                </Breadcrumb>
+
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        onClick={() => setIsProductSearchOpen(true)}
+                    >
+                        <Search className="h-4 w-4 mr-2" />
+                        Ürün Ara
+                    </Button>
+                    <Button
+                        variant="outline"
+                        className="md:hidden"
+                        onClick={() => setIsMobilePanelOpen(!isMobilePanelOpen)}
+                    >
+                        {isMobilePanelOpen ? 'Ağaç Görünümü' : 'Detay Görünümü'}
+                    </Button>
+                </div>
+            </div>
+
+            <Card className="h-[calc(100%-3.5rem)] overflow-hidden">
+                <div className="flex h-full">
+                    <div className={`${isMobilePanelOpen ? 'hidden md:flex' : 'flex'}`}>
+                        <LeftPanel />
+                    </div>
+                    <div className={`${isMobilePanelOpen ? 'flex' : 'hidden md:flex'} flex-1`}>
+                        <RightPanel />
                     </div>
                 </div>
-            </Modal>
-        </div >
+            </Card>
+
+            <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>{editingShelf ? 'Raf Düzenle' : 'Yeni Raf'}</DialogTitle>
+                    </DialogHeader>
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div className="space-y-2">
+                            <Label>Raf Adı</Label>
+                            <Input
+                                value={formData.name}
+                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                required
+                                placeholder="Raf adı girin"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Raf Tipi</Label>
+                            <Popover open={shelfTypeComboOpen} onOpenChange={setShelfTypeComboOpen}>
+                                <PopoverTrigger asChild>
+                                    <Button
+                                        variant="outline"
+                                        role="combobox"
+                                        aria-expanded={shelfTypeComboOpen}
+                                        className="w-full justify-between"
+                                    >
+                                        {SHELF_TYPES.find(t => t.value === formData.type)?.label || 'Raf tipi seçin'}
+                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                                    <Command>
+                                        <CommandInput placeholder="Raf tipi ara..." />
+                                        <CommandList>
+                                            <CommandEmpty>Bulunamadı.</CommandEmpty>
+                                            <CommandGroup>
+                                                {SHELF_TYPES.map(t => (
+                                                    <CommandItem
+                                                        key={t.value}
+                                                        value={t.label}
+                                                        onSelect={() => {
+                                                            setFormData({ 
+                                                                ...formData, 
+                                                                type: t.value,
+                                                                isSellable: t.defaultSellable
+                                                            });
+                                                            setShelfTypeComboOpen(false);
+                                                        }}
+                                                    >
+                                                        <Check className={`mr-2 h-4 w-4 ${formData.type === t.value ? 'opacity-100' : 'opacity-0'}`} />
+                                                        {t.label}
+                                                    </CommandItem>
+                                                ))}
+                                            </CommandGroup>
+                                        </CommandList>
+                                    </Command>
+                                </PopoverContent>
+                            </Popover>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                                <Label>Satılabilir Stok</Label>
+                                <p className="text-xs text-muted-foreground">Bu raftaki ürünler satışa uygun mu?</p>
+                            </div>
+                            <Switch
+                                checked={formData.isSellable}
+                                onCheckedChange={(checked) => setFormData({ ...formData, isSellable: checked })}
+                            />
+                        </div>
+                        {formData.warehouseId && (
+                            <div className="space-y-2">
+                                <Label>Üst Raf (opsiyonel)</Label>
+                                <Popover open={parentShelfComboOpen} onOpenChange={setParentShelfComboOpen}>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            role="combobox"
+                                            aria-expanded={parentShelfComboOpen}
+                                            className="w-full justify-between"
+                                        >
+                                            {formData.parentId 
+                                                ? getFlatShelves(formData.warehouseId).find(s => s.id === formData.parentId)?.name || 'Kök Raf'
+                                                : 'Kök Raf'
+                                            }
+                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                                        <Command>
+                                            <CommandInput placeholder="Üst raf ara..." />
+                                            <CommandList>
+                                                <CommandEmpty>Bulunamadı.</CommandEmpty>
+                                                <CommandGroup>
+                                                    <CommandItem
+                                                        value="Kök Raf"
+                                                        onSelect={() => {
+                                                            setFormData({ ...formData, parentId: '' });
+                                                            setParentShelfComboOpen(false);
+                                                        }}
+                                                    >
+                                                        <Check className={`mr-2 h-4 w-4 ${!formData.parentId ? 'opacity-100' : 'opacity-0'}`} />
+                                                        Kök Raf
+                                                    </CommandItem>
+                                                    {getFlatShelves(formData.warehouseId)
+                                                        .filter(s => s.id !== editingShelf?.id)
+                                                        .map(s => (
+                                                            <CommandItem
+                                                                key={s.id}
+                                                                value={s.name}
+                                                                onSelect={() => {
+                                                                    setFormData({ ...formData, parentId: s.id });
+                                                                    setParentShelfComboOpen(false);
+                                                                }}
+                                                            >
+                                                                <Check className={`mr-2 h-4 w-4 ${formData.parentId === s.id ? 'opacity-100' : 'opacity-0'}`} />
+                                                                {s.name}
+                                                            </CommandItem>
+                                                        ))}
+                                                </CommandGroup>
+                                            </CommandList>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
+                            </div>
+                        )}
+                        <div className="space-y-2">
+                            <Label>Global Slot</Label>
+                            <Input
+                                type="number"
+                                value={formData.globalSlot}
+                                onChange={(e) => setFormData({ ...formData, globalSlot: parseInt(e.target.value) || 0 })}
+                            />
+                        </div>
+                        <div className="flex justify-end gap-2 pt-4">
+                            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
+                                İptal
+                            </Button>
+                            <Button type="submit">{editingShelf ? 'Güncelle' : 'Oluştur'}</Button>
+                        </div>
+                    </form>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={isTransferModalOpen} onOpenChange={setIsTransferModalOpen}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Stok Transferi</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <Label>Kaynak Raf</Label>
+                            <Select
+                                value={transferFormData.fromShelfId}
+                                onValueChange={(v) => {
+                                    setTransferFormData({ ...transferFormData, fromShelfId: v, productId: '', quantity: 0 });
+                                    if (v) fetchSourceStocks(v);
+                                    else setSourceStocks([]);
+                                }}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Seçiniz" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {globalShelves
+                                        .filter((s: Shelf) => s.type !== 'WAREHOUSE')
+                                        .sort((a, b) => a.name.localeCompare(b.name))
+                                        .map((s: Shelf) => (
+                                            <SelectItem key={s.id} value={s.id}>
+                                                {s.name} {s.barcode && `[${s.barcode}]`}
+                                            </SelectItem>
+                                        ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Ürün Seçin</Label>
+                            <Select
+                                value={transferFormData.productId}
+                                onValueChange={(v) => setTransferFormData({ ...transferFormData, productId: v })}
+                                disabled={!transferFormData.fromShelfId || !sourceStocks?.length}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Seçiniz" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {(sourceStocks || []).map((s: StockItem) => (
+                                        <SelectItem key={s.productId} value={s.productId}>
+                                            {s.product?.name} (Mevcut: {s.quantity})
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Hedef Raf</Label>
+                            <Select
+                                value={transferFormData.toShelfId}
+                                onValueChange={(v) => setTransferFormData({ ...transferFormData, toShelfId: v })}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Seçiniz" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {globalShelves
+                                        .filter((s: Shelf) => s.id !== transferFormData.fromShelfId && s.type !== 'WAREHOUSE')
+                                        .sort((a, b) => a.name.localeCompare(b.name))
+                                        .map((s: Shelf) => (
+                                            <SelectItem key={s.id} value={s.id}>
+                                                {s.name} {s.barcode && `[${s.barcode}]`}
+                                            </SelectItem>
+                                        ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Transfer Miktarı</Label>
+                            <Input
+                                type="number"
+                                value={transferFormData.quantity}
+                                onChange={(e) => setTransferFormData({ ...transferFormData, quantity: parseInt(e.target.value) || 0 })}
+                                min={1}
+                            />
+                            {sourceStocks?.find((s: StockItem) => s.productId === transferFormData.productId) && (
+                                <div className="flex items-center justify-between mt-1 px-1">
+                                    <span className="text-xs text-muted-foreground">
+                                        Mevcut: {sourceStocks.find((s: StockItem) => s.productId === transferFormData.productId)?.quantity}
+                                    </span>
+                                    <Button
+                                        type="button"
+                                        variant="link"
+                                        className="h-auto p-0 text-xs"
+                                        onClick={() => {
+                                            const stock = sourceStocks.find((s: StockItem) => s.productId === transferFormData.productId);
+                                            if (stock) {
+                                                setTransferFormData({ ...transferFormData, quantity: stock.quantity });
+                                            }
+                                        }}
+                                    >
+                                        Hepsini Seç
+                                    </Button>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-4">
+                            <Button variant="outline" onClick={() => setIsTransferModalOpen(false)}>İptal</Button>
+                            <Button onClick={handleTransfer}>Transfer Et</Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={isProductSearchOpen} onOpenChange={setIsProductSearchOpen}>
+                <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>Ürün Ara - Hangi Raflarda?</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <Label>Ürün Seçin</Label>
+                            <Popover open={productComboOpen} onOpenChange={setProductComboOpen} modal={true}>
+                                <PopoverTrigger asChild>
+                                    <Button
+                                        variant="outline"
+                                        role="combobox"
+                                        aria-expanded={productComboOpen}
+                                        className="w-full justify-between h-auto min-h-10"
+                                    >
+                                        {selectedProducts.length === 0 ? (
+                                            <span className="text-muted-foreground">Ürün seçin...</span>
+                                        ) : (
+                                            <span className="text-sm">{selectedProducts.length} ürün seçildi</span>
+                                        )}
+                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-[400px] p-0" align="start" sideOffset={4}>
+                                    <Command shouldFilter={true}>
+                                        <CommandInput placeholder="Ürün ara..." />
+                                        <CommandList>
+                                            <CommandEmpty>
+                                                {productsLoading ? 'Yükleniyor...' : 'Ürün bulunamadı.'}
+                                            </CommandEmpty>
+                                            <CommandGroup className="max-h-64 overflow-y-auto">
+                                                {allProducts.map((product) => {
+                                                    const isSelected = selectedProducts.some(p => p.id === product.id);
+                                                    return (
+                                                        <CommandItem
+                                                            key={product.id}
+                                                            value={`${product.name} ${product.barcode} ${product.sku || ''}`}
+                                                            onSelect={() => {
+                                                                toggleProductSelection(product);
+                                                            }}
+                                                            className="cursor-pointer"
+                                                        >
+                                                            <div className="flex items-center gap-3 w-full">
+                                                                <div className={`flex items-center justify-center w-5 h-5 rounded border ${isSelected ? 'bg-primary border-primary' : 'border-input'}`}>
+                                                                    {isSelected && <Check className="h-3.5 w-3.5 text-primary-foreground" />}
+                                                                </div>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <p className="text-sm truncate">{product.name}</p>
+                                                                    <p className="text-xs text-muted-foreground truncate">
+                                                                        {product.barcode} {product.sku && `• ${product.sku}`}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                        </CommandItem>
+                                                    );
+                                                })}
+                                            </CommandGroup>
+                                        </CommandList>
+                                        {selectedProducts.length > 0 && (
+                                            <div className="border-t p-2">
+                                                <Button 
+                                                    size="sm" 
+                                                    className="w-full"
+                                                    onClick={() => setProductComboOpen(false)}
+                                                >
+                                                    Tamam ({selectedProducts.length} seçildi)
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </Command>
+                                </PopoverContent>
+                            </Popover>
+                        </div>
+
+                        {selectedProducts.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                                {selectedProducts.map((product) => (
+                                    <Badge key={product.id} variant="secondary" className="gap-1">
+                                        <span className="truncate max-w-32">{product.name}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => removeSelectedProduct(product.id)}
+                                            className="hover:bg-muted rounded-full"
+                                        >
+                                            <X className="h-3 w-3" />
+                                        </button>
+                                    </Badge>
+                                ))}
+                            </div>
+                        )}
+
+                        <Button 
+                            onClick={() => searchProductInShelves()} 
+                            className="w-full"
+                            disabled={searchingProduct || selectedProducts.length === 0}
+                        >
+                            {searchingProduct ? (
+                                <>
+                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                    Aranıyor...
+                                </>
+                            ) : (
+                                <>
+                                    <Search className="h-4 w-4 mr-2" />
+                                    Raflarda Ara
+                                </>
+                            )}
+                        </Button>
+
+                        {productSearchResults.length > 0 && (
+                            <div className="border rounded-lg divide-y max-h-64 overflow-y-auto">
+                                {productSearchResults.map((result, idx) => (
+                                    <button
+                                        key={idx}
+                                        type="button"
+                                        className="w-full p-3 text-left hover:bg-muted/50 transition-colors"
+                                        onClick={() => goToShelfWithProduct(result.shelf.id, result.warehouse.id)}
+                                    >
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="flex-1 min-w-0">
+                                                <p className="font-medium text-sm truncate">
+                                                    {result.product?.name || 'Bilinmeyen Ürün'}
+                                                </p>
+                                                <p className="text-xs text-muted-foreground truncate">
+                                                    {result.product?.barcode && `Barkod: ${result.product.barcode}`}
+                                                </p>
+                                                <p className="text-xs text-primary mt-1">
+                                                    <Warehouse className="h-3 w-3 inline mr-1" />
+                                                    {result.warehouse?.name} → {result.shelf?.name}
+                                                </p>
+                                            </div>
+                                            <Badge variant="secondary" className="shrink-0">
+                                                {result.quantity} adet
+                                            </Badge>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        {productSearchResults.length === 0 && selectedProducts.length > 0 && !searchingProduct && (
+                            <div className="text-center py-4 text-muted-foreground">
+                                <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                                <p>Raflarda stok bulunamadı</p>
+                            </div>
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
+        </div>
     );
 }

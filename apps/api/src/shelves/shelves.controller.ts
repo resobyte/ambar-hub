@@ -32,6 +32,16 @@ export class ShelvesController {
         return this.shelvesService.findByBarcode(barcode);
     }
 
+    @Get('search-product')
+    searchProduct(@Query('query') query: string) {
+        return this.shelvesService.searchProductInShelves(query);
+    }
+
+    @Post('search-product-by-ids')
+    searchProductByIds(@Body() body: { productIds: string[] }) {
+        return this.shelvesService.searchProductsByIds(body.productIds);
+    }
+
     @Get(':id')
     findOne(@Param('id') id: string) {
         return this.shelvesService.findOne(id);
