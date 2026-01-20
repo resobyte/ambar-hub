@@ -51,6 +51,14 @@ export const ROUTE_PERMISSIONS: RouteConfig[] = [
     group: 'Sipariş İşlemleri',
   },
   {
+    path: '/customers',
+    label: 'Müşteriler',
+    icon: 'customer',
+    roles: [Role.PLATFORM_OWNER],
+    showInSidebar: true,
+    group: 'Sipariş İşlemleri',
+  },
+  {
     path: '/routes',
     label: 'Rotalar',
     icon: 'route',

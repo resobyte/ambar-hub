@@ -2,8 +2,20 @@ import { Entity, Column, OneToMany } from 'typeorm';
 import { BaseEntity } from '../../common/entities/base.entity';
 import { Order } from '../../orders/entities/order.entity';
 
+export enum CustomerType {
+    INDIVIDUAL = 'INDIVIDUAL',
+    COMMERCIAL = 'COMMERCIAL',
+}
+
 @Entity('customers')
 export class Customer extends BaseEntity {
+    @Column({
+        type: 'enum',
+        enum: CustomerType,
+        default: CustomerType.INDIVIDUAL,
+    })
+    type: CustomerType;
+
     @Column({ name: 'first_name', nullable: true })
     firstName: string;
 

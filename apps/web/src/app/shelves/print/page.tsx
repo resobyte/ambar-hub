@@ -156,7 +156,7 @@ export default function PrintBarcodesPage() {
                             marginBottom: '4px',
                             textAlign: 'center',
                         }}>
-                            {shelf.barcode}
+                            {shelf.name}
                         </div>
                         <svg
                             ref={el => { barcodeRefs.current[shelf.id] = el; }}

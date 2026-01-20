@@ -33,6 +33,7 @@ import {
   ChevronRight,
   ChevronDown,
   X,
+  Contact,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -62,6 +63,7 @@ const iconMap: Record<string, React.ReactNode> = {
   picking: <ClipboardCheck className="w-5 h-5" />,
   invoice: <FileText className="w-5 h-5" />,
   settings: <Settings className="w-5 h-5" />,
+  customer: <Contact className="w-5 h-5" />,
 };
 
 type GroupedRoutes = {
