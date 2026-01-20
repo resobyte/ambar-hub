@@ -378,6 +378,274 @@ export async function deleteIntegration(id: string): Promise<{ message: string }
   return res.json();
 }
 
+// Trendyol Price & Inventory API
+export interface TrendyolPriceInventoryResponse {
+  success: boolean;
+  message: string;
+  batchRequestId?: string;
+  sentItems?: number;
+  skippedItems?: number;
+}
+
+export interface TrendyolBatchStatusResponse {
+  success: boolean;
+  message: string;
+  status?: string;
+  failedItems?: Array<{ barcode: string; reason: string }>;
+}
+
+export async function updateTrendyolPriceAndInventory(
+  integrationStoreId: string,
+  productIds?: string[]
+): Promise<TrendyolPriceInventoryResponse> {
+  const res = await fetch(`${API_URL}/integrations/stores/${integrationStoreId}/trendyol/price-inventory`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ productIds }),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Request failed');
+  }
+  return res.json();
+}
+
+export async function getTrendyolBatchStatus(
+  integrationStoreId: string,
+  batchRequestId: string
+): Promise<TrendyolBatchStatusResponse> {
+  const res = await fetch(
+    `${API_URL}/integrations/stores/${integrationStoreId}/trendyol/batch-status/${batchRequestId}`,
+    {
+      credentials: 'include',
+    }
+  );
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Request failed');
+  }
+  return res.json();
+}
+
+// Hepsiburada Price & Inventory API
+export interface HepsiburadaPriceInventoryResponse {
+  success: boolean;
+  message: string;
+  priceUploadId?: string;
+  stockUploadId?: string;
+  sentItems?: number;
+  skippedItems?: number;
+}
+
+export interface HepsiburadaUploadStatusResponse {
+  success: boolean;
+  message: string;
+  status?: string;
+  errors?: Array<{ sku: string; reason: string }>;
+}
+
+export interface HepsiburadaPackResponse {
+  success: boolean;
+  message: string;
+  packageNumber?: string;
+}
+
+export interface HepsiburadaLabelResponse {
+  success: boolean;
+  message: string;
+  labelUrl?: string;
+  labelData?: string;
+}
+
+export async function updateHepsiburadaPriceAndInventory(
+  integrationStoreId: string,
+  productIds?: string[]
+): Promise<HepsiburadaPriceInventoryResponse> {
+  const res = await fetch(`${API_URL}/integrations/stores/${integrationStoreId}/hepsiburada/price-inventory`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ productIds }),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Request failed');
+  }
+  return res.json();
+}
+
+export async function getHepsiburadaUploadStatus(
+  integrationStoreId: string,
+  type: 'price' | 'stock',
+  uploadId: string
+): Promise<HepsiburadaUploadStatusResponse> {
+  const res = await fetch(
+    `${API_URL}/integrations/stores/${integrationStoreId}/hepsiburada/upload-status/${type}/${uploadId}`,
+    {
+      credentials: 'include',
+    }
+  );
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Request failed');
+  }
+  return res.json();
+}
+
+export async function packHepsiburadaOrder(
+  integrationStoreId: string,
+  lineItems: Array<{ lineItemId: string; quantity: number }>
+): Promise<HepsiburadaPackResponse> {
+  const res = await fetch(`${API_URL}/integrations/stores/${integrationStoreId}/hepsiburada/pack`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ lineItems }),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Request failed');
+  }
+  return res.json();
+}
+
+export async function unpackHepsiburadaOrder(
+  integrationStoreId: string,
+  packageNumber: string
+): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(
+    `${API_URL}/integrations/stores/${integrationStoreId}/hepsiburada/unpack/${packageNumber}`,
+    {
+      method: 'POST',
+      credentials: 'include',
+    }
+  );
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Request failed');
+  }
+  return res.json();
+}
+
+export async function getHepsiburadaPackageLabel(
+  integrationStoreId: string,
+  packageNumber: string
+): Promise<HepsiburadaLabelResponse> {
+  const res = await fetch(
+    `${API_URL}/integrations/stores/${integrationStoreId}/hepsiburada/label/${packageNumber}`,
+    {
+      credentials: 'include',
+    }
+  );
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Request failed');
+  }
+  return res.json();
+}
+
+// ikas Price, Inventory & Order API
+export interface IkasPriceInventoryResponse {
+  success: boolean;
+  message: string;
+  updatedItems?: number;
+  skippedItems?: number;
+}
+
+export interface IkasFulfillResponse {
+  success: boolean;
+  message: string;
+  orderPackageId?: string;
+}
+
+export async function updateIkasPriceAndInventory(
+  integrationStoreId: string,
+  productIds?: string[]
+): Promise<IkasPriceInventoryResponse> {
+  const res = await fetch(`${API_URL}/integrations/stores/${integrationStoreId}/ikas/price-inventory`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ productIds }),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Request failed');
+  }
+  return res.json();
+}
+
+export async function fulfillIkasOrder(
+  integrationStoreId: string,
+  orderId: string,
+  orderLineItems: Array<{ orderLineItemId: string; quantity: number }>,
+  trackingInfo?: {
+    barcode?: string;
+    cargoCompany?: string;
+    trackingNumber?: string;
+    trackingLink?: string;
+  }
+): Promise<IkasFulfillResponse> {
+  const res = await fetch(`${API_URL}/integrations/stores/${integrationStoreId}/ikas/fulfill`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ orderId, orderLineItems, trackingInfo }),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Request failed');
+  }
+  return res.json();
+}
+
+export async function updateIkasOrderPackageStatus(
+  integrationStoreId: string,
+  orderId: string,
+  packages: Array<{
+    packageId: string;
+    status: 'READY_FOR_SHIPMENT' | 'SHIPPED' | 'DELIVERED';
+    trackingInfo?: {
+      barcode?: string;
+      cargoCompany?: string;
+      trackingNumber?: string;
+      trackingLink?: string;
+    };
+  }>
+): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${API_URL}/integrations/stores/${integrationStoreId}/ikas/package-status`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ orderId, packages }),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Request failed');
+  }
+  return res.json();
+}
+
+export async function addIkasOrderInvoice(
+  integrationStoreId: string,
+  orderId: string,
+  invoiceNumber: string,
+  invoicePdfBase64?: string
+): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${API_URL}/integrations/stores/${integrationStoreId}/ikas/invoice`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ orderId, invoiceNumber, invoicePdfBase64 }),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Request failed');
+  }
+  return res.json();
+}
+
 // IntegrationStore API
 export async function getIntegrationStores(integrationId?: string): Promise<IntegrationStore[]> {
   const url = new URL(`${API_URL}/integration-stores`, BASE_URL);

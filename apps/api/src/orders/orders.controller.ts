@@ -1,4 +1,4 @@
-import { Controller, Post, Param, Get, Query, Delete, Res } from '@nestjs/common';
+import { Controller, Post, Param, Get, Query, Delete, Res, Put, Body } from '@nestjs/common';
 import { Response } from 'express';
 import { OrdersService } from './orders.service';
 
@@ -23,6 +23,40 @@ export class OrdersController {
     @Post(':id/label')
     async getLabel(@Param('id') id: string) {
         return this.ordersService.fetchCargoLabel(id);
+    }
+
+    @Put(':id/trendyol-status/picking')
+    async updateTrendyolPicking(@Param('id') id: string) {
+        return this.ordersService.updateTrendyolPackageStatus(id, 'Picking');
+    }
+
+    @Put(':id/trendyol-status/invoiced')
+    async updateTrendyolInvoiced(
+        @Param('id') id: string,
+        @Query('invoiceNumber') invoiceNumber: string
+    ) {
+        if (!invoiceNumber) {
+            return { success: false, message: 'Fatura numarası gereklidir.' };
+        }
+        return this.ordersService.updateTrendyolPackageStatus(id, 'Invoiced', invoiceNumber);
+    }
+
+    @Put('trendyol-status/bulk')
+    async bulkUpdateTrendyolStatus(
+        @Body() body: {
+            orderIds: string[];
+            status: 'Picking' | 'Invoiced';
+            invoiceNumbers?: Record<string, string>;
+        }
+    ) {
+        const { orderIds, status, invoiceNumbers } = body;
+        if (!orderIds || orderIds.length === 0) {
+            return { success: false, message: 'Sipariş seçilmedi.' };
+        }
+        if (status !== 'Picking' && status !== 'Invoiced') {
+            return { success: false, message: 'Geçersiz durum.' };
+        }
+        return this.ordersService.bulkUpdateTrendyolStatus(orderIds, status, invoiceNumbers);
     }
 
     @Get()

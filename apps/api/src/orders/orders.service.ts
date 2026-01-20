@@ -1312,5 +1312,127 @@ export class OrdersService {
 
         return null;
     }
+
+    async updateTrendyolPackageStatus(
+        orderId: string,
+        status: 'Picking' | 'Invoiced',
+        invoiceNumber?: string
+    ): Promise<{ success: boolean; message: string }> {
+        const order = await this.orderRepository.findOne({
+            where: { id: orderId },
+            relations: ['items', 'integration'],
+        });
+
+        if (!order) {
+            return { success: false, message: 'Sipariş bulunamadı.' };
+        }
+
+        if (order.integration?.type !== IntegrationType.TRENDYOL) {
+            return { success: false, message: 'Bu sipariş Trendyol siparişi değil.' };
+        }
+
+        if (status === 'Invoiced' && !invoiceNumber) {
+            return { success: false, message: 'Fatura numarası gereklidir.' };
+        }
+
+        const integration = await this.integrationsService.findWithStores(order.integrationId);
+        if (!integration) {
+            return { success: false, message: 'Entegrasyon bulunamadı.' };
+        }
+
+        const storeConfig = integration.integrationStores.find(
+            (s) => s.storeId === order.storeId && s.isActive
+        );
+
+        if (!storeConfig) {
+            return { success: false, message: 'Mağaza yapılandırması bulunamadı.' };
+        }
+
+        const lines = order.items
+            .filter((item) => item.lineId)
+            .map((item) => ({
+                lineId: Number(item.lineId),
+                quantity: item.quantity,
+            }));
+
+        if (lines.length === 0) {
+            return { success: false, message: 'Sipariş kalemleri bulunamadı.' };
+        }
+
+        const requestBody: {
+            lines: Array<{ lineId: number; quantity: number }>;
+            params: { invoiceNumber?: string };
+            status: string;
+        } = {
+            lines,
+            params: {},
+            status,
+        };
+
+        if (status === 'Invoiced' && invoiceNumber) {
+            requestBody.params.invoiceNumber = invoiceNumber;
+        }
+
+        const url = `https://apigw.trendyol.com/integration/order/sellers/${storeConfig.sellerId}/shipment-packages/${order.packageId}`;
+        const auth = Buffer.from(`${storeConfig.apiKey}:${storeConfig.apiSecret}`).toString('base64');
+
+        try {
+            const response = await fetch(url, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Basic ${auth}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.text();
+                this.logger.error(`Trendyol updatePackage failed: ${response.status} - ${errorData}`);
+                return {
+                    success: false,
+                    message: `Trendyol API hatası: ${response.status} - ${errorData}`,
+                };
+            }
+
+            order.integrationStatus = status;
+            if (status === 'Picking') {
+                order.status = OrderStatus.PICKING;
+            } else if (status === 'Invoiced') {
+                order.status = OrderStatus.INVOICED;
+            }
+            order.lastModifiedDate = new Date();
+            await this.orderRepository.save(order);
+
+            this.logger.log(`Trendyol package ${order.packageId} status updated to ${status}`);
+            return {
+                success: true,
+                message: `Paket durumu "${status}" olarak güncellendi.`,
+            };
+        } catch (error) {
+            this.logger.error(`Error updating Trendyol package status: ${error.message}`, error);
+            return {
+                success: false,
+                message: `Bağlantı hatası: ${error.message}`,
+            };
+        }
+    }
+
+    async bulkUpdateTrendyolStatus(
+        orderIds: string[],
+        status: 'Picking' | 'Invoiced',
+        invoiceNumbers?: Record<string, string>
+    ): Promise<{ success: boolean; results: Array<{ orderId: string; success: boolean; message: string }> }> {
+        const results: Array<{ orderId: string; success: boolean; message: string }> = [];
+
+        for (const orderId of orderIds) {
+            const invoiceNumber = invoiceNumbers?.[orderId];
+            const result = await this.updateTrendyolPackageStatus(orderId, status, invoiceNumber);
+            results.push({ orderId, ...result });
+        }
+
+        const allSuccess = results.every((r) => r.success);
+        return { success: allSuccess, results };
+    }
 }
 
