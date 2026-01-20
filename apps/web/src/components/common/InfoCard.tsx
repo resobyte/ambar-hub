@@ -8,11 +8,12 @@ interface InfoCardProps {
     value: number;
     isPositive: boolean;
   };
+  className?: string;
 }
 
-export function InfoCard({ title, value, icon, trend }: InfoCardProps) {
+export function InfoCard({ title, value, icon, trend, className }: InfoCardProps) {
   return (
-    <div className="bg-card p-6 rounded-xl border border-border shadow-sm hover:shadow-md transition-shadow">
+    <div className={`bg-card p-6 rounded-xl border border-border shadow-sm hover:shadow-md transition-shadow ${className || ''}`}>
       <div className="flex justify-between items-start">
         <div>
           <p className="text-sm font-medium text-muted-foreground mb-1">{title}</p>

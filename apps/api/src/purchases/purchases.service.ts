@@ -12,6 +12,7 @@ import { ShelvesService } from '../shelves/shelves.service';
 import { InvoicesService } from '../invoices/invoices.service';
 import { Product } from '../products/entities/product.entity';
 import { Supplier } from '../suppliers/entities/supplier.entity';
+import { ConsumablesService } from '../consumables/consumables.service';
 
 @Injectable()
 export class PurchasesService {
@@ -30,6 +31,7 @@ export class PurchasesService {
         private readonly supplierRepository: Repository<Supplier>, // We'll need to inject Supplier Repo effectively, or use SupplierService. For now, assuming direct repo access is fine if module imports it, or we need to add SupplierModule. Let's check imports.
         @InjectRepository(Product)
         private readonly productRepository: Repository<Product>,
+        private readonly consumablesService: ConsumablesService,
     ) { }
 
     // Generate unique order number
@@ -139,7 +141,7 @@ export class PurchasesService {
         type?: PurchaseOrderType;
         invoiceNumber?: string;
 
-        items: { productId: string; orderedQuantity: number; unitPrice: number }[];
+        items: { productId?: string; consumableId?: string; orderedQuantity: number; unitPrice: number }[];
     }): Promise<PurchaseOrder> {
         // Validation: If INVOICE type, check duplicates
         if (data.type === PurchaseOrderType.INVOICE && data.invoiceNumber) {
@@ -172,6 +174,7 @@ export class PurchasesService {
             this.poItemRepository.create({
                 purchaseOrderId: savedPo.id,
                 productId: item.productId,
+                consumableId: item.consumableId,
                 orderedQuantity: item.orderedQuantity,
                 unitPrice: item.unitPrice,
             })
@@ -222,7 +225,7 @@ export class PurchasesService {
     async findPurchaseOrder(id: string): Promise<PurchaseOrder> {
         const po = await this.poRepository.findOne({
             where: { id },
-            relations: ['supplier', 'items', 'items.product', 'goodsReceipts', 'goodsReceipts.items', 'goodsReceipts.items.product', 'goodsReceipts.items.shelf'],
+            relations: ['supplier', 'items', 'items.product', 'items.consumable', 'goodsReceipts', 'goodsReceipts.items', 'goodsReceipts.items.product', 'goodsReceipts.items.consumable', 'goodsReceipts.items.shelf'],
         });
         if (!po) throw new NotFoundException(`Purchase Order #${id} not found`);
         return po;
@@ -249,7 +252,7 @@ export class PurchasesService {
         data: {
             receivedByUserId?: string;
             notes?: string;
-            items: { productId: string; shelfId: string; quantity: number; unitCost: number }[];
+            items: { productId?: string; consumableId?: string; shelfId: string; quantity: number; unitCost: number }[];
         },
     ): Promise<GoodsReceipt> {
         const po = await this.findPurchaseOrder(purchaseOrderId);
@@ -276,6 +279,7 @@ export class PurchasesService {
             const grItem = this.grItemRepository.create({
                 goodsReceiptId: savedGr.id,
                 productId: item.productId,
+                consumableId: item.consumableId,
                 shelfId: item.shelfId,
                 quantity: item.quantity,
                 unitCost: item.unitCost,
@@ -283,10 +287,19 @@ export class PurchasesService {
             await this.grItemRepository.save(grItem);
 
             // Add to shelf stock
-            await this.shelvesService.addStock(item.shelfId, item.productId, item.quantity);
+            if (item.productId) {
+                await this.shelvesService.addStock(item.shelfId, item.productId, item.quantity);
+            } else if (item.consumableId) {
+                await this.shelvesService.addConsumableStock(item.shelfId, item.consumableId, item.quantity);
+                // Also update weighted average cost/stock in ConsumablesService
+                await this.consumablesService.addStockWithCost(item.consumableId, item.quantity, item.unitCost);
+            }
 
             // Update PO item received quantity
-            const poItem = po.items.find(i => i.productId === item.productId);
+            const poItem = po.items.find(i =>
+                (item.productId && i.productId === item.productId) ||
+                (item.consumableId && i.consumableId === item.consumableId)
+            );
             if (poItem) {
                 poItem.receivedQuantity += item.quantity;
                 await this.poItemRepository.save(poItem);
@@ -333,15 +346,30 @@ export class PurchasesService {
         }
 
         // Remove stock from shelves
+        // Remove stock from shelves
         for (const item of gr.items) {
             if (item.shelfId) {
-                await this.shelvesService.removeStock(item.shelfId, item.productId, item.quantity);
+                if (item.productId) {
+                    await this.shelvesService.removeStock(item.shelfId, item.productId, item.quantity);
+                } else if (item.consumableId) {
+                    // For reverse, we might want to just reduce stock, but WAC calculation is tricky on reverse.
+                    // For now, let's just reverse shelf stock. Updating average cost on reverse is complex and often skipped or simplified.
+                    await this.shelvesService.removeConsumableStock(item.shelfId, item.consumableId, item.quantity);
+                }
             }
 
             // Update PO item received quantity
-            const poItem = await this.poItemRepository.findOne({
-                where: { purchaseOrderId: gr.purchaseOrderId, productId: item.productId },
-            });
+            let poItem: PurchaseOrderItem | null = null;
+            if (item.productId) {
+                poItem = await this.poItemRepository.findOne({
+                    where: { purchaseOrderId: gr.purchaseOrderId, productId: item.productId },
+                });
+            } else if (item.consumableId) {
+                poItem = await this.poItemRepository.findOne({
+                    where: { purchaseOrderId: gr.purchaseOrderId, consumableId: item.consumableId },
+                });
+            }
+
             if (poItem) {
                 poItem.receivedQuantity = Math.max(0, poItem.receivedQuantity - item.quantity);
                 await this.poItemRepository.save(poItem);

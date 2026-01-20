@@ -18,7 +18,7 @@ export function DefinitionsTabs() {
     const tabs = [
         { name: 'Markalar', href: '/definitions/brands' },
         { name: 'Kategoriler', href: '/definitions/categories' },
-        { name: 'Sarf Malzemeler', href: '/definitions/packing-materials' },
+        { name: 'Sarf Malzemeler', href: '/definitions/consumables' },
     ];
 
     const currentTab = tabs.find(tab => pathname.startsWith(tab.href));

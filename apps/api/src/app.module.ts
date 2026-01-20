@@ -21,6 +21,8 @@ import { PurchasesModule } from './purchases/purchases.module';
 import { RoutesModule } from './routes/routes.module';
 import { PackingModule } from './packing/packing.module';
 import { PickingModule } from './picking/picking.module';
+import { ConsumablesModule } from './consumables/consumables.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -63,6 +65,8 @@ import { PickingModule } from './picking/picking.module';
     RoutesModule,
     PackingModule,
     PickingModule,
+    ConsumablesModule,
+    DashboardModule,
   ],
 })
 export class AppModule { }

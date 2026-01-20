@@ -10,6 +10,7 @@ import { Product } from '../products/entities/product.entity';
 import { Supplier } from '../suppliers/entities/supplier.entity';
 import { ShelvesModule } from '../shelves/shelves.module';
 import { InvoicesModule } from '../invoices/invoices.module';
+import { ConsumablesModule } from '../consumables/consumables.module';
 
 @Module({
     imports: [
@@ -23,6 +24,7 @@ import { InvoicesModule } from '../invoices/invoices.module';
         ]),
         ShelvesModule,
         InvoicesModule,
+        ConsumablesModule,
     ],
     controllers: [PurchasesController],
     providers: [PurchasesService],

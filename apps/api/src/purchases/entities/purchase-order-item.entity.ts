@@ -2,6 +2,7 @@ import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn } from 't
 import { BaseEntity } from '../../common/entities/base.entity';
 import { PurchaseOrder } from './purchase-order.entity';
 import { Product } from '../../products/entities/product.entity';
+import { Consumable } from '../../consumables/entities/consumable.entity';
 
 @Entity('purchase_order_items')
 export class PurchaseOrderItem extends BaseEntity {
@@ -15,12 +16,19 @@ export class PurchaseOrderItem extends BaseEntity {
     @JoinColumn({ name: 'purchase_order_id' })
     purchaseOrder: PurchaseOrder;
 
-    @Column({ name: 'product_id' })
-    productId: string;
+    @Column({ name: 'product_id', nullable: true })
+    productId: string | null;
 
-    @ManyToOne(() => Product, { onDelete: 'CASCADE' })
+    @ManyToOne(() => Product, { onDelete: 'CASCADE', nullable: true })
     @JoinColumn({ name: 'product_id' })
     product: Product;
+
+    @Column({ name: 'consumable_id', nullable: true })
+    consumableId: string | null;
+
+    @ManyToOne(() => Consumable, { onDelete: 'CASCADE', nullable: true })
+    @JoinColumn({ name: 'consumable_id' })
+    consumable: Consumable;
 
     @Column({ name: 'ordered_quantity', type: 'int' })
     orderedQuantity: number;

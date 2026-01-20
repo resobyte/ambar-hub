@@ -1835,3 +1835,98 @@ export async function deletePackingMaterial(id: string): Promise<ApiResponse<voi
   });
   return res.json();
 }
+
+// Consumables API
+export enum ConsumableType {
+  BOX = 'BOX',
+  BAG = 'BAG',
+}
+
+export enum ConsumableUnit {
+  COUNT = 'COUNT',
+  METER = 'METER',
+}
+
+export interface Consumable {
+  id: string;
+  name: string;
+  sku: string;
+  type: ConsumableType;
+  unit: ConsumableUnit;
+  stockQuantity: number;
+  averageCost: number;
+  minStockLevel: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function getConsumables(): Promise<ApiResponse<Consumable[]>> {
+  const res = await fetch(`${API_URL}/consumables`, { credentials: 'include' });
+  return res.json();
+}
+
+export async function createConsumable(data: {
+  name: string;
+  sku: string;
+  type: ConsumableType;
+  unit: ConsumableUnit;
+  minStockLevel?: number;
+}): Promise<ApiResponse<Consumable>> {
+  const res = await fetch(`${API_URL}/consumables`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Request failed');
+  }
+  return res.json();
+}
+
+export async function updateConsumable(id: string, data: {
+  name?: string;
+  sku?: string;
+  type?: ConsumableType;
+  unit?: ConsumableUnit;
+  minStockLevel?: number;
+  isActive?: boolean;
+}): Promise<ApiResponse<Consumable>> {
+  const res = await fetch(`${API_URL}/consumables/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Request failed');
+  }
+  return res.json();
+}
+
+export async function deleteConsumable(id: string): Promise<void> {
+  const res = await fetch(`${API_URL}/consumables/${id}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Request failed');
+  }
+}
+
+// Dashboard API
+export interface DashboardStats {
+  todayOrders: number;
+  failedInvoices: number;
+  faultyOrders: number;
+  unsuppliedOrders: number;
+}
+
+export async function getDashboardStats(): Promise<ApiResponse<DashboardStats>> {
+  const res = await fetch(`${API_URL}/dashboard/stats`, { credentials: 'include' });
+  return res.json();
+}

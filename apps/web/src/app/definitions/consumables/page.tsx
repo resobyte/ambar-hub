@@ -1,7 +1,15 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { getPackingMaterials, createPackingMaterial, updatePackingMaterial, deletePackingMaterial, PackingMaterial, PackingMaterialType } from '@/lib/api';
+import {
+    getConsumables,
+    createConsumable,
+    updateConsumable,
+    deleteConsumable,
+    Consumable,
+    ConsumableType,
+    ConsumableUnit
+} from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -44,9 +52,9 @@ import { Loader2, Plus, Pencil, Trash2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
 
-export default function PackingMaterialsPage() {
+export default function ConsumablesPage() {
     const { toast } = useToast();
-    const [materials, setMaterials] = useState<PackingMaterial[]>([]);
+    const [consumables, setConsumables] = useState<Consumable[]>([]);
     const [loading, setLoading] = useState(true);
 
     // Pagination
@@ -58,71 +66,76 @@ export default function PackingMaterialsPage() {
     // Modal states
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isDeleteOpen, setIsDeleteOpen] = useState(false);
-    const [editingMaterial, setEditingMaterial] = useState<PackingMaterial | null>(null);
-    const [deletingMaterialId, setDeletingMaterialId] = useState<string | null>(null);
+    const [editingConsumable, setEditingConsumable] = useState<Consumable | null>(null);
+    const [deletingConsumableId, setDeletingConsumableId] = useState<string | null>(null);
 
     const [formData, setFormData] = useState({
         name: '',
-        type: PackingMaterialType.BOX,
-        stockQuantity: 0,
-        lowStockThreshold: 10,
-        isActive: true
+        sku: '',
+        type: ConsumableType.BOX,
+        unit: ConsumableUnit.COUNT,
+        minStockLevel: 10,
     });
 
-    const fetchMaterials = useCallback(async () => {
+    const fetchConsumables = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await getPackingMaterials();
-            setMaterials(res.data || []);
+            const res = await getConsumables();
+            setConsumables(res.data || []);
         } catch (err) {
-            toast({ variant: 'destructive', title: 'Hata', description: 'Malzemeler yüklenemedi' });
+            toast({ variant: 'destructive', title: 'Hata', description: 'Sarf malzemeler yüklenemedi' });
         } finally {
             setLoading(false);
         }
     }, [toast]);
 
-    useEffect(() => { fetchMaterials(); }, [fetchMaterials]);
+    useEffect(() => { fetchConsumables(); }, [fetchConsumables]);
 
     const handleCreate = () => {
-        setEditingMaterial(null);
+        setEditingConsumable(null);
         setFormData({
             name: '',
-            type: PackingMaterialType.BOX,
-            stockQuantity: 0,
-            lowStockThreshold: 10,
-            isActive: true
+            sku: '',
+            type: ConsumableType.BOX,
+            unit: ConsumableUnit.COUNT,
+            minStockLevel: 10,
         });
         setIsModalOpen(true);
     };
 
-    const handleEdit = (material: PackingMaterial) => {
-        setEditingMaterial(material);
+    const handleEdit = (consumable: Consumable) => {
+        setEditingConsumable(consumable);
         setFormData({
-            name: material.name,
-            type: material.type,
-            stockQuantity: material.stockQuantity,
-            lowStockThreshold: material.lowStockThreshold,
-            isActive: material.isActive
+            name: consumable.name,
+            sku: consumable.sku,
+            type: consumable.type,
+            unit: consumable.unit,
+            minStockLevel: consumable.minStockLevel,
         });
         setIsModalOpen(true);
     };
 
     const handleDelete = (id: string) => {
-        setDeletingMaterialId(id);
+        setDeletingConsumableId(id);
         setIsDeleteOpen(true);
     };
 
     const handleSubmit = async () => {
         try {
-            if (editingMaterial) {
-                await updatePackingMaterial(editingMaterial.id, formData);
-                toast({ title: 'Başarılı', description: 'Malzeme güncellendi', variant: 'success' });
+            if (!formData.name || !formData.sku) {
+                toast({ variant: 'destructive', title: 'Hata', description: 'İsim ve SKU zorunludur' });
+                return;
+            }
+
+            if (editingConsumable) {
+                await updateConsumable(editingConsumable.id, formData);
+                toast({ title: 'Başarılı', description: 'Sarf malzeme güncellendi', variant: 'success' });
             } else {
-                await createPackingMaterial(formData);
-                toast({ title: 'Başarılı', description: 'Malzeme oluşturuldu', variant: 'success' });
+                await createConsumable(formData);
+                toast({ title: 'Başarılı', description: 'Sarf malzeme oluşturuldu', variant: 'success' });
             }
             setIsModalOpen(false);
-            fetchMaterials();
+            fetchConsumables();
         } catch (err: any) {
             toast({
                 variant: 'destructive',
@@ -133,12 +146,12 @@ export default function PackingMaterialsPage() {
     };
 
     const handleConfirmDelete = async () => {
-        if (!deletingMaterialId) return;
+        if (!deletingConsumableId) return;
         try {
-            await deletePackingMaterial(deletingMaterialId);
-            toast({ title: 'Başarılı', description: 'Malzeme silindi', variant: 'success' });
+            await deleteConsumable(deletingConsumableId);
+            toast({ title: 'Başarılı', description: 'Sarf malzeme silindi', variant: 'success' });
             setIsDeleteOpen(false);
-            fetchMaterials();
+            fetchConsumables();
         } catch (err: any) {
             toast({
                 variant: 'destructive',
@@ -149,29 +162,26 @@ export default function PackingMaterialsPage() {
     };
 
     const typeLabels: Record<string, string> = {
-        [PackingMaterialType.BOX]: 'Kutu',
-        [PackingMaterialType.ENVELOPE]: 'Zarf',
-        [PackingMaterialType.TAPE]: 'Bant',
-        [PackingMaterialType.BUBBLE_WRAP]: 'Balonlu Naylon',
-        [PackingMaterialType.OTHER]: 'Diğer',
+        [ConsumableType.BOX]: 'Kutu',
+        [ConsumableType.BAG]: 'Poşet',
     };
 
-    const typeOptions = Object.keys(typeLabels).map(key => ({
-        value: key,
-        label: typeLabels[key]
-    }));
+    const unitLabels: Record<string, string> = {
+        [ConsumableUnit.COUNT]: 'Adet',
+        [ConsumableUnit.METER]: 'Metre',
+    };
 
     // Pagination
     const startIndex = (page - 1) * pageSize;
     const endIndex = startIndex + pageSize;
-    const currentMaterials = materials.slice(startIndex, endIndex);
-    const totalPages = Math.ceil(materials.length / pageSize);
+    const currentConsumables = consumables.slice(startIndex, endIndex);
+    const totalPages = Math.ceil(consumables.length / pageSize);
 
     return (
         <div className="space-y-4">
             <div className="flex justify-end items-center">
                 <Button onClick={handleCreate}>
-                    <Plus className="w-4 h-4 mr-2" /> Malzeme Ekle
+                    <Plus className="w-4 h-4 mr-2" /> Yeni Ekle
                 </Button>
             </div>
 
@@ -180,53 +190,47 @@ export default function PackingMaterialsPage() {
                     <Table>
                         <TableHeader>
                             <TableRow>
+                                <TableHead>SKU</TableHead>
                                 <TableHead>Malzeme Adı</TableHead>
                                 <TableHead>Tip</TableHead>
+                                <TableHead>Birim</TableHead>
                                 <TableHead>Stok</TableHead>
+                                <TableHead>Ort. Maliyet</TableHead>
                                 <TableHead>Kritik Sınır</TableHead>
-                                <TableHead>Durum</TableHead>
                                 <TableHead className="text-right">İşlemler</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {loading ? (
                                 <TableRow>
-                                    <TableCell colSpan={6} className="h-24 text-center">
+                                    <TableCell colSpan={8} className="h-24 text-center">
                                         <div className="flex justify-center items-center">
                                             <Loader2 className="w-6 h-6 animate-spin text-primary" />
                                         </div>
                                     </TableCell>
                                 </TableRow>
-                            ) : currentMaterials.length === 0 ? (
+                            ) : currentConsumables.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                                        Henüz malzeme bulunmuyor.
+                                    <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                                        Henüz sarf malzeme bulunmuyor.
                                     </TableCell>
                                 </TableRow>
                             ) : (
-                                currentMaterials.map((item) => (
+                                currentConsumables.map((item) => (
                                     <TableRow key={item.id}>
+                                        <TableCell className="font-mono text-xs">{item.sku}</TableCell>
                                         <TableCell className="font-medium">{item.name}</TableCell>
                                         <TableCell>
                                             <Badge variant="outline">{typeLabels[item.type] || item.type}</Badge>
                                         </TableCell>
+                                        <TableCell>{unitLabels[item.unit] || item.unit}</TableCell>
                                         <TableCell>
-                                            <span className={`font-mono font-bold ${item.stockQuantity <= item.lowStockThreshold ? 'text-destructive' : 'text-foreground'}`}>
-                                                {item.stockQuantity}
+                                            <span className={`font-mono font-bold ${Number(item.stockQuantity) <= Number(item.minStockLevel) ? 'text-destructive' : 'text-foreground'}`}>
+                                                {Number(item.stockQuantity).toFixed(2)}
                                             </span>
                                         </TableCell>
-                                        <TableCell>{item.lowStockThreshold}</TableCell>
-                                        <TableCell>
-                                            <Badge
-                                                variant="outline"
-                                                className={item.isActive
-                                                    ? "bg-green-100 text-green-800 hover:bg-green-100"
-                                                    : "bg-gray-100 text-gray-800 hover:bg-gray-100"
-                                                }
-                                            >
-                                                {item.isActive ? 'Aktif' : 'Pasif'}
-                                            </Badge>
-                                        </TableCell>
+                                        <TableCell>{Number(item.averageCost).toFixed(2)} ₺</TableCell>
+                                        <TableCell>{item.minStockLevel}</TableCell>
                                         <TableCell className="text-right">
                                             <div className="flex justify-end gap-2">
                                                 <Button
@@ -258,7 +262,7 @@ export default function PackingMaterialsPage() {
                 page={page}
                 pageSize={pageSize}
                 totalPages={totalPages}
-                totalItems={materials.length}
+                totalItems={consumables.length}
                 onPageChange={setPage}
                 onPageSizeChange={setPageSize}
             />
@@ -267,10 +271,20 @@ export default function PackingMaterialsPage() {
             <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>{editingMaterial ? 'Malzemeyi Düzenle' : 'Yeni Malzeme Ekle'}</DialogTitle>
+                        <DialogTitle>{editingConsumable ? 'Malzemeyi Düzenle' : 'Yeni Sarf Malzeme Ekle'}</DialogTitle>
                     </DialogHeader>
 
                     <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                            <Label>SKU (Stok Kodu)</Label>
+                            <Input
+                                value={formData.sku}
+                                onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
+                                placeholder="Örn: KUTU-01"
+                                disabled={!!editingConsumable} // SKU usually unique and fixed
+                            />
+                        </div>
+
                         <div className="space-y-2">
                             <Label>Malzeme Adı</Label>
                             <Input
@@ -280,67 +294,60 @@ export default function PackingMaterialsPage() {
                             />
                         </div>
 
-                        <div className="space-y-2">
-                            <Label>Tip</Label>
-                            <Select
-                                value={formData.type}
-                                onValueChange={(value) => setFormData({ ...formData, type: value as PackingMaterialType })}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {typeOptions.map((opt) => (
-                                        <SelectItem key={opt.value} value={opt.value}>
-                                            {opt.label}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
-                                <Label>Stok Miktarı</Label>
-                                <Input
-                                    type="number"
-                                    min="0"
-                                    value={formData.stockQuantity}
-                                    onChange={(e) => setFormData({ ...formData, stockQuantity: parseInt(e.target.value) || 0 })}
-                                />
+                                <Label>Tip</Label>
+                                <Select
+                                    value={formData.type}
+                                    onValueChange={(value) => setFormData({ ...formData, type: value as ConsumableType })}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {Object.entries(typeLabels).map(([key, label]) => (
+                                            <SelectItem key={key} value={key}>
+                                                {label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                             </div>
                             <div className="space-y-2">
-                                <Label>Kritik Stok Sınırı</Label>
-                                <Input
-                                    type="number"
-                                    min="0"
-                                    value={formData.lowStockThreshold}
-                                    onChange={(e) => setFormData({ ...formData, lowStockThreshold: parseInt(e.target.value) || 0 })}
-                                />
+                                <Label>Birim</Label>
+                                <Select
+                                    value={formData.unit}
+                                    onValueChange={(value) => setFormData({ ...formData, unit: value as ConsumableUnit })}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {Object.entries(unitLabels).map(([key, label]) => (
+                                            <SelectItem key={key} value={key}>
+                                                {label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                             </div>
                         </div>
 
                         <div className="space-y-2">
-                            <Label>Durum</Label>
-                            <Select
-                                value={formData.isActive ? 'active' : 'passive'}
-                                onValueChange={(value) => setFormData({ ...formData, isActive: value === 'active' })}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="active">Aktif</SelectItem>
-                                    <SelectItem value="passive">Pasif</SelectItem>
-                                </SelectContent>
-                            </Select>
+                            <Label>Kritik Stok Sınırı</Label>
+                            <Input
+                                type="number"
+                                min="0"
+                                value={formData.minStockLevel}
+                                onChange={(e) => setFormData({ ...formData, minStockLevel: parseInt(e.target.value) || 0 })}
+                            />
                         </div>
                     </div>
 
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setIsModalOpen(false)}>İptal</Button>
                         <Button onClick={handleSubmit}>
-                            {editingMaterial ? 'Güncelle' : 'Oluştur'}
+                            {editingConsumable ? 'Güncelle' : 'Oluştur'}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

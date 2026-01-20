@@ -3,6 +3,7 @@ import { BaseEntity } from '../../common/entities/base.entity';
 import { GoodsReceipt } from './goods-receipt.entity';
 import { Product } from '../../products/entities/product.entity';
 import { Shelf } from '../../shelves/entities/shelf.entity';
+import { Consumable } from '../../consumables/entities/consumable.entity';
 
 @Entity('goods_receipt_items')
 export class GoodsReceiptItem extends BaseEntity {
@@ -16,12 +17,19 @@ export class GoodsReceiptItem extends BaseEntity {
     @JoinColumn({ name: 'goods_receipt_id' })
     goodsReceipt: GoodsReceipt;
 
-    @Column({ name: 'product_id' })
-    productId: string;
+    @Column({ name: 'product_id', nullable: true })
+    productId: string | null;
 
-    @ManyToOne(() => Product, { onDelete: 'CASCADE' })
+    @ManyToOne(() => Product, { onDelete: 'CASCADE', nullable: true })
     @JoinColumn({ name: 'product_id' })
     product: Product;
+
+    @Column({ name: 'consumable_id', nullable: true })
+    consumableId: string | null;
+
+    @ManyToOne(() => Consumable, { onDelete: 'CASCADE', nullable: true })
+    @JoinColumn({ name: 'consumable_id' })
+    consumable: Consumable;
 
     @Column({ name: 'shelf_id', nullable: true })
     shelfId: string | null;

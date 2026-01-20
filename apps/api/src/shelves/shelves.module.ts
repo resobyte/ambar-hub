@@ -4,11 +4,12 @@ import { ShelvesController } from './shelves.controller';
 import { ShelvesService } from './shelves.service';
 import { Shelf } from './entities/shelf.entity';
 import { ShelfStock } from './entities/shelf-stock.entity';
+import { ShelfConsumableStock } from './entities/shelf-consumable-stock.entity';
 
 import { ProductStore } from '../product-stores/entities/product-store.entity';
 
 @Module({
-    imports: [TypeOrmModule.forFeature([Shelf, ShelfStock, ProductStore])],
+    imports: [TypeOrmModule.forFeature([Shelf, ShelfStock, ProductStore, ShelfConsumableStock])],
     controllers: [ShelvesController],
     providers: [ShelvesService],
     exports: [ShelvesService],

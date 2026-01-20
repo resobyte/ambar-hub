@@ -51,13 +51,22 @@ interface Product {
     barcode: string;
 }
 
+interface Consumable {
+    id: string;
+    name: string;
+    sku: string;
+    unit: string;
+}
+
 interface PurchaseOrderItem {
     id: string;
-    productId: string;
+    productId?: string;
+    consumableId?: string;
     orderedQuantity: number;
     receivedQuantity: number;
     unitPrice: number;
-    product: Product;
+    product?: Product;
+    consumable?: Consumable;
 }
 
 interface Shelf {
@@ -68,8 +77,10 @@ interface Shelf {
 }
 
 interface GoodsReceiptItem {
-    productId: string;
+    productId?: string;
+    consumableId?: string;
     product?: Product;
+    consumable?: Consumable;
     quantity: number;
     shelf?: Shelf;
 }
@@ -110,7 +121,7 @@ export function PurchaseDetailClient({ id }: { id: string }) {
     const [isReceiveModalOpen, setIsReceiveModalOpen] = useState(false);
     const { toast } = useToast();
 
-    const [receiveItems, setReceiveItems] = useState<{ productId: string; shelfId: string; quantity: number; unitCost: number }[]>([]);
+    const [receiveItems, setReceiveItems] = useState<{ productId?: string; consumableId?: string; shelfId: string; quantity: number; unitCost: number }[]>([]);
 
     const fetchPurchase = async () => {
         setLoading(true);
@@ -150,6 +161,7 @@ export function PurchaseDetailClient({ id }: { id: string }) {
             .filter(item => item.orderedQuantity > item.receivedQuantity)
             .map(item => ({
                 productId: item.productId,
+                consumableId: item.consumableId,
                 shelfId: receivingShelves[0]?.id || '',
                 quantity: item.orderedQuantity - item.receivedQuantity,
                 unitCost: item.unitPrice,
@@ -312,8 +324,8 @@ export function PurchaseDetailClient({ id }: { id: string }) {
                             {(purchase.items || []).map(item => (
                                 <TableRow key={item.id}>
                                     <TableCell>
-                                        <div className="font-medium">{item.product?.name}</div>
-                                        <div className="text-sm text-muted-foreground">{item.product?.barcode}</div>
+                                        <div className="font-medium">{item.product?.name || item.consumable?.name}</div>
+                                        <div className="text-sm text-muted-foreground">{item.product?.barcode || item.consumable?.sku}</div>
                                     </TableCell>
                                     <TableCell className="text-right">{item.orderedQuantity}</TableCell>
                                     <TableCell className="text-right">{item.receivedQuantity}</TableCell>
@@ -365,9 +377,9 @@ export function PurchaseDetailClient({ id }: { id: string }) {
                                     <ul className="list-disc list-inside space-y-1 text-muted-foreground">
                                         {receipt.items?.map((item, i) => (
                                             <li key={i}>
-                                                <span className="text-foreground font-medium">{item.product?.name || item.productId}</span>
+                                                <span className="text-foreground font-medium">{item.product?.name || item.consumable?.name || item.productId || item.consumableId}</span>
                                                 <span className="mx-2">-</span>
-                                                {item.quantity} adet
+                                                {item.quantity} {item.consumable?.unit === 'METER' ? 'metre' : 'adet'}
                                                 {item.shelf && <span className="ml-2 text-xs bg-background border px-1.5 py-0.5 rounded">Raf: {item.shelf.name}</span>}
                                             </li>
                                         ))}
@@ -391,14 +403,17 @@ export function PurchaseDetailClient({ id }: { id: string }) {
 
                         <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
                             {receiveItems.map((item, index) => {
-                                const poItem = purchase.items.find(i => i.productId === item.productId);
+                                const poItem = purchase.items.find(i =>
+                                    (item.productId && i.productId === item.productId) ||
+                                    (item.consumableId && i.consumableId === item.consumableId)
+                                );
                                 return (
                                     <div key={index} className="flex flex-col sm:flex-row gap-4 items-start sm:items-center p-4 border rounded-lg bg-card">
                                         <div className="flex-1">
-                                            <div className="font-medium text-base">{poItem?.product?.name}</div>
+                                            <div className="font-medium text-base">{poItem?.product?.name || poItem?.consumable?.name}</div>
                                             <div className="text-sm text-muted-foreground flex gap-2 mt-1">
-                                                <Badge variant="outline">{poItem?.product?.barcode}</Badge>
-                                                <span>Kalan: {item.quantity} adet</span>
+                                                <Badge variant="outline">{poItem?.product?.barcode || poItem?.consumable?.sku}</Badge>
+                                                <span>Kalan: {item.quantity} {poItem?.consumable?.unit === 'METER' ? 'm' : 'ad'}</span>
                                             </div>
                                         </div>
                                         <div className="flex gap-3 w-full sm:w-auto">

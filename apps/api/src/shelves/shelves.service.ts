@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, TreeRepository, IsNull } from 'typeorm';
 import { Shelf } from './entities/shelf.entity';
 import { ShelfStock } from './entities/shelf-stock.entity';
+import { ShelfConsumableStock } from './entities/shelf-consumable-stock.entity';
 import { CreateShelfDto } from './dto/create-shelf.dto';
 import { UpdateShelfDto } from './dto/update-shelf.dto';
 import { ShelfType, SHELF_TYPE_RULES } from './enums/shelf-type.enum';
@@ -17,6 +18,8 @@ export class ShelvesService {
         private readonly shelfRepository: TreeRepository<Shelf>,
         @InjectRepository(ShelfStock)
         private readonly shelfStockRepository: Repository<ShelfStock>,
+        @InjectRepository(ShelfConsumableStock)
+        private readonly shelfConsumableStockRepository: Repository<ShelfConsumableStock>,
         @InjectRepository(ProductStore)
         private readonly productStoreRepository: Repository<ProductStore>,
     ) { }
@@ -255,6 +258,55 @@ export class ShelvesService {
         const savedStock = await this.shelfStockRepository.save(stock);
         await this.syncProductStock(productId, shelfId);
         return savedStock;
+    }
+
+    // Consumable Stock Operations
+    async addConsumableStock(shelfId: string, consumableId: string, quantity: number): Promise<ShelfConsumableStock> {
+        let stock = await this.shelfConsumableStockRepository.findOne({
+            where: { shelfId, consumableId },
+        });
+
+        if (!stock) {
+            stock = this.shelfConsumableStockRepository.create({
+                shelfId,
+                consumableId,
+                quantity: 0,
+                reservedQuantity: 0,
+            });
+        }
+
+        stock.quantity = Number(stock.quantity) + Number(quantity);
+        return this.shelfConsumableStockRepository.save(stock);
+    }
+
+    async removeConsumableStock(shelfId: string, consumableId: string, quantity: number): Promise<ShelfConsumableStock | null> {
+        const stock = await this.shelfConsumableStockRepository.findOne({
+            where: { shelfId, consumableId },
+        });
+
+        if (!stock) {
+            throw new BadRequestException('Böyle bir sarf malzeme stok kaydı bulunamadı');
+        }
+
+        if (stock.availableQuantity < quantity) {
+            throw new BadRequestException('Yetersiz stok!');
+        }
+
+        stock.quantity = Number(stock.quantity) - Number(quantity);
+
+        if (Number(stock.quantity) <= 0 && Number(stock.reservedQuantity) <= 0) {
+            await this.shelfConsumableStockRepository.remove(stock);
+            return null;
+        }
+
+        return this.shelfConsumableStockRepository.save(stock);
+    }
+
+    async getConsumableStock(shelfId: string): Promise<ShelfConsumableStock[]> {
+        return this.shelfConsumableStockRepository.find({
+            where: { shelfId },
+            relations: ['consumable'],
+        });
     }
 
     private async syncProductStock(productId: string, shelfId: string) {
