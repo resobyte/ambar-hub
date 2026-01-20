@@ -39,7 +39,7 @@ import { PickingModule } from './picking/picking.module';
         database: configService.get('DB_NAME'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
         synchronize: true,
-        logging: configService.get('NODE_ENV') === 'production',
+        logging: configService.get('NODE_ENV') === 'development',
       }),
       inject: [ConfigService],
     }),
