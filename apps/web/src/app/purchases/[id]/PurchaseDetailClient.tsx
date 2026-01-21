@@ -324,10 +324,17 @@ export function PurchaseDetailClient({ id }: { id: string }) {
                             {(purchase.items || []).map(item => (
                                 <TableRow key={item.id}>
                                     <TableCell>
-                                        <div className="font-medium">{item.product?.name || item.consumable?.name}</div>
-                                        <div className="text-sm text-muted-foreground">{item.product?.barcode || item.consumable?.sku}</div>
+                                        <div className="font-medium">
+                                            {item.product?.name || item.consumable?.name || (item.product ? 'Ürün Adı Yok' : item.consumable ? 'Sarf Malzeme Adı Yok' : 'Bilinmeyen Kalem')}
+                                        </div>
+                                        <div className="text-sm text-muted-foreground">
+                                            {item.product?.barcode || item.consumable?.sku || item.productId || item.consumableId || '-'}
+                                            {item.consumable && <Badge variant="outline" className="ml-2 text-[10px] h-4 px-1 py-0 border-orange-200 text-orange-700 bg-orange-50">Sarf</Badge>}
+                                        </div>
                                     </TableCell>
-                                    <TableCell className="text-right">{item.orderedQuantity}</TableCell>
+                                    <TableCell className="text-right">
+                                        {item.orderedQuantity} {item.consumable?.unit === 'METER' ? 'm' : 'ad'}
+                                    </TableCell>
                                     <TableCell className="text-right">{item.receivedQuantity}</TableCell>
                                     <TableCell className="text-right">
                                         <span className={item.orderedQuantity - item.receivedQuantity > 0 ? 'text-amber-600 font-bold' : 'text-green-600 font-bold'}>

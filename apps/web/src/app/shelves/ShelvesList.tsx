@@ -79,7 +79,7 @@ interface Shelf {
     globalSlot: number;
     rafId?: number;
     isSellable: boolean;
-    isReservable: boolean;
+    isShelvable?: boolean;
     children?: Shelf[];
     warehouse?: { name: string };
     stocks?: StockItem[];
@@ -164,6 +164,7 @@ export function ShelvesList() {
         globalSlot: 0,
         warehouseId: '',
         isSellable: true,
+        isShelvable: true,
     });
     const [shelfTypeComboOpen, setShelfTypeComboOpen] = useState(false);
     const [parentShelfComboOpen, setParentShelfComboOpen] = useState(false);
@@ -177,6 +178,10 @@ export function ShelvesList() {
         quantity: 0
     });
     const [globalShelves, setGlobalShelves] = useState<Shelf[]>([]);
+    const [fromShelfComboOpen, setFromShelfComboOpen] = useState(false);
+    const [toShelfComboOpen, setToShelfComboOpen] = useState(false);
+    const [fromShelfSearch, setFromShelfSearch] = useState('');
+    const [toShelfSearch, setToShelfSearch] = useState('');
 
     const fetchWarehouses = async () => {
         setLoading(true);
@@ -254,6 +259,7 @@ export function ShelvesList() {
     }, [selectedItem]);
 
     const toggleWarehouse = async (warehouseId: string, e?: React.MouseEvent) => {
+        e?.preventDefault();
         e?.stopPropagation();
         const newExpanded = new Set(expandedWarehouses);
 
@@ -268,6 +274,7 @@ export function ShelvesList() {
     };
 
     const toggleShelf = (shelfId: string, e: React.MouseEvent) => {
+        e.preventDefault();
         e.stopPropagation();
         setExpandedShelves(prev => {
             const next = new Set(prev);
@@ -299,6 +306,7 @@ export function ShelvesList() {
             globalSlot: 0,
             warehouseId: warehouseId || '',
             isSellable: true,
+            isShelvable: true,
         });
         setIsModalOpen(true);
     };
@@ -312,6 +320,7 @@ export function ShelvesList() {
             globalSlot: shelf.globalSlot ?? 0,
             warehouseId: shelf.warehouseId,
             isSellable: shelf.isSellable ?? true,
+            isShelvable: shelf.isShelvable ?? true,
         });
         setIsModalOpen(true);
     };
@@ -663,6 +672,7 @@ export function ShelvesList() {
                 >
                     {hasChildren ? (
                         <button
+                            type="button"
                             onClick={(e) => toggleShelf(shelf.id, e)}
                             className="w-5 h-5 flex items-center justify-center mr-1 flex-shrink-0 hover:bg-muted-foreground/10 rounded"
                         >
@@ -758,6 +768,7 @@ export function ShelvesList() {
                                                 onClick={() => selectWarehouse(warehouse)}
                                             >
                                                 <button
+                                                    type="button"
                                                     onClick={(e) => toggleWarehouse(warehouse.id, e)}
                                                     className="w-5 h-5 flex items-center justify-center mr-2 flex-shrink-0"
                                                 >
@@ -1049,11 +1060,11 @@ export function ShelvesList() {
                                     <div className="flex items-center gap-8">
                                         <div className="flex items-center gap-2">
                                             <div className={`w-3 h-3 rounded-full ${shelf?.isSellable ? 'bg-green-500' : 'bg-red-500'}`} />
-                                            <span className="text-sm font-medium">{shelf?.isSellable ? 'Satılabilir' : 'Satılamaz'}</span>
+                                            <span className="text-sm font-medium">{shelf?.isSellable ? 'Toplanabilir' : 'Toplanamaz'}</span>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            <div className={`w-3 h-3 rounded-full ${shelf?.isReservable ? 'bg-green-500' : 'bg-red-500'}`} />
-                                            <span className="text-sm font-medium">{shelf?.isReservable ? 'Rezerve Edilebilir' : 'Rezerve Edilemez'}</span>
+                                            <div className={`w-3 h-3 rounded-full ${shelf?.isShelvable !== false ? 'bg-green-500' : 'bg-red-500'}`} />
+                                            <span className="text-sm font-medium">{shelf?.isShelvable !== false ? 'Raflanabilir' : 'Raflanamaz'}</span>
                                         </div>
                                         {shelf?.path && (
                                             <div className="flex-1 text-right">
@@ -1363,12 +1374,22 @@ export function ShelvesList() {
                         </div>
                         <div className="flex items-center justify-between">
                             <div className="space-y-0.5">
-                                <Label>Satılabilir Stok</Label>
-                                <p className="text-xs text-muted-foreground">Bu raftaki ürünler satışa uygun mu?</p>
+                                <Label>Toplanabilir</Label>
+                                <p className="text-xs text-muted-foreground">Bu raftan toplama yapılabilir mi?</p>
                             </div>
                             <Switch
                                 checked={formData.isSellable}
                                 onCheckedChange={(checked) => setFormData({ ...formData, isSellable: checked })}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                                <Label>Raflanabilir</Label>
+                                <p className="text-xs text-muted-foreground">Bu rafa ürün transfer edilebilir mi?</p>
+                            </div>
+                            <Switch
+                                checked={formData.isShelvable}
+                                onCheckedChange={(checked) => setFormData({ ...formData, isShelvable: checked })}
                             />
                         </div>
                         {formData.warehouseId && (
@@ -1453,28 +1474,57 @@ export function ShelvesList() {
                     <div className="space-y-4">
                         <div className="space-y-2">
                             <Label>Kaynak Raf</Label>
-                            <Select
-                                value={transferFormData.fromShelfId}
-                                onValueChange={(v) => {
-                                    setTransferFormData({ ...transferFormData, fromShelfId: v, productId: '', quantity: 0 });
-                                    if (v) fetchSourceStocks(v);
-                                    else setSourceStocks([]);
-                                }}
-                            >
-                                <SelectTrigger className="w-full">
-                                    <SelectValue placeholder="Seçiniz" />
-                                </SelectTrigger>
-                                <SelectContent className="max-h-60">
-                                    {globalShelves
-                                        .filter((s: Shelf) => s.type !== 'WAREHOUSE')
-                                        .sort((a, b) => a.name.localeCompare(b.name))
-                                        .map((s: Shelf) => (
-                                            <SelectItem key={s.id} value={s.id} className="truncate">
-                                                <span className="truncate">{s.name} {s.barcode && `[${s.barcode}]`}</span>
-                                            </SelectItem>
-                                        ))}
-                                </SelectContent>
-                            </Select>
+                            <Popover open={fromShelfComboOpen} onOpenChange={setFromShelfComboOpen} modal={true}>
+                                <PopoverTrigger asChild>
+                                    <Button
+                                        variant="outline"
+                                        role="combobox"
+                                        className="w-full justify-between h-10 font-normal"
+                                    >
+                                        {transferFormData.fromShelfId
+                                            ? globalShelves.find(s => s.id === transferFormData.fromShelfId)?.name || 'Seçiniz'
+                                            : 'Kaynak raf seçin...'}
+                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-[400px] p-0" align="start">
+                                    <Command shouldFilter={false} className="overflow-visible">
+                                        <CommandInput
+                                            placeholder="Raf ara..."
+                                            value={fromShelfSearch}
+                                            onValueChange={setFromShelfSearch}
+                                        />
+                                        <CommandList className="max-h-[300px] overflow-y-auto">
+                                            <CommandEmpty>Raf bulunamadı</CommandEmpty>
+                                            {globalShelves
+                                                .filter((s: Shelf) => s.type !== 'WAREHOUSE' && s.isShelvable !== false)
+                                                .filter((s: Shelf) =>
+                                                    !fromShelfSearch ||
+                                                    s.name.toLowerCase().includes(fromShelfSearch.toLowerCase()) ||
+                                                    s.barcode?.toLowerCase().includes(fromShelfSearch.toLowerCase())
+                                                )
+                                                .sort((a, b) => a.name.localeCompare(b.name))
+                                                .slice(0, 50)
+                                                .map((s: Shelf) => (
+                                                    <CommandItem
+                                                        key={s.id}
+                                                        value={s.id}
+                                                        onSelect={() => {
+                                                            setTransferFormData({ ...transferFormData, fromShelfId: s.id, productId: '', quantity: 0 });
+                                                            fetchSourceStocks(s.id);
+                                                            setFromShelfComboOpen(false);
+                                                            setFromShelfSearch('');
+                                                        }}
+                                                    >
+                                                        <Check className={`mr-2 h-4 w-4 ${transferFormData.fromShelfId === s.id ? 'opacity-100' : 'opacity-0'}`} />
+                                                        <span className="truncate">{s.name}</span>
+                                                        {s.barcode && <span className="ml-2 text-xs text-muted-foreground">[{s.barcode}]</span>}
+                                                    </CommandItem>
+                                                ))}
+                                        </CommandList>
+                                    </Command>
+                                </PopoverContent>
+                            </Popover>
                         </div>
 
                         <div className="space-y-2">
@@ -1500,24 +1550,56 @@ export function ShelvesList() {
 
                         <div className="space-y-2">
                             <Label>Hedef Raf</Label>
-                            <Select
-                                value={transferFormData.toShelfId}
-                                onValueChange={(v) => setTransferFormData({ ...transferFormData, toShelfId: v })}
-                            >
-                                <SelectTrigger className="w-full">
-                                    <SelectValue placeholder="Seçiniz" />
-                                </SelectTrigger>
-                                <SelectContent className="max-h-60">
-                                    {globalShelves
-                                        .filter((s: Shelf) => s.id !== transferFormData.fromShelfId && s.type !== 'WAREHOUSE')
-                                        .sort((a, b) => a.name.localeCompare(b.name))
-                                        .map((s: Shelf) => (
-                                            <SelectItem key={s.id} value={s.id}>
-                                                <span className="truncate">{s.name} {s.barcode && `[${s.barcode}]`}</span>
-                                            </SelectItem>
-                                        ))}
-                                </SelectContent>
-                            </Select>
+                            <Popover open={toShelfComboOpen} onOpenChange={setToShelfComboOpen} modal={true}>
+                                <PopoverTrigger asChild>
+                                    <Button
+                                        variant="outline"
+                                        role="combobox"
+                                        className="w-full justify-between h-10 font-normal"
+                                    >
+                                        {transferFormData.toShelfId
+                                            ? globalShelves.find(s => s.id === transferFormData.toShelfId)?.name || 'Seçiniz'
+                                            : 'Hedef raf seçin...'}
+                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-[400px] p-0" align="start">
+                                    <Command shouldFilter={false} className="overflow-visible">
+                                        <CommandInput
+                                            placeholder="Raf ara..."
+                                            value={toShelfSearch}
+                                            onValueChange={setToShelfSearch}
+                                        />
+                                        <CommandList className="max-h-[300px] overflow-y-auto">
+                                            <CommandEmpty>Raf bulunamadı</CommandEmpty>
+                                            {globalShelves
+                                                .filter((s: Shelf) => s.id !== transferFormData.fromShelfId && s.type !== 'WAREHOUSE' && s.isShelvable !== false)
+                                                .filter((s: Shelf) =>
+                                                    !toShelfSearch ||
+                                                    s.name.toLowerCase().includes(toShelfSearch.toLowerCase()) ||
+                                                    s.barcode?.toLowerCase().includes(toShelfSearch.toLowerCase())
+                                                )
+                                                .sort((a, b) => a.name.localeCompare(b.name))
+                                                .slice(0, 50)
+                                                .map((s: Shelf) => (
+                                                    <CommandItem
+                                                        key={s.id}
+                                                        value={s.id}
+                                                        onSelect={() => {
+                                                            setTransferFormData({ ...transferFormData, toShelfId: s.id });
+                                                            setToShelfComboOpen(false);
+                                                            setToShelfSearch('');
+                                                        }}
+                                                    >
+                                                        <Check className={`mr-2 h-4 w-4 ${transferFormData.toShelfId === s.id ? 'opacity-100' : 'opacity-0'}`} />
+                                                        <span className="truncate">{s.name}</span>
+                                                        {s.barcode && <span className="ml-2 text-xs text-muted-foreground">[{s.barcode}]</span>}
+                                                    </CommandItem>
+                                                ))}
+                                        </CommandList>
+                                    </Command>
+                                </PopoverContent>
+                            </Popover>
                         </div>
 
                         <div className="space-y-2">

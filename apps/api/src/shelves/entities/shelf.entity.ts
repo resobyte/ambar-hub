@@ -51,13 +51,13 @@ export class Shelf extends BaseEntity {
     @Column({ name: 'raf_id', type: 'int', nullable: true, unique: true })
     rafId: number | null;
 
-    // Whether products on this shelf can be sold
+    // Whether products on this shelf can be picked (toplanabilir)
     @Column({ name: 'is_sellable', default: true })
     isSellable: boolean;
 
-    // Whether this shelf can be reserved
-    @Column({ name: 'is_reservable', default: true })
-    isReservable: boolean;
+    // Whether products can be transferred to this shelf (raflanabilir)
+    @Column({ name: 'is_shelvable', default: true })
+    isShelvable: boolean;
 
     // Sort order within parent
     @Column({ name: 'sort_order', type: 'int', default: 0 })

@@ -27,12 +27,12 @@ export class ShelvesService {
     async create(dto: CreateShelfDto): Promise<Shelf> {
         // Apply type rules if type is provided
         let isSellable = dto.isSellable;
-        let isReservable = dto.isReservable;
+        let isShelvable = dto.isShelvable;
 
         if (dto.type) {
             const rules = SHELF_TYPE_RULES[dto.type];
             if (isSellable === undefined) isSellable = rules.isSellable;
-            if (isReservable === undefined) isReservable = rules.isReservable;
+            // isShelvable defaults to true unless explicitly set
         }
 
         // Build path and get parent entity for tree structure
@@ -60,7 +60,7 @@ export class ShelvesService {
             globalSlot: dto.globalSlot ?? null,
             rafId: dto.rafId ?? null,
             isSellable: isSellable ?? true,
-            isReservable: isReservable ?? true,
+            isShelvable: isShelvable ?? true,
             // Explicitly set parent to null for root shelves - required by TypeORM MaterializedPath
             parent: parent,
             parentId: parent ? dto.parentId : null,
@@ -200,7 +200,6 @@ export class ShelvesService {
         if (dto.type && dto.type !== shelf.type) {
             const rules = SHELF_TYPE_RULES[dto.type];
             if (dto.isSellable === undefined) dto.isSellable = rules.isSellable;
-            if (dto.isReservable === undefined) dto.isReservable = rules.isReservable;
         }
 
         Object.assign(shelf, dto);
@@ -324,16 +323,12 @@ export class ShelvesService {
 
         // 3. Calculate totals based on rules
         let sellable = 0;
-        let reservable = 0;
         let total = 0;
 
         for (const stock of stocks) {
             total += stock.quantity;
             if (stock.shelf.isSellable) {
                 sellable += stock.quantity;
-            }
-            if (stock.shelf.isReservable) {
-                reservable += stock.quantity;
             }
         }
 
@@ -362,7 +357,7 @@ export class ShelvesService {
                     // Formula: Sellable = Physical Sellable - Committed
                     // Ensure we don't go below 0 for display, though conceptually it means backorder
                     productStore.sellableQuantity = Math.max(0, sellable - (productStore.committedQuantity || 0));
-                    productStore.reservableQuantity = reservable;
+                    productStore.reservableQuantity = sellable; // Same as sellable now
                     await this.productStoreRepository.save(productStore);
                 } else {
                     // If productStore doesn't exist, create it (or handle as per business logic)
@@ -372,7 +367,7 @@ export class ShelvesService {
                         storeId: store.id,
                         stockQuantity: total,
                         sellableQuantity: Math.max(0, sellable), // No committed yet if new
-                        reservableQuantity: reservable,
+                        reservableQuantity: sellable, // Same as sellable now
                         committedQuantity: 0, // Default to 0
                     });
                     await this.productStoreRepository.save(productStore);
@@ -387,6 +382,15 @@ export class ShelvesService {
         productId: string,
         quantity: number,
     ): Promise<{ from: ShelfStock | null; to: ShelfStock }> {
+        // Validate target shelf is shelvable
+        const toShelf = await this.shelfRepository.findOne({ where: { id: toShelfId } });
+        if (!toShelf) {
+            throw new BadRequestException('Hedef raf bulunamadı');
+        }
+        if (!toShelf.isShelvable) {
+            throw new BadRequestException('Hedef raf transfer için uygun değil (raflanabilir değil)');
+        }
+
         const from = await this.removeStock(fromShelfId, productId, quantity);
         const to = await this.addStock(toShelfId, productId, quantity);
         return { from, to };
@@ -516,6 +520,7 @@ export class ShelvesService {
                 const typeStr = row['RAF TİPİ'] || row['type'] || row['Type'] || 'NORMAL';
                 const parentName = row['KÖK'] || row['parent'] || row['Parent'];
                 const collectableStr = row['TOPLANABİLİR'] || row['collectable'] || 'HAYIR';
+                const shelvableStr = row['RAFLANABİLİR'] || row['shelvable'] || 'EVET';
 
                 if (!name) {
                     errors.push(`Satır ${index + 2}: Raf adı eksik.`);
@@ -524,6 +529,8 @@ export class ShelvesService {
 
                 // Determine isSellable based on TOPLANABİLİR
                 const isSellable = collectableStr?.toUpperCase() === 'EVET';
+                // Determine isShelvable based on RAFLANABİLİR
+                const isShelvable = shelvableStr?.toUpperCase() === 'EVET';
                 const shelfType = mapShelfType(typeStr);
                 const rules = SHELF_TYPE_RULES[shelfType];
 
@@ -555,7 +562,7 @@ export class ShelvesService {
                         rafId: rafId > 0 ? rafId : undefined,
                         globalSlot: globalSlot > 0 ? globalSlot : undefined,
                         isSellable,
-                        isReservable: rules.isReservable,
+                        isShelvable,
                         parentId,
                     });
                     shelfNameMap.set(name, existingShelf);
@@ -569,7 +576,7 @@ export class ShelvesService {
                         rafId: rafId > 0 ? rafId : undefined,
                         globalSlot: globalSlot > 0 ? globalSlot : undefined,
                         isSellable,
-                        isReservable: rules.isReservable,
+                        isShelvable,
                         parentId,
                     });
                     shelfNameMap.set(name, newShelf);
@@ -610,13 +617,14 @@ export class ShelvesService {
             'KÖK',
             'GLOBAL SLOT',
             'TOPLANABİLİR',
+            'RAFLANABİLİR',
         ];
 
         const exampleRows = [
-            ['MERKEZ', 1000, 'NORMAL', '', 1000, 'HAYIR'],
-            ['A', 1001, 'NORMAL', 'MERKEZ', 1001, 'HAYIR'],
-            ['A1', 1002, 'NORMAL', 'A', 1002, 'HAYIR'],
-            ['A1-1', 1003, 'NORMAL', 'A1', 1003, 'EVET'],
+            ['MERKEZ', 1000, 'NORMAL', '', 1000, 'HAYIR', 'HAYIR'],
+            ['A', 1001, 'NORMAL', 'MERKEZ', 1001, 'HAYIR', 'HAYIR'],
+            ['A1', 1002, 'NORMAL', 'A', 1002, 'HAYIR', 'HAYIR'],
+            ['A1-1', 1003, 'NORMAL', 'A1', 1003, 'EVET', 'EVET'],
         ];
 
         const worksheet = XLSX.utils.aoa_to_sheet([headers, ...exampleRows]);

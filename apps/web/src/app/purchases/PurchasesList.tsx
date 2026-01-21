@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
-import { Loader2, Plus, ShoppingCart, Trash2, Search, X } from 'lucide-react';
+import { Loader2, Plus, ShoppingCart, Trash2, Search, X, Package, Box } from 'lucide-react';
 import Link from 'next/link';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { useTableQuery } from '@/hooks/use-table-query';
@@ -40,6 +40,8 @@ import {
     BreadcrumbPage,
     BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import { Combobox } from "@/components/ui/combobox";
+import { Consumable, getConsumables } from '@/lib/api';
 
 const isServer = typeof window === 'undefined';
 const API_URL = isServer
@@ -59,11 +61,13 @@ interface Supplier {
 }
 
 interface PurchaseOrderItem {
-    productId: string;
+    productId?: string;
+    consumableId?: string;
     orderedQuantity: number;
     receivedQuantity: number;
     unitPrice: number;
     product?: Product;
+    consumable?: Consumable;
 }
 
 interface PurchaseOrder {
@@ -98,6 +102,7 @@ export function PurchasesList() {
     const [purchases, setPurchases] = useState<PurchaseOrder[]>([]);
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
     const [products, setProducts] = useState<Product[]>([]);
+    const [consumables, setConsumables] = useState<Consumable[]>([]);
     const [loading, setLoading] = useState(true);
     const [total, setTotal] = useState(0);
     const [totalPages, setTotalPages] = useState(0);
@@ -122,7 +127,14 @@ export function PurchasesList() {
         type: string;
         invoiceNumber: string;
 
-        items: { productId: string; productName: string; orderedQuantity: number; unitPrice: number }[];
+        items: {
+            type: 'PRODUCT' | 'CONSUMABLE';
+            productId?: string;
+            consumableId?: string;
+            productName: string;
+            orderedQuantity: number;
+            unitPrice: number
+        }[];
     }>({
         supplierId: '',
         orderDate: new Date().toISOString().split('T')[0],
@@ -131,7 +143,7 @@ export function PurchasesList() {
         type: 'MANUAL',
         invoiceNumber: '',
 
-        items: [{ productId: '', productName: '', orderedQuantity: 1, unitPrice: 0 }],
+        items: [{ type: 'PRODUCT', productId: '', productName: '', orderedQuantity: 1, unitPrice: 0 }],
     });
 
     const fetchData = useCallback(async () => {
@@ -146,19 +158,26 @@ export function PurchasesList() {
             if (startDate) params.append('startDate', startDate.toISOString());
             if (endDate) params.append('endDate', endDate.toISOString());
 
-            const [poRes, supRes, prodRes] = await Promise.all([
+            const [poRes, supRes, prodRes, consRes] = await Promise.all([
                 fetch(`${API_URL}/purchases?${params}`, { credentials: 'include' }),
                 fetch(`${API_URL}/suppliers?page=1&limit=100`, { credentials: 'include' }),
                 fetch(`${API_URL}/products?page=1&limit=100`, { credentials: 'include' }),
+                getConsumables(),
             ]);
             const poData = await poRes.json();
             const supData = await supRes.json();
             const prodData = await prodRes.json();
+
             setPurchases(poData.data || []);
             setTotal(poData.meta?.total || 0);
             setTotalPages(Math.ceil((poData.meta?.total || 0) / pageSize));
             setSuppliers(supData.data || []);
             setProducts(prodData.data || []);
+
+            if (consRes.success) {
+                setConsumables(consRes.data || []);
+            }
+
         } catch (err) {
             toast({ variant: 'destructive', title: 'Hata', description: 'Veriler yüklenemedi' });
         } finally {
@@ -176,6 +195,10 @@ export function PurchasesList() {
 
     const handleManualCreate = () => {
         setIsSelectionModalOpen(false);
+
+        // Ensure products and consumables are loaded or handle potential empty states more gracefully if needed
+        const defaultProductId = products[0]?.id || '';
+
         setFormData({
             supplierId: suppliers[0]?.id || '',
             orderDate: new Date().toISOString().split('T')[0],
@@ -184,7 +207,7 @@ export function PurchasesList() {
             type: 'MANUAL',
             invoiceNumber: '',
 
-            items: [{ productId: products[0]?.id || '', productName: '', orderedQuantity: 1, unitPrice: 0 }],
+            items: [{ type: 'PRODUCT', productId: defaultProductId, productName: '', orderedQuantity: 1, unitPrice: 0 }],
         });
         setIsModalOpen(true);
     };
@@ -225,7 +248,10 @@ export function PurchasesList() {
                         (item.productCode && p.barcode === item.productCode)
                     );
 
+                    // TODO: Improve Consumable matching if invoices can contain consumables
+
                     return {
+                        type: 'PRODUCT',
                         productId: matchedProduct ? matchedProduct.id : (item.productId || ''),
                         productName: item.productName || '',
                         orderedQuantity: item.orderedQuantity,
@@ -248,7 +274,7 @@ export function PurchasesList() {
     const addItem = () => {
         setFormData({
             ...formData,
-            items: [...formData.items, { productId: products[0]?.id || '', productName: '', orderedQuantity: 1, unitPrice: 0 }],
+            items: [...formData.items, { type: 'PRODUCT', productId: '', productName: '', orderedQuantity: 1, unitPrice: 0 }],
         });
     };
 
@@ -261,18 +287,53 @@ export function PurchasesList() {
 
     const updateItem = (index: number, field: string, value: any) => {
         const items = [...formData.items];
-        (items[index] as any)[field] = value;
+
+        // Handle type switching logic to clear previous selections
+        if (field === 'type') {
+            // Reset ID fields when switching type
+            items[index] = {
+                ...items[index],
+                type: value,
+                productId: undefined,
+                consumableId: undefined,
+                productName: '' // Reset name if it was manual
+            };
+        } else {
+            (items[index] as any)[field] = value;
+        }
+
         setFormData({ ...formData, items });
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        // Clean up data before sending
+        const payload = {
+            ...formData,
+            items: formData.items.map(item => {
+                if (item.type === 'PRODUCT') {
+                    return {
+                        productId: item.productId,
+                        orderedQuantity: item.orderedQuantity,
+                        unitPrice: item.unitPrice
+                    };
+                } else {
+                    return {
+                        consumableId: item.consumableId,
+                        orderedQuantity: item.orderedQuantity,
+                        unitPrice: item.unitPrice
+                    };
+                }
+            })
+        };
+
         try {
             const res = await fetch(`${API_URL}/purchases`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
-                body: JSON.stringify(formData),
+                body: JSON.stringify(payload),
             });
 
             if (!res.ok) throw new Error('Failed');
@@ -530,53 +591,92 @@ export function PurchasesList() {
                                     <Plus className="w-4 h-4 mr-2" /> Ürün Ekle
                                 </Button>
                             </div>
+                            <div className="flex gap-2 px-2 pb-2">
+                                <div className="w-32"><Label className="text-xs text-muted-foreground">Tip</Label></div>
+                                <div className="flex-1"><Label className="text-xs text-muted-foreground">Seçim</Label></div>
+                                <div className="w-20"><Label className="text-xs text-muted-foreground">Adet</Label></div>
+                                <div className="w-28"><Label className="text-xs text-muted-foreground">Birim Fiyat</Label></div>
+                                <div className="w-9"></div>
+                            </div>
                             <div className="space-y-2">
                                 {formData.items.map((item, index) => (
-                                    <div key={index} className="flex gap-2 items-end">
-                                        <div className="flex-1 space-y-2">
-                                            {index === 0 && <Label>Ürün</Label>}
-                                            <Select
-                                                value={item.productId}
-                                                onValueChange={(v) => updateItem(index, 'productId', v)}
-                                            >
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Ürün seçin" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {products.map(p => (
-                                                        <SelectItem key={p.id} value={p.id}>{p.name} [{p.barcode}]</SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                        {/* Show hint if product not matched but we have imported name */}
-                                        {!item.productId && (item as any).productName && (
-                                            <div className="text-xs text-amber-600 mt-1">
-                                                Faturadaki: {(item as any).productName}
+                                    <div key={index} className={`flex gap-2 items-start p-2 rounded-md border transition-colors ${item.type === 'CONSUMABLE' ? 'bg-orange-50/50 border-orange-100' : 'bg-muted/20 border-transparent hover:border-border'}`}>
+                                        <div className="flex flex-col gap-2 w-32">
+                                            <div className="flex rounded-md shadow-sm border bg-muted p-1 gap-1">
+                                                <Button
+                                                    type="button"
+                                                    variant={item.type === 'PRODUCT' ? 'secondary' : 'ghost'}
+                                                    size="sm"
+                                                    className={`h-7 flex-1 text-xs ${item.type === 'PRODUCT' ? 'bg-background shadow-sm text-primary font-medium' : 'text-muted-foreground hover:bg-background/50'}`}
+                                                    onClick={() => updateItem(index, 'type', 'PRODUCT')}
+                                                >
+                                                    Ürün
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    variant={item.type === 'CONSUMABLE' ? 'secondary' : 'ghost'}
+                                                    size="sm"
+                                                    className={`h-7 flex-1 text-xs ${item.type === 'CONSUMABLE' ? 'bg-orange-50 text-orange-700 shadow-sm font-medium border-orange-100' : 'text-muted-foreground hover:bg-background/50'}`}
+                                                    onClick={() => updateItem(index, 'type', 'CONSUMABLE')}
+                                                >
+                                                    Sarf
+                                                </Button>
                                             </div>
-                                        )}
-                                        <div className="w-20 space-y-2">
-                                            {index === 0 && <Label>Adet</Label>}
+                                        </div>
+
+                                        <div className="flex-1">
+                                            {item.type === 'PRODUCT' ? (
+                                                <Combobox
+                                                    options={products.map(p => ({ value: p.id, label: `${p.name} [${p.barcode || p.sku}]` }))}
+                                                    value={item.productId}
+                                                    onValueChange={(v) => updateItem(index, 'productId', v)}
+                                                    placeholder="Ürün Ara..."
+                                                    searchPlaceholder="Ürün adı, barkod veya SKU ara..."
+                                                    emptyMessage="Ürün bulunamadı."
+                                                    className="w-full"
+                                                />
+                                            ) : (
+                                                <Combobox
+                                                    options={consumables.map(c => ({ value: c.id, label: `${c.name} [${c.type}]` }))}
+                                                    value={item.consumableId}
+                                                    onValueChange={(v) => updateItem(index, 'consumableId', v)}
+                                                    placeholder="Malzeme Ara..."
+                                                    searchPlaceholder="Malzeme adı ara..."
+                                                    emptyMessage="Malzeme bulunamadı."
+                                                    className="w-full"
+                                                />
+                                            )}
+                                        </div>
+
+                                        <div className="w-20">
                                             <Input
                                                 type="number"
+                                                className="h-9"
                                                 value={item.orderedQuantity}
                                                 onChange={(e) => updateItem(index, 'orderedQuantity', parseInt(e.target.value) || 0)}
                                             />
                                         </div>
-                                        <div className="w-28 space-y-2">
-                                            {index === 0 && <Label>Birim Fiyat</Label>}
+                                        <div className="w-28">
                                             <Input
                                                 type="number"
+                                                className="h-9"
                                                 step="0.01"
                                                 value={item.unitPrice}
                                                 onChange={(e) => updateItem(index, 'unitPrice', parseFloat(e.target.value) || 0)}
                                             />
                                         </div>
-                                        {formData.items.length > 1 && (
-                                            <Button type="button" variant="ghost" size="icon" onClick={() => removeItem(index)}>
+                                        <div className="pt-0">
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                                onClick={() => removeItem(index)}
+                                                disabled={formData.items.length <= 1}
+                                            >
                                                 <Trash2 className="w-4 h-4" />
                                             </Button>
-                                        )}
+                                        </div>
                                     </div>
                                 ))}
                             </div>

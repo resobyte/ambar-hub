@@ -9,12 +9,12 @@ export enum ShelfType {
 }
 
 // Raf tipi kuralları
-export const SHELF_TYPE_RULES: Record<ShelfType, { isSellable: boolean; isReservable: boolean }> = {
-    [ShelfType.NORMAL]: { isSellable: true, isReservable: true },
-    [ShelfType.DAMAGED]: { isSellable: false, isReservable: false },
-    [ShelfType.PACKING]: { isSellable: false, isReservable: false },
-    [ShelfType.PICKING]: { isSellable: true, isReservable: true },
-    [ShelfType.RECEIVING]: { isSellable: false, isReservable: true },
-    [ShelfType.RETURN]: { isSellable: false, isReservable: false },
-    [ShelfType.RETURN_DAMAGED]: { isSellable: false, isReservable: false },
+export const SHELF_TYPE_RULES: Record<ShelfType, { isSellable: boolean }> = {
+    [ShelfType.NORMAL]: { isSellable: true },
+    [ShelfType.DAMAGED]: { isSellable: false },
+    [ShelfType.PACKING]: { isSellable: false },
+    [ShelfType.PICKING]: { isSellable: true },
+    [ShelfType.RECEIVING]: { isSellable: false },
+    [ShelfType.RETURN]: { isSellable: false },
+    [ShelfType.RETURN_DAMAGED]: { isSellable: false },
 };
