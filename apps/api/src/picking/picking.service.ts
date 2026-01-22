@@ -128,7 +128,7 @@ export class PickingService {
             const productIds = products.map(p => p.id);
 
             if (productIds.length > 0) {
-                // Find shelf stocks for these products - ONLY from sellable shelves
+                // Find shelf stocks for these products - ONLY from pickable shelves
                 const shelfStocks = await this.shelfStockRepository
                     .createQueryBuilder('ss')
                     .innerJoinAndSelect('ss.shelf', 'shelf')
@@ -138,7 +138,7 @@ export class PickingService {
                     .leftJoinAndSelect('parent3.parent', 'parent4')
                     .where('ss.productId IN (:...productIds)', { productIds })
                     .andWhere('ss.quantity > 0')
-                    .andWhere('shelf.isSellable = :isSellable', { isSellable: true })
+                    .andWhere('shelf.isPickable = :isPickable', { isPickable: true })
                     .getMany();
 
                 // Map product ID to shelf location (taking the one with most stock or first found)

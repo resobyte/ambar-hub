@@ -51,9 +51,13 @@ export class Shelf extends BaseEntity {
     @Column({ name: 'raf_id', type: 'int', nullable: true, unique: true })
     rafId: number | null;
 
-    // Whether products on this shelf can be picked (toplanabilir)
+    // Whether products on this shelf can be sold (satılabilir stok)
     @Column({ name: 'is_sellable', default: true })
     isSellable: boolean;
+
+    // Whether products on this shelf can be picked (toplanabilir)
+    @Column({ name: 'is_pickable', default: true })
+    isPickable: boolean;
 
     // Whether products can be transferred to this shelf (raflanabilir)
     @Column({ name: 'is_shelvable', default: true })

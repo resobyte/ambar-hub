@@ -36,6 +36,10 @@ export class CreateShelfDto {
 
     @IsBoolean()
     @IsOptional()
+    isPickable?: boolean;
+
+    @IsBoolean()
+    @IsOptional()
     isShelvable?: boolean;
 
     @IsNumber()

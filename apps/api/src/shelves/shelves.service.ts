@@ -60,6 +60,7 @@ export class ShelvesService {
             globalSlot: dto.globalSlot ?? null,
             rafId: dto.rafId ?? null,
             isSellable: isSellable ?? true,
+            isPickable: dto.isPickable ?? true,
             isShelvable: isShelvable ?? true,
             // Explicitly set parent to null for root shelves - required by TypeORM MaterializedPath
             parent: parent,
@@ -519,17 +520,18 @@ export class ShelvesService {
                 const globalSlot = parseInt(row['GLOBAL SLOT'] || row['globalSlot'] || '0', 10);
                 const typeStr = row['RAF TİPİ'] || row['type'] || row['Type'] || 'NORMAL';
                 const parentName = row['KÖK'] || row['parent'] || row['Parent'];
-                const collectableStr = row['TOPLANABİLİR'] || row['collectable'] || 'HAYIR';
+                const collectableStr = row['TOPLANABİLİR'] || row['collectable'] || row['pickable'] || 'HAYIR';
                 const shelvableStr = row['RAFLANABİLİR'] || row['shelvable'] || 'EVET';
+                const sellableStr = row['SATILABİLİR'] || row['sellable'] || 'HAYIR';
 
                 if (!name) {
                     errors.push(`Satır ${index + 2}: Raf adı eksik.`);
                     continue;
                 }
 
-                // Determine isSellable based on TOPLANABİLİR
-                const isSellable = collectableStr?.toUpperCase() === 'EVET';
-                // Determine isShelvable based on RAFLANABİLİR
+                // Determine flags from Excel columns
+                const isSellable = sellableStr?.toUpperCase() === 'EVET';
+                const isPickable = collectableStr?.toUpperCase() === 'EVET';
                 const isShelvable = shelvableStr?.toUpperCase() === 'EVET';
                 const shelfType = mapShelfType(typeStr);
                 const rules = SHELF_TYPE_RULES[shelfType];
@@ -562,6 +564,7 @@ export class ShelvesService {
                         rafId: rafId > 0 ? rafId : undefined,
                         globalSlot: globalSlot > 0 ? globalSlot : undefined,
                         isSellable,
+                        isPickable,
                         isShelvable,
                         parentId,
                     });
@@ -576,6 +579,7 @@ export class ShelvesService {
                         rafId: rafId > 0 ? rafId : undefined,
                         globalSlot: globalSlot > 0 ? globalSlot : undefined,
                         isSellable,
+                        isPickable,
                         isShelvable,
                         parentId,
                     });
@@ -616,15 +620,16 @@ export class ShelvesService {
             'RAF TİPİ',
             'KÖK',
             'GLOBAL SLOT',
-            'TOPLANABİLİR',
             'RAFLANABİLİR',
+            'TOPLANABİLİR',
+            'SATILABİLİR',
         ];
 
         const exampleRows = [
-            ['MERKEZ', 1000, 'NORMAL', '', 1000, 'HAYIR', 'HAYIR'],
-            ['A', 1001, 'NORMAL', 'MERKEZ', 1001, 'HAYIR', 'HAYIR'],
-            ['A1', 1002, 'NORMAL', 'A', 1002, 'HAYIR', 'HAYIR'],
-            ['A1-1', 1003, 'NORMAL', 'A1', 1003, 'EVET', 'EVET'],
+            ['MERKEZ', 1000, 'NORMAL', '', 1000, 'HAYIR', 'HAYIR', 'HAYIR'],
+            ['A', 1001, 'NORMAL', 'MERKEZ', 1001, 'HAYIR', 'HAYIR', 'HAYIR'],
+            ['A1', 1002, 'NORMAL', 'A', 1002, 'HAYIR', 'HAYIR', 'HAYIR'],
+            ['A1-1', 1003, 'NORMAL', 'A1', 1003, 'EVET', 'EVET', 'EVET'],
         ];
 
         const worksheet = XLSX.utils.aoa_to_sheet([headers, ...exampleRows]);

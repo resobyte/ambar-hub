@@ -1,6 +1,5 @@
 import { IsString, IsOptional, IsEnum, IsBoolean, IsNumber, IsUUID } from 'class-validator';
 import { ShelfType } from '../enums/shelf-type.enum';
-import { CreateShelfDto } from './create-shelf.dto';
 
 export class UpdateShelfDto {
     @IsString()
@@ -34,6 +33,10 @@ export class UpdateShelfDto {
     @IsBoolean()
     @IsOptional()
     isSellable?: boolean;
+
+    @IsBoolean()
+    @IsOptional()
+    isPickable?: boolean;
 
     @IsBoolean()
     @IsOptional()

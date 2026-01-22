@@ -79,6 +79,7 @@ interface Shelf {
     globalSlot: number;
     rafId?: number;
     isSellable: boolean;
+    isPickable?: boolean;
     isShelvable?: boolean;
     children?: Shelf[];
     warehouse?: { name: string };
@@ -103,13 +104,13 @@ type SelectedItem =
     | { type: 'shelf'; data: Shelf; warehouseId: string };
 
 const SHELF_TYPES = [
-    { value: 'NORMAL', label: 'Normal', defaultSellable: true },
-    { value: 'DAMAGED', label: 'Hasarlı', defaultSellable: false },
-    { value: 'PACKING', label: 'Paketleme', defaultSellable: false },
-    { value: 'PICKING', label: 'Toplama', defaultSellable: true },
-    { value: 'RECEIVING', label: 'Mal Kabul', defaultSellable: false },
-    { value: 'RETURN', label: 'İade', defaultSellable: false },
-    { value: 'RETURN_DAMAGED', label: 'İade Hasarlı', defaultSellable: false },
+    { value: 'NORMAL', label: 'Normal', defaultSellable: true, defaultPickable: true },
+    { value: 'DAMAGED', label: 'Hasarlı', defaultSellable: false, defaultPickable: false },
+    { value: 'PACKING', label: 'Paketleme', defaultSellable: false, defaultPickable: false },
+    { value: 'PICKING', label: 'Toplama', defaultSellable: true, defaultPickable: true },
+    { value: 'RECEIVING', label: 'Mal Kabul', defaultSellable: false, defaultPickable: false },
+    { value: 'RETURN', label: 'İade', defaultSellable: false, defaultPickable: false },
+    { value: 'RETURN_DAMAGED', label: 'İade Hasarlı', defaultSellable: false, defaultPickable: false },
 ];
 
 export function ShelvesList() {
@@ -164,6 +165,7 @@ export function ShelvesList() {
         globalSlot: 0,
         warehouseId: '',
         isSellable: true,
+        isPickable: true,
         isShelvable: true,
     });
     const [shelfTypeComboOpen, setShelfTypeComboOpen] = useState(false);
@@ -306,6 +308,7 @@ export function ShelvesList() {
             globalSlot: 0,
             warehouseId: warehouseId || '',
             isSellable: true,
+            isPickable: true,
             isShelvable: true,
         });
         setIsModalOpen(true);
@@ -320,6 +323,7 @@ export function ShelvesList() {
             globalSlot: shelf.globalSlot ?? 0,
             warehouseId: shelf.warehouseId,
             isSellable: shelf.isSellable ?? true,
+            isPickable: shelf.isPickable ?? true,
             isShelvable: shelf.isShelvable ?? true,
         });
         setIsModalOpen(true);
@@ -343,19 +347,35 @@ export function ShelvesList() {
             });
 
             if (!res.ok) throw new Error('Failed');
+
+            const updatedShelf = await res.json();
+
             toast({ title: 'Başarılı', description: editingShelf ? 'Raf güncellendi' : 'Raf oluşturuldu', variant: 'success' });
             setIsModalOpen(false);
 
+            if (editingShelf && selectedItem?.type === 'shelf' && selectedItem.data.id === editingShelf.id) {
+                // Update selected item immediately to reflect changes in UI
+                setSelectedItem(prev => prev ? {
+                    ...prev,
+                    data: {
+                        ...prev.data,
+                        ...updatedShelf,
+                        // Preserve relations if missing in response
+                        children: prev.data.children,
+                        stocks: prev.data.stocks
+                    }
+                } : null);
+            }
+
             if (formData.warehouseId) {
+                // Also trigger logic to clear shelves cache for this warehouse so next render/fetch gets fresh data
                 setExpandedWarehouses(prev => {
                     const next = new Set(prev);
                     next.add(formData.warehouseId);
                     return next;
                 });
-                const clearedMap = { ...shelvesMapRef.current };
-                delete clearedMap[formData.warehouseId];
-                shelvesMapRef.current = clearedMap;
-                setShelvesMap(clearedMap);
+                // Note: We don't want to completely wipe the map immediately if we want smooth transition,
+                // but refreshWarehouseShelves will handle updating it.
                 await refreshWarehouseShelves(formData.warehouseId);
             }
         } catch {
@@ -1060,7 +1080,11 @@ export function ShelvesList() {
                                     <div className="flex items-center gap-8">
                                         <div className="flex items-center gap-2">
                                             <div className={`w-3 h-3 rounded-full ${shelf?.isSellable ? 'bg-green-500' : 'bg-red-500'}`} />
-                                            <span className="text-sm font-medium">{shelf?.isSellable ? 'Toplanabilir' : 'Toplanamaz'}</span>
+                                            <span className="text-sm font-medium">{shelf?.isSellable ? 'Satılabilir' : 'Satılamaz'}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <div className={`w-3 h-3 rounded-full ${shelf?.isPickable !== false ? 'bg-green-500' : 'bg-red-500'}`} />
+                                            <span className="text-sm font-medium">{shelf?.isPickable !== false ? 'Toplanabilir' : 'Toplanamaz'}</span>
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <div className={`w-3 h-3 rounded-full ${shelf?.isShelvable !== false ? 'bg-green-500' : 'bg-red-500'}`} />
@@ -1357,7 +1381,8 @@ export function ShelvesList() {
                                                             setFormData({
                                                                 ...formData,
                                                                 type: t.value,
-                                                                isSellable: t.defaultSellable
+                                                                isSellable: t.defaultSellable,
+                                                                isPickable: t.defaultPickable
                                                             });
                                                             setShelfTypeComboOpen(false);
                                                         }}
@@ -1374,12 +1399,22 @@ export function ShelvesList() {
                         </div>
                         <div className="flex items-center justify-between">
                             <div className="space-y-0.5">
-                                <Label>Toplanabilir</Label>
-                                <p className="text-xs text-muted-foreground">Bu raftan toplama yapılabilir mi?</p>
+                                <Label>Satılabilir</Label>
+                                <p className="text-xs text-muted-foreground">Bu raftaki stok satılabilir stok olarak sayılsın mı?</p>
                             </div>
                             <Switch
                                 checked={formData.isSellable}
                                 onCheckedChange={(checked) => setFormData({ ...formData, isSellable: checked })}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                                <Label>Toplanabilir</Label>
+                                <p className="text-xs text-muted-foreground">Bu raftan toplama yapılabilir mi?</p>
+                            </div>
+                            <Switch
+                                checked={formData.isPickable}
+                                onCheckedChange={(checked) => setFormData({ ...formData, isPickable: checked })}
                             />
                         </div>
                         <div className="flex items-center justify-between">
