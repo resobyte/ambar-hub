@@ -1174,10 +1174,36 @@ export interface Customer {
   email: string;
   phone: string | null;
   city: string | null;
-  district: string | null;
-  address: string | null;
-  tcIdentityNumber: string | null;
+  district?: string | null;
+  address?: string | null;
+  invoiceCity?: string;
+  invoiceDistrict?: string;
+  invoiceAddress?: string;
+  tcIdentityNumber?: string | null;
   trendyolCustomerId: string | null;
+  company: string | null;
+  taxOffice: string | null;
+  taxNumber: string | null;
+  type?: 'INDIVIDUAL' | 'COMMERCIAL';
+}
+
+export async function getCustomers(page = 1, limit = 10, search?: string): Promise<PaginationResponse<Customer>> {
+  const url = new URL(`${API_URL}/customers`, BASE_URL);
+  url.searchParams.append('page', String(page));
+  url.searchParams.append('limit', String(limit));
+  if (search) {
+    url.searchParams.append('search', search);
+  }
+
+  const res = await fetch(url.toString(), {
+    cache: 'no-store',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Request failed');
+  }
+  return res.json();
 }
 
 export interface OrderItem {

@@ -55,8 +55,10 @@ export class InvoicesService {
             throw new BadRequestException(`Bu sipariş için zaten başarıyla oluşturulmuş bir fatura mevcut! (Fatura No: ${existingInvoice.invoiceNumber})`);
         }
 
-        // 2. Get IntegrationStore settings
-        const storeConfig = await this.getIntegrationStoreSettings(order.storeId, order.integrationId);
+        // 2. Get IntegrationStore settings (skip for manual orders without integration)
+        const storeConfig = order.integrationId
+            ? await this.getIntegrationStoreSettings(order.storeId, order.integrationId)
+            : null;
         if (!storeConfig) {
             throw new BadRequestException('Integration store settings not found');
         }
@@ -384,8 +386,10 @@ export class InvoicesService {
                     continue;
                 }
 
-                // Get IntegrationStore settings
-                const storeConfig = await this.getIntegrationStoreSettings(order.storeId, order.integrationId);
+                // Get IntegrationStore settings (skip for manual orders)
+                const storeConfig = order.integrationId
+                    ? await this.getIntegrationStoreSettings(order.storeId, order.integrationId)
+                    : null;
                 if (!storeConfig) {
                     results.failed.push({ orderId: order.id, error: 'Integration store settings not found' });
                     continue;

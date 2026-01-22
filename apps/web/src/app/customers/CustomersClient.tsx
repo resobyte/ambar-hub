@@ -47,12 +47,17 @@ interface Customer {
     phone?: string;
     city?: string;
     district?: string;
+    postalCode?: string;
     address?: string;
     tcIdentityNumber?: string;
     company?: string;
     taxOffice?: string;
     taxNumber?: string;
     trendyolCustomerId?: string;
+    invoiceCity?: string;
+    invoiceDistrict?: string;
+    invoicePostalCode?: string;
+    invoiceAddress?: string;
     createdAt: string;
 }
 
@@ -64,11 +69,16 @@ const initialFormData = {
     phone: '',
     city: '',
     district: '',
+    postalCode: '',
     address: '',
     tcIdentityNumber: '',
     company: '',
     taxOffice: '',
     taxNumber: '',
+    invoiceCity: '',
+    invoiceDistrict: '',
+    invoicePostalCode: '',
+    invoiceAddress: '',
 };
 
 export default function CustomersClient() {
@@ -83,6 +93,7 @@ export default function CustomersClient() {
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
     const [formData, setFormData] = useState(initialFormData);
+    const [useSameAddress, setUseSameAddress] = useState(true);
     const [saving, setSaving] = useState(false);
     const [totalPages, setTotalPages] = useState(1);
     const [total, setTotal] = useState(0);
@@ -143,6 +154,7 @@ export default function CustomersClient() {
     const handleCreate = () => {
         setEditingCustomer(null);
         setFormData(initialFormData);
+        setUseSameAddress(true);
         setIsDialogOpen(true);
     };
 
@@ -156,12 +168,26 @@ export default function CustomersClient() {
             phone: customer.phone || '',
             city: customer.city || '',
             district: customer.district || '',
+            postalCode: customer.postalCode || '',
             address: customer.address || '',
             tcIdentityNumber: customer.tcIdentityNumber || '',
             company: customer.company || '',
             taxOffice: customer.taxOffice || '',
             taxNumber: customer.taxNumber || '',
+            invoiceCity: customer.invoiceCity || '',
+            invoiceDistrict: customer.invoiceDistrict || '',
+            invoicePostalCode: customer.invoicePostalCode || '',
+            invoiceAddress: customer.invoiceAddress || '',
         });
+
+        // Check if invoice address is effectively same as shipping (or empty)
+        const isSame = !customer.invoiceAddress || (
+            customer.invoiceAddress === customer.address &&
+            customer.invoiceCity === customer.city &&
+            customer.invoiceDistrict === customer.district
+        );
+        setUseSameAddress(isSame);
+
         setIsDialogOpen(true);
     };
 
@@ -189,11 +215,19 @@ export default function CustomersClient() {
                 : `${API_URL}/customers`;
             const method = editingCustomer ? 'PATCH' : 'POST';
 
+            const payload = { ...formData };
+            if (useSameAddress) {
+                payload.invoiceCity = payload.city;
+                payload.invoiceDistrict = payload.district;
+                payload.invoicePostalCode = payload.postalCode;
+                payload.invoiceAddress = payload.address;
+            }
+
             const res = await fetch(url, {
                 method,
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
-                body: JSON.stringify(formData),
+                body: JSON.stringify(payload),
             });
 
             if (!res.ok) {
@@ -442,6 +476,30 @@ export default function CustomersClient() {
                                 </div>
                             )}
 
+                            {/* Invoice Address Display */}
+                            {(viewingCustomer.invoiceAddress || viewingCustomer.invoiceCity || viewingCustomer.invoiceDistrict) && (
+                                <>
+                                    <Separator />
+                                    <div className="text-sm font-semibold text-muted-foreground mt-2 mb-1">Fatura Adresi</div>
+                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                        <div>
+                                            <Label className="text-muted-foreground">Şehir</Label>
+                                            <p className="font-medium">{viewingCustomer.invoiceCity || '-'}</p>
+                                        </div>
+                                        <div>
+                                            <Label className="text-muted-foreground">İlçe</Label>
+                                            <p className="font-medium">{viewingCustomer.invoiceDistrict || '-'}</p>
+                                        </div>
+                                    </div>
+                                    {viewingCustomer.invoiceAddress && (
+                                        <div className="text-sm">
+                                            <Label className="text-muted-foreground">Adres</Label>
+                                            <p className="font-medium">{viewingCustomer.invoiceAddress}</p>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+
                             <Separator />
 
                             <div className="grid grid-cols-2 gap-4 text-sm">
@@ -625,6 +683,17 @@ export default function CustomersClient() {
                             </div>
                         </div>
 
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label>Posta Kodu</Label>
+                                <Input
+                                    value={formData.postalCode}
+                                    onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })}
+                                    placeholder="Posta kodu"
+                                />
+                            </div>
+                        </div>
+
                         <div className="space-y-2">
                             <Label>Adres</Label>
                             <Textarea
@@ -633,6 +702,61 @@ export default function CustomersClient() {
                                 placeholder="Açık adres"
                                 rows={3}
                             />
+                        </div>
+
+                        <div className="space-y-4 border rounded p-3 bg-muted/20">
+                            <div className="flex items-center space-x-2">
+                                <input
+                                    type="checkbox"
+                                    id="sameAddress"
+                                    checked={useSameAddress}
+                                    onChange={(e) => setUseSameAddress(e.target.checked)}
+                                    className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                />
+                                <Label htmlFor="sameAddress" className="cursor-pointer">Fatura adresi teslimat adresiyle aynı</Label>
+                            </div>
+
+                            {!useSameAddress && (
+                                <>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <Label>Fatura İli</Label>
+                                            <Input
+                                                value={formData.invoiceCity}
+                                                onChange={(e) => setFormData({ ...formData, invoiceCity: e.target.value })}
+                                                placeholder="İl"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Fatura İlçesi</Label>
+                                            <Input
+                                                value={formData.invoiceDistrict}
+                                                onChange={(e) => setFormData({ ...formData, invoiceDistrict: e.target.value })}
+                                                placeholder="İlçe"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <Label>Fatura Posta Kodu</Label>
+                                            <Input
+                                                value={formData.invoicePostalCode}
+                                                onChange={(e) => setFormData({ ...formData, invoicePostalCode: e.target.value })}
+                                                placeholder="Posta kodu"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Fatura Adresi</Label>
+                                        <Textarea
+                                            value={formData.invoiceAddress}
+                                            onChange={(e) => setFormData({ ...formData, invoiceAddress: e.target.value })}
+                                            placeholder="Açık fatura adresi"
+                                            rows={2}
+                                        />
+                                    </div>
+                                </>
+                            )}
                         </div>
 
                         <DialogFooter>

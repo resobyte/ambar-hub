@@ -1,10 +1,16 @@
 import { Controller, Post, Param, Get, Query, Delete, Res, Put, Body } from '@nestjs/common';
 import { Response } from 'express';
 import { OrdersService } from './orders.service';
+import { CreateOrderDto } from './dto/create-order.dto';
 
 @Controller('orders')
 export class OrdersController {
     constructor(private readonly ordersService: OrdersService) { }
+
+    @Post()
+    async create(@Body() createOrderDto: CreateOrderDto) {
+        return this.ordersService.create(createOrderDto);
+    }
 
     @Post('sync/:integrationId')
     async syncOrders(@Param('integrationId') integrationId: string) {

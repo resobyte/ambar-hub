@@ -17,6 +17,9 @@ import { ArasKargoService } from '../integrations/aras/aras-kargo.service';
 import axios from 'axios';
 
 import { InvoicesService } from '../invoices/invoices.service';
+import { CreateOrderDto } from './dto/create-order.dto';
+import { randomUUID } from 'crypto';
+import { Customer, CustomerType } from '../customers/entities/customer.entity';
 
 @Injectable()
 export class OrdersService {
@@ -182,6 +185,109 @@ export class OrdersService {
 
         await this.faultyOrderRepository.save(faultyOrder);
         this.logger.warn(`Saved faulty order ${packageId} - missing products: ${missingBarcodes.join(', ')}`);
+    }
+
+    async create(dto: CreateOrderDto): Promise<Order> {
+        let customer: Customer;
+
+        // 1. Resolve Customer
+        if (dto.customerId) {
+            const existing = await this.customersService.findOne(dto.customerId);
+            if (!existing) {
+                throw new Error('Müşteri bulunamadı');
+            }
+            customer = existing;
+        } else if (dto.newCustomerData) {
+            // Create new customer
+            // Generate a dummy email if not provided, to satisfy unique constraint if needed
+            const email = dto.newCustomerData.email || `manual-${Date.now()}@placeholder.com`;
+
+            customer = await this.customersService.createOrUpdate({
+                firstName: dto.newCustomerData.firstName,
+                lastName: dto.newCustomerData.lastName,
+                email: email,
+                phone: dto.newCustomerData.phone,
+                city: dto.newCustomerData.city,
+                district: dto.newCustomerData.district,
+                address: dto.newCustomerData.addressDetail,
+                tcIdentityNumber: dto.newCustomerData.tcIdentityNumber,
+                taxNumber: dto.newCustomerData.taxNumber,
+                taxOffice: dto.newCustomerData.taxOffice,
+                company: dto.newCustomerData.company,
+                type: dto.newCustomerData.company ? CustomerType.COMMERCIAL : CustomerType.INDIVIDUAL
+            } as any);
+        } else {
+            throw new Error('Müşteri seçilmeli veya yeni müşteri bilgileri girilmelidir.');
+        }
+
+        // 2. Calculate Totals
+        let totalPrice = 0;
+        let grossAmount = 0;
+
+        for (const item of dto.items) {
+            totalPrice += item.price * item.quantity;
+            grossAmount += item.price * item.quantity;
+        }
+
+        // 3. Create Order
+        const orderNumber = `MAN-${Date.now()}`; // Manual Order
+
+        const newOrder = this.orderRepository.create({
+            orderNumber,
+            packageId: orderNumber, // Use orderNumber as packageId for manual orders
+            integrationId: null, // Manual orders don't have an integration
+            customerId: customer.id,
+            storeId: dto.storeId, // Ensure Store ID is handled if provided
+            status: OrderStatus.CREATED,
+            type: dto.orderType,
+            totalPrice,
+            grossAmount,
+            totalDiscount: 0,
+            sellerDiscount: 0,
+            tyDiscount: 0,
+            currencyCode: 'TRY',
+            orderDate: new Date(),
+            shippingAddress: dto.shippingAddress,
+            invoiceAddress: dto.invoiceAddress,
+            paymentMethod: dto.paymentMethod,
+            isCod: dto.isCod || false,
+            customer: customer,
+            commercial: !!dto.newCustomerData?.company, // Simple check, refine if needed based on tax info
+            createdBy: 'MANUAL_USER', // Could be dynamic from auth context if available
+        });
+
+        // Use a transaction or just save sequentially (simple for now)
+        const savedOrder = await this.orderRepository.save(newOrder);
+
+        // 4. Create Items
+        const orderItems: OrderItem[] = [];
+        for (const itemDto of dto.items) {
+            // Fetch product to get details
+            const product = await this.productRepository.findOne({ where: { id: itemDto.productId } });
+
+            const orderItem = this.orderItemRepository.create({
+                orderId: savedOrder.id,
+                // productId field does not exist in OrderItem entity, we rely on sku/barcode/name
+                productName: product ? product.name : 'Unknown Product',
+                sku: product ? product.sku : 'UNKNOWN',
+                barcode: product ? product.barcode : 'UNKNOWN',
+                quantity: itemDto.quantity,
+                unitPrice: itemDto.price,
+                grossAmount: itemDto.price * itemDto.quantity,
+                vatRate: product ? product.vatRate : 20, // Default 20 if not found
+                currencyCode: 'TRY',
+            });
+            orderItems.push(orderItem);
+        }
+
+        if (orderItems.length > 0) {
+            await this.orderItemRepository.save(orderItems);
+        }
+
+        // 5. Reserve Stock
+        await this.updateStockCommitment(savedOrder, 'reserve');
+
+        return savedOrder;
     }
 
     async syncOrders(integrationId: string) {
@@ -510,17 +616,17 @@ export class OrdersService {
         /*
         // 0. Check if this is already in faulty orders and products now exist
         const existingFaulty = await this.faultyOrderRepository.findOne({ where: { packageId } });
-
+    
         // 1. Validate all products exist
         const lines = pkg.lines || [];
         const { valid, missing } = await this.checkProductsExist(lines);
-
+    
         if (!valid) {
             // Products missing - save to faulty orders
             await this.saveAsFaultyOrder(pkg, integrationId, storeId, missing);
             return; // Don't process as regular order
         }
-
+    
         // Products exist - if was faulty, remove from faulty orders
         if (existingFaulty) {
             await this.faultyOrderRepository.delete({ id: existingFaulty.id });
@@ -534,9 +640,17 @@ export class OrdersService {
             lastName: pkg.invoiceAddress?.lastName || pkg.customerLastName,
             email: pkg.customerEmail,
             phone: pkg.invoiceAddress?.phone || pkg.shipmentAddress?.phone,
-            city: pkg.invoiceAddress?.city || pkg.shipmentAddress?.city,
-            district: pkg.invoiceAddress?.district || pkg.shipmentAddress?.district,
-            address: pkg.invoiceAddress?.fullAddress || pkg.invoiceAddress?.address1 || pkg.shipmentAddress?.fullAddress,
+
+            // Shipping Address / Default Address
+            city: pkg.shipmentAddress?.city || pkg.invoiceAddress?.city,
+            district: pkg.shipmentAddress?.district || pkg.invoiceAddress?.district,
+            address: pkg.shipmentAddress?.fullAddress || pkg.shipmentAddress?.address1 || pkg.invoiceAddress?.fullAddress,
+
+            // Invoice Address (New)
+            invoiceCity: pkg.invoiceAddress?.city,
+            invoiceDistrict: pkg.invoiceAddress?.district,
+            invoiceAddress: pkg.invoiceAddress?.fullAddress || pkg.invoiceAddress?.address1,
+
             tcIdentityNumber: pkg.tcIdentityNumber || pkg.identityNumber || pkg.invoiceAddress?.taxNumber || pkg.invoiceAddress?.identityNumber || pkg.taxNumber,
             trendyolCustomerId: pkg.customerId?.toString(),
             company: pkg.invoiceAddress?.company || null,
@@ -1333,6 +1447,10 @@ export class OrdersService {
 
         if (status === 'Invoiced' && !invoiceNumber) {
             return { success: false, message: 'Fatura numarası gereklidir.' };
+        }
+
+        if (!order.integrationId) {
+            return { success: false, message: 'Bu sipariş bir entegrasyona bağlı değil (manuel sipariş).' };
         }
 
         const integration = await this.integrationsService.findWithStores(order.integrationId);

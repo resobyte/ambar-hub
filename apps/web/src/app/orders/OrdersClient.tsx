@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { OrdersTable } from '@/components/orders/OrdersTable';
 import { SyncOrdersDialog } from '@/components/orders/SyncOrdersDialog';
@@ -24,6 +25,7 @@ import {
 import { useTableQuery } from '@/hooks/use-table-query';
 
 export function OrdersClient() {
+    const router = useRouter();
     // URL-synced table query state
     const { page, pageSize, filters, setPage, setPageSize, setFilters: setUrlFilters } = useTableQuery({
         defaultPage: 1,
@@ -135,7 +137,7 @@ export function OrdersClient() {
                 <div className="flex items-center gap-2">
                     <Button
                         size="sm"
-                        onClick={() => { }} // Placeholder for Create Order
+                        onClick={() => router.push('/orders/create')}
                     >
                         <Plus className="w-4 h-4 mr-2" />
                         Sipariş Oluştur

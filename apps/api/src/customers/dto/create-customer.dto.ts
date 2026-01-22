@@ -36,7 +36,27 @@ export class CreateCustomerDto {
 
     @IsString()
     @IsOptional()
+    postalCode?: string;
+
+    @IsString()
+    @IsOptional()
     address?: string;
+
+    @IsString()
+    @IsOptional()
+    invoiceCity?: string;
+
+    @IsString()
+    @IsOptional()
+    invoiceDistrict?: string;
+
+    @IsString()
+    @IsOptional()
+    invoicePostalCode?: string;
+
+    @IsString()
+    @IsOptional()
+    invoiceAddress?: string;
 
     // Bireysel müşteri için TC
     @IsString()

@@ -34,8 +34,24 @@ export class Customer extends BaseEntity {
     @Column({ nullable: true })
     district: string;
 
+    @Column({ name: 'postal_code', nullable: true })
+    postalCode: string;
+
     @Column({ type: 'text', nullable: true })
     address: string;
+
+    // Fatura Adresi (Boş ise teslimat adresi kullanılır mantığı frontend'de/serviste yönetilebilir)
+    @Column({ name: 'invoice_city', nullable: true })
+    invoiceCity: string;
+
+    @Column({ name: 'invoice_district', nullable: true })
+    invoiceDistrict: string;
+
+    @Column({ name: 'invoice_postal_code', nullable: true })
+    invoicePostalCode: string;
+
+    @Column({ name: 'invoice_address', type: 'text', nullable: true })
+    invoiceAddress: string;
 
     @Column({ name: 'tc_identity_number', nullable: true })
     tcIdentityNumber: string;

@@ -5,6 +5,7 @@ import { Integration } from '../../integrations/entities/integration.entity';
 import { Store } from '../../stores/entities/store.entity';
 import { OrderItem } from './order-item.entity';
 import { OrderStatus } from '../enums/order-status.enum';
+import { OrderType } from '../enums/order-type.enum';
 
 @Entity('orders')
 export class Order extends BaseEntity {
@@ -17,10 +18,10 @@ export class Order extends BaseEntity {
     @Column({ name: 'package_id', unique: true })
     packageId: string;
 
-    @Column({ name: 'integration_id' })
-    integrationId: string;
+    @Column({ name: 'integration_id', nullable: true })
+    integrationId: string | null;
 
-    @ManyToOne(() => Integration)
+    @ManyToOne(() => Integration, { nullable: true })
     @JoinColumn({ name: 'integration_id' })
     integration: Integration;
 
@@ -50,6 +51,13 @@ export class Order extends BaseEntity {
 
     @Column({ name: 'integration_status', nullable: true })
     integrationStatus: string;
+
+    @Column({
+        type: 'enum',
+        enum: OrderType,
+        default: OrderType.MARKETPLACE
+    })
+    type: OrderType;
 
     // ─────────────────────────────────────────────────────────────
     // Pricing & Discounts
