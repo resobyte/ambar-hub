@@ -207,6 +207,7 @@ export interface ProductStore {
   stockQuantity: number;
   sellableQuantity: number;
   reservableQuantity: number;
+  committedQuantity: number;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

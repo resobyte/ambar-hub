@@ -71,13 +71,14 @@ interface ProductStore {
     id: string;
     productId: string;
     storeId: string;
+    store?: Store;
     storeName?: string;
     storeSku: string | null;
     storeSalePrice: number | null;
     stockQuantity: number;
     sellableQuantity: number;
     reservableQuantity: number;
-    committedQuantity: number;
+    committedQuantity?: number;
     isActive: boolean;
 }
 
