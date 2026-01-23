@@ -44,6 +44,36 @@ export class InvoicesController {
     }
 
     /**
+     * Get pending invoices for processing
+     */
+    @Get('pending')
+    async getPendingInvoices(@Query('limit') limit = 50) {
+        return {
+            success: true,
+            data: await this.invoicesService.getPendingInvoices(+limit),
+        };
+    }
+
+    /**
+     * Process a single pending invoice
+     */
+    @Post(':id/process')
+    async processPendingInvoice(@Param('id') id: string) {
+        return {
+            success: true,
+            data: await this.invoicesService.processPendingInvoice(id),
+        };
+    }
+
+    /**
+     * Process all pending invoices (batch job)
+     */
+    @Post('process-pending')
+    async processAllPendingInvoices(@Body() body?: { limit?: number }) {
+        return this.invoicesService.processAllPendingInvoices(body?.limit);
+    }
+
+    /**
      * Retry failed invoice
      */
     @Post(':id/retry')

@@ -334,9 +334,30 @@ export class PackingService {
             description: `Paketleme tamamlandı - Rota: ${route?.name}`,
         });
 
-        // Process shipment if requested
+        // Check if we should auto-process shipment for marketplace orders
+        let shouldProcessShipment = dto.processShipment === true;
+        
+        if (!shouldProcessShipment && dto.processShipment !== false) {
+            // Auto-detect: check if this is a marketplace order with status sending enabled
+            const order = await this.orderRepository.findOne({
+                where: { id: dto.orderId },
+            });
+            
+            if (order?.integrationId && order?.storeId) {
+                const storeConfig = await this.integrationStoreRepository.findOne({
+                    where: { integrationId: order.integrationId, storeId: order.storeId },
+                });
+                
+                if (storeConfig?.sendOrderStatus) {
+                    shouldProcessShipment = true;
+                    this.logger.log(`Auto-processing shipment for marketplace order ${dto.orderId} (sendOrderStatus enabled)`);
+                }
+            }
+        }
+
+        // Process shipment if requested or auto-detected
         let shipmentResult: ShipmentResult | undefined;
-        if (dto.processShipment) {
+        if (shouldProcessShipment) {
             shipmentResult = await this.processOrderShipment(dto.orderId);
 
             // Log shipped if successful
@@ -521,8 +542,10 @@ export class PackingService {
     ): Promise<void> {
         this.logger.log(`Processing marketplace shipment for order ${order.orderNumber} (${integrationType})`);
 
+        const shouldSendStatus = storeConfig?.sendOrderStatus !== false;
+
         // 1. Update status to Picking on integration (Trendyol only for now)
-        if (integrationType === IntegrationType.TRENDYOL) {
+        if (integrationType === IntegrationType.TRENDYOL && shouldSendStatus) {
             try {
                 await this.updateTrendyolStatus(order, storeConfig!, 'Picking');
 
@@ -536,48 +559,28 @@ export class PackingService {
             } catch (error) {
                 this.logger.warn(`Failed to update Trendyol status to Picking: ${error.message}`);
             }
+        } else if (!shouldSendStatus) {
+            this.logger.log(`Skipping status update - sendOrderStatus is disabled for store`);
         }
 
-        // 2. Create invoice if enabled
+        // 2. Queue invoice for later processing (will be processed by job)
         if (storeConfig?.invoiceEnabled) {
             try {
-                const invoice = await this.invoicesService.createInvoiceFromOrder(order.id);
-                result.invoiceNumber = invoice.invoiceNumber;
-                this.logger.log(`Invoice created: ${invoice.invoiceNumber}`);
+                const pendingInvoice = await this.invoicesService.queueInvoiceForOrder(order.id);
+                this.logger.log(`Invoice queued for order ${order.orderNumber} - Invoice ID: ${pendingInvoice.id}`);
 
-                // Log invoice created
+                // Log that invoice is queued (not created yet)
                 await this.orderHistoryService.logEvent({
                     orderId: order.id,
-                    action: OrderHistoryAction.INVOICE_CREATED,
-                    description: `Fatura kesildi: ${invoice.invoiceNumber}`,
+                    action: OrderHistoryAction.NOTE_ADDED,
+                    description: `Fatura kuyruğa alındı - Job tarafından kesilecek`,
                     metadata: {
-                        invoiceNumber: invoice.invoiceNumber,
-                        invoiceId: invoice.id,
+                        invoiceId: pendingInvoice.id,
+                        status: 'PENDING',
                     },
                 });
-
-                // 3. Send invoice to integration (Trendyol only for now)
-                if (integrationType === IntegrationType.TRENDYOL && invoice.invoiceNumber) {
-                    try {
-                        await this.updateTrendyolStatus(order, storeConfig, 'Invoiced', invoice.invoiceNumber);
-
-                        // Log integration status update
-                        await this.orderHistoryService.logEvent({
-                            orderId: order.id,
-                            action: OrderHistoryAction.INTEGRATION_STATUS_INVOICED,
-                            description: `${integrationType} statüsü güncellendi: Invoiced - Fatura: ${invoice.invoiceNumber}`,
-                            metadata: {
-                                integration: integrationType,
-                                status: 'Invoiced',
-                                invoiceNumber: invoice.invoiceNumber,
-                            },
-                        });
-                    } catch (error) {
-                        this.logger.warn(`Failed to send invoice to Trendyol: ${error.message}`);
-                    }
-                }
             } catch (error) {
-                this.logger.warn(`Failed to create invoice: ${error.message}`);
+                this.logger.warn(`Failed to queue invoice: ${error.message}`);
             }
         }
 

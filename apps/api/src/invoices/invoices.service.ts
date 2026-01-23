@@ -8,6 +8,8 @@ import { Order } from '../orders/entities/order.entity';
 import { Product } from '../products/entities/product.entity';
 import { IntegrationStore } from '../integration-stores/entities/integration-store.entity';
 import { InvoiceStatus } from './enums/invoice-status.enum';
+import { OrderHistoryService } from '../orders/order-history.service';
+import { OrderHistoryAction } from '../orders/entities/order-history.entity';
 
 @Injectable()
 export class InvoicesService {
@@ -23,7 +25,149 @@ export class InvoicesService {
         @InjectRepository(IntegrationStore)
         private readonly integrationStoreRepository: Repository<IntegrationStore>,
         private readonly configService: ConfigService,
+        private readonly orderHistoryService: OrderHistoryService,
     ) { }
+
+    /**
+     * Queue an invoice for later processing (creates PENDING record)
+     * The actual invoice payload will be built when processing
+     */
+    async queueInvoiceForOrder(orderId: string): Promise<Invoice> {
+        const order = await this.orderRepository.findOne({
+            where: { id: orderId },
+            relations: ['items', 'customer', 'store'],
+        });
+
+        if (!order) {
+            throw new NotFoundException(`Order ${orderId} not found`);
+        }
+
+        // Check if invoice already exists (any status)
+        const existingInvoice = await this.invoiceRepository.findOne({
+            where: { orderId },
+        });
+
+        if (existingInvoice) {
+            this.logger.log(`Invoice already exists for order ${orderId} with status ${existingInvoice.status}`);
+            return existingInvoice;
+        }
+
+        // Calculate total amount
+        const totalAmount = order.items?.reduce((sum, item) => {
+            return sum + (Number(item.unitPrice) || 0) * (item.quantity || 1);
+        }, 0) || Number(order.totalPrice) || 0;
+
+        // Create pending invoice record (payload will be built when processing)
+        const invoice = this.invoiceRepository.create({
+            orderId,
+            storeId: order.storeId,
+            invoiceNumber: `PENDING-${order.orderNumber}`,
+            status: InvoiceStatus.PENDING,
+            totalAmount,
+            currencyCode: order.currencyCode || 'TRY',
+            invoiceDate: new Date(),
+            customerFirstName: order.customer?.firstName,
+            customerLastName: order.customer?.lastName,
+            customerEmail: order.customer?.email,
+            customerAddress: order.shippingAddress,
+        } as any);
+
+        const saved = await this.invoiceRepository.save(invoice) as unknown as Invoice;
+        this.logger.log(`Queued invoice for order ${orderId} - Invoice ID: ${saved.id}`);
+
+        return saved;
+    }
+
+    /**
+     * Process a pending invoice (build payload and send to Uyumsoft)
+     */
+    async processPendingInvoice(invoiceId: string): Promise<Invoice> {
+        const invoice = await this.invoiceRepository.findOne({
+            where: { id: invoiceId },
+        });
+
+        if (!invoice) {
+            throw new NotFoundException(`Invoice ${invoiceId} not found`);
+        }
+
+        if (invoice.status !== InvoiceStatus.PENDING) {
+            throw new BadRequestException(`Invoice ${invoiceId} is not in PENDING status`);
+        }
+
+        // Use createInvoiceFromOrder which handles all the logic
+        return this.createInvoiceFromOrder(invoice.orderId);
+    }
+
+    /**
+     * Get all pending invoices for batch processing
+     */
+    async getPendingInvoices(limit: number = 50): Promise<Invoice[]> {
+        return this.invoiceRepository.find({
+            where: { status: InvoiceStatus.PENDING },
+            order: { createdAt: 'ASC' },
+            take: limit,
+            relations: ['order'],
+        });
+    }
+
+    /**
+     * Process all pending invoices (batch job)
+     */
+    async processAllPendingInvoices(limit: number = 50): Promise<{
+        success: boolean;
+        processed: number;
+        succeeded: number;
+        failed: number;
+        results: Array<{ invoiceId: string; orderId: string; status: string; error?: string }>;
+    }> {
+        const pendingInvoices = await this.getPendingInvoices(limit);
+        
+        const results: Array<{ invoiceId: string; orderId: string; status: string; error?: string }> = [];
+        let succeeded = 0;
+        let failed = 0;
+
+        for (const pendingInvoice of pendingInvoices) {
+            try {
+                const processedInvoice = await this.processPendingInvoice(pendingInvoice.id);
+                
+                if (processedInvoice.status === InvoiceStatus.SUCCESS) {
+                    succeeded++;
+                    results.push({
+                        invoiceId: processedInvoice.id,
+                        orderId: pendingInvoice.orderId,
+                        status: 'SUCCESS',
+                        invoiceNumber: processedInvoice.invoiceNumber,
+                    } as any);
+                } else {
+                    failed++;
+                    results.push({
+                        invoiceId: processedInvoice.id,
+                        orderId: pendingInvoice.orderId,
+                        status: 'ERROR',
+                        error: processedInvoice.errorMessage,
+                    });
+                }
+            } catch (error) {
+                failed++;
+                results.push({
+                    invoiceId: pendingInvoice.id,
+                    orderId: pendingInvoice.orderId,
+                    status: 'ERROR',
+                    error: error.message,
+                });
+            }
+        }
+
+        this.logger.log(`Processed ${pendingInvoices.length} pending invoices: ${succeeded} succeeded, ${failed} failed`);
+
+        return {
+            success: true,
+            processed: pendingInvoices.length,
+            succeeded,
+            failed,
+            results,
+        };
+    }
 
     /**
      * Create and send invoice to Uyumsoft from an order
@@ -45,15 +189,19 @@ export class InvoicesService {
             throw new NotFoundException(`Order ${orderId} not found`);
         }
 
-        // Check if invoice already exists
-        // Check if invoice already exists
-        const existingInvoice = await this.invoiceRepository.findOne({
+        // Check if invoice already exists with SUCCESS status
+        const existingSuccessInvoice = await this.invoiceRepository.findOne({
             where: { orderId, status: InvoiceStatus.SUCCESS },
         });
 
-        if (existingInvoice) {
-            throw new BadRequestException(`Bu sipariş için zaten başarıyla oluşturulmuş bir fatura mevcut! (Fatura No: ${existingInvoice.invoiceNumber})`);
+        if (existingSuccessInvoice) {
+            throw new BadRequestException(`Bu sipariş için zaten başarıyla oluşturulmuş bir fatura mevcut! (Fatura No: ${existingSuccessInvoice.invoiceNumber})`);
         }
+
+        // Check for PENDING invoice to update
+        const pendingInvoice = await this.invoiceRepository.findOne({
+            where: { orderId, status: InvoiceStatus.PENDING },
+        });
 
         // 2. Get IntegrationStore settings (skip for manual orders without integration)
         const storeConfig = order.integrationId
@@ -253,32 +401,61 @@ export class InvoicesService {
             storeConfig,
         });    // Pass extra overrides if needed
 
-        // 6. Create & Save Invoice (Pending)
-        const invoice = this.invoiceRepository.create({
-            orderId: order.id,
-            storeId: order.storeId,
-            invoiceNumber,
-            invoiceSerial: invoiceSettings.serialNo,
-            edocNo: invoiceSettings.edocNo,
-            ettn: '', // Will be filled from response
-            status: InvoiceStatus.PENDING,
-            cardCode: invoiceSettings.cardCode,
-            branchCode: options?.branchCode,
-            docTraCode: invoiceSettings.docTraCode,
-            costCenterCode: options?.costCenterCode,
-            whouseCode: options?.whouseCode,
-            customerFirstName: order.customer?.firstName,
-            customerLastName: order.customer?.lastName,
-            customerEmail: order.customer?.email,
-            customerAddress: this.formatAddress(order.shippingAddress),
-            totalAmount: order.totalPrice,
-            currencyCode: order.currencyCode || 'TRY',
-            invoiceDate: new Date(),
-            shippingDate: order.orderDate,
-            requestPayload,
-        } as any);
+        // 6. Create or update Invoice record
+        let savedInvoice: Invoice;
+        
+        if (pendingInvoice) {
+            // Update existing pending invoice
+            pendingInvoice.invoiceNumber = invoiceNumber;
+            pendingInvoice.invoiceSerial = invoiceSettings.serialNo;
+            pendingInvoice.edocNo = invoiceSettings.edocNo;
+            pendingInvoice.ettn = '';
+            pendingInvoice.status = InvoiceStatus.PENDING;
+            pendingInvoice.cardCode = invoiceSettings.cardCode;
+            pendingInvoice.branchCode = options?.branchCode || '';
+            pendingInvoice.docTraCode = invoiceSettings.docTraCode;
+            pendingInvoice.costCenterCode = options?.costCenterCode || '';
+            pendingInvoice.whouseCode = options?.whouseCode || '';
+            pendingInvoice.customerFirstName = order.customer?.firstName;
+            pendingInvoice.customerLastName = order.customer?.lastName;
+            pendingInvoice.customerEmail = order.customer?.email;
+            pendingInvoice.customerAddress = this.formatAddress(order.shippingAddress);
+            pendingInvoice.totalAmount = order.totalPrice;
+            pendingInvoice.currencyCode = order.currencyCode || 'TRY';
+            pendingInvoice.invoiceDate = new Date();
+            pendingInvoice.shippingDate = order.orderDate;
+            pendingInvoice.requestPayload = requestPayload;
+            
+            savedInvoice = await this.invoiceRepository.save(pendingInvoice) as unknown as Invoice;
+            this.logger.log(`Updated pending invoice ${savedInvoice.id} for order ${orderId}`);
+        } else {
+            // Create new invoice
+            const invoice = this.invoiceRepository.create({
+                orderId: order.id,
+                storeId: order.storeId,
+                invoiceNumber,
+                invoiceSerial: invoiceSettings.serialNo,
+                edocNo: invoiceSettings.edocNo,
+                ettn: '',
+                status: InvoiceStatus.PENDING,
+                cardCode: invoiceSettings.cardCode,
+                branchCode: options?.branchCode,
+                docTraCode: invoiceSettings.docTraCode,
+                costCenterCode: options?.costCenterCode,
+                whouseCode: options?.whouseCode,
+                customerFirstName: order.customer?.firstName,
+                customerLastName: order.customer?.lastName,
+                customerEmail: order.customer?.email,
+                customerAddress: this.formatAddress(order.shippingAddress),
+                totalAmount: order.totalPrice,
+                currencyCode: order.currencyCode || 'TRY',
+                invoiceDate: new Date(),
+                shippingDate: order.orderDate,
+                requestPayload,
+            } as any);
 
-        const savedInvoice = await this.invoiceRepository.save(invoice) as unknown as Invoice;
+            savedInvoice = await this.invoiceRepository.save(invoice) as unknown as Invoice;
+        }
 
         // 7. Send to Uyumsoft
         try {
@@ -294,6 +471,32 @@ export class InvoicesService {
             // 8. Increment Card Code Sequence (Only on Success, for E-Invoice customers)
             if (cardCodeSequenceToIncrement) {
                 await this.incrementStoreSequence(storeConfig.storeId, storeConfig.integrationId, cardCodeSequenceToIncrement);
+            }
+
+            // 9. Log to order history
+            try {
+                await this.orderHistoryService.logEvent({
+                    orderId: order.id,
+                    action: OrderHistoryAction.INVOICE_CREATED,
+                    description: `Fatura kesildi: ${savedInvoice.invoiceNumber || invoiceSettings.edocNo}`,
+                    metadata: {
+                        invoiceNumber: savedInvoice.invoiceNumber,
+                        invoiceId: savedInvoice.id,
+                        edocNo: invoiceSettings.edocNo,
+                        ettn: savedInvoice.ettn,
+                    },
+                });
+            } catch (historyError) {
+                this.logger.warn(`Failed to log invoice history: ${historyError.message}`);
+            }
+
+            // 10. Send Invoiced status to Trendyol if applicable
+            if (order.integrationId && order.storeId) {
+                try {
+                    await this.sendInvoicedStatusToIntegration(order, savedInvoice);
+                } catch (integrationError) {
+                    this.logger.warn(`Failed to send Invoiced status to integration: ${integrationError.message}`);
+                }
             }
 
         } catch (error) {
@@ -1479,4 +1682,113 @@ export class InvoicesService {
     /**
      * Get Invoice HTML from Uyumsoft
      */
+
+    /**
+     * Send Invoiced status to integration (Trendyol etc.) after invoice is successfully created
+     */
+    private async sendInvoicedStatusToIntegration(order: Order, invoice: Invoice): Promise<void> {
+        if (!order.integrationId) {
+            this.logger.log(`Order ${order.id} has no integrationId, skipping status update`);
+            return;
+        }
+
+        // Get store config
+        const storeConfig = await this.integrationStoreRepository.findOne({
+            where: { storeId: order.storeId, integrationId: order.integrationId },
+            relations: ['integration'],
+        });
+
+        if (!storeConfig) {
+            this.logger.warn(`Store config not found for order ${order.id}`);
+            return;
+        }
+
+        // Check if sendOrderStatus is enabled
+        if (!storeConfig.sendOrderStatus) {
+            this.logger.log(`Skipping Invoiced status - sendOrderStatus is disabled for store ${storeConfig.storeId}`);
+            return;
+        }
+
+        const integrationType = storeConfig.integration?.type;
+
+        if (integrationType === 'TRENDYOL') {
+            await this.updateTrendyolInvoicedStatus(order, storeConfig, invoice);
+        }
+    }
+
+    /**
+     * Update Trendyol order status to Invoiced
+     */
+    private async updateTrendyolInvoicedStatus(
+        order: Order,
+        storeConfig: IntegrationStore,
+        invoice: Invoice,
+    ): Promise<void> {
+        // Need to load order items if not already loaded
+        let orderWithItems: Order = order;
+        if (!order.items || order.items.length === 0) {
+            const loadedOrder = await this.orderRepository.findOne({
+                where: { id: order.id },
+                relations: ['items'],
+            });
+            if (!loadedOrder) {
+                throw new Error('Order not found');
+            }
+            orderWithItems = loadedOrder;
+        }
+
+        const lines = orderWithItems.items
+            .filter((item) => item.lineId)
+            .map((item) => ({
+                lineId: Number(item.lineId),
+                quantity: item.quantity,
+            }));
+
+        if (lines.length === 0) {
+            throw new Error('Order has no line items with lineId');
+        }
+
+        const requestBody = {
+            lines,
+            params: {
+                invoiceNumber: invoice.invoiceNumber || invoice.edocNo,
+            },
+            status: 'Invoiced',
+        };
+
+        const url = `https://apigw.trendyol.com/integration/order/sellers/${storeConfig.sellerId}/shipment-packages/${order.packageId}`;
+        const auth = Buffer.from(`${storeConfig.apiKey}:${storeConfig.apiSecret}`).toString('base64');
+
+        const response = await fetch(url, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Basic ${auth}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.text();
+            throw new Error(`Trendyol API error: ${response.status} - ${errorData}`);
+        }
+
+        this.logger.log(`Trendyol status updated to Invoiced for package ${order.packageId}`);
+
+        // Log to order history
+        try {
+            await this.orderHistoryService.logEvent({
+                orderId: order.id,
+                action: OrderHistoryAction.INTEGRATION_STATUS_INVOICED,
+                description: `Trendyol statüsü güncellendi: Invoiced - Fatura: ${invoice.invoiceNumber || invoice.edocNo}`,
+                metadata: {
+                    integration: 'TRENDYOL',
+                    status: 'Invoiced',
+                    invoiceNumber: invoice.invoiceNumber || invoice.edocNo,
+                },
+            });
+        } catch (historyError) {
+            this.logger.warn(`Failed to log integration status history: ${historyError.message}`);
+        }
+    }
 }
