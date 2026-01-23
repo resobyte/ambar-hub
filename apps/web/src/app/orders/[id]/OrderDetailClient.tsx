@@ -237,9 +237,6 @@ export function OrderDetailClient({ orderId }: Props) {
                     </Button>
                     <div>
                         <h1 className="text-2xl font-bold">{order.orderNumber}</h1>
-                        <p className="text-muted-foreground text-sm">
-                            {order.packageId && `Paket: ${order.packageId}`}
-                        </p>
                     </div>
                 </div>
                 <Badge className={statusColors[order.status] || statusColors.UNKNOWN}>
