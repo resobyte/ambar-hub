@@ -308,8 +308,8 @@ export class PackingService {
             }
         }
 
-        // Deduct stock from packing shelf (order is shipping out)
-        await this.deductFromPackingShelf(dto.orderId, session.routeId);
+        // TODO: Deduct stock from packing shelf - disabled for now, will be enabled with specific rules later
+        // await this.deductFromPackingShelf(dto.orderId, session.routeId);
 
         // Mark route order as packed
         await this.routeOrderRepository.update(
@@ -875,16 +875,11 @@ export class PackingService {
                 where: { id: orderId },
             });
 
-            if (!order?.warehouseId) {
-                this.logger.warn(`Order ${orderId} has no warehouse, skipping shelf transfer`);
-                return;
-            }
-
-            const pickingShelf = await this.shelvesService.getPickingShelf(order.warehouseId);
-            const packingShelf = await this.shelvesService.getPackingShelf(order.warehouseId);
+            const pickingShelf = await this.shelvesService.getPickingShelf();
+            const packingShelf = await this.shelvesService.getPackingShelf();
 
             if (!pickingShelf || !packingShelf) {
-                this.logger.warn(`Picking or packing shelf not found for warehouse ${order.warehouseId}`);
+                this.logger.warn(`Picking or packing shelf not found in the system`);
                 return;
             }
 
@@ -897,8 +892,8 @@ export class PackingService {
                     type: MovementType.PACKING_IN,
                     orderId,
                     routeId,
-                    referenceNumber: order.orderNumber,
-                    notes: `Paketleme için transfer - Sipariş: ${order.orderNumber}`,
+                    referenceNumber: order?.orderNumber,
+                    notes: `Paketleme için transfer - Sipariş: ${order?.orderNumber || orderId}`,
                 }
             );
 
@@ -920,15 +915,10 @@ export class PackingService {
                 return;
             }
 
-            if (!order.warehouseId) {
-                this.logger.warn(`Order ${orderId} has no warehouse, skipping packing deduction`);
-                return;
-            }
-
-            const packingShelf = await this.shelvesService.getPackingShelf(order.warehouseId);
+            const packingShelf = await this.shelvesService.getPackingShelf();
 
             if (!packingShelf) {
-                this.logger.warn(`Packing shelf not found for warehouse ${order.warehouseId}`);
+                this.logger.warn(`Packing shelf not found in the system`);
                 return;
             }
 

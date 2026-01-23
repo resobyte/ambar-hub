@@ -66,7 +66,7 @@ export function DashboardStatsCards() {
 
             <div onClick={() => handleCardClick('/invoices?status=ERROR')} className="cursor-pointer transition-transform hover:scale-[1.02]">
                 <InfoCard
-                    title="Gönderilmemiş Siparişler"
+                    title="Fatura Hatası Siparişler"
                     value={stats.failedInvoices.toString()}
                     icon={<FileWarning className="w-5 h-5 text-destructive" />}
                 />

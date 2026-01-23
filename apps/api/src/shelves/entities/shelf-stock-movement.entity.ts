@@ -3,6 +3,7 @@ import { Shelf } from './shelf.entity';
 import { Product } from '../../products/entities/product.entity';
 import { Order } from '../../orders/entities/order.entity';
 import { Route } from '../../routes/entities/route.entity';
+import { User } from '../../users/entities/user.entity';
 
 export enum MovementType {
     PICKING = 'PICKING',           // Toplama - raftan toplama havuzuna
@@ -96,6 +97,10 @@ export class ShelfStockMovement {
 
     @Column({ name: 'user_id', type: 'char', length: 36, nullable: true })
     userId: string | null;
+
+    @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
+    @JoinColumn({ name: 'user_id' })
+    user: User;
 
     @CreateDateColumn({ name: 'created_at' })
     createdAt: Date;

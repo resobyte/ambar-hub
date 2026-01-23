@@ -138,11 +138,9 @@ export class PurchasesService {
     async createPurchaseOrder(data: {
         supplierId: string;
         orderDate: Date;
-        expectedDate?: Date;
         notes?: string;
         type?: PurchaseOrderType;
         invoiceNumber?: string;
-
         items: { productId?: string; consumableId?: string; orderedQuantity: number; unitPrice: number }[];
     }): Promise<PurchaseOrder> {
         // Validation: If INVOICE type, check duplicates
@@ -160,7 +158,6 @@ export class PurchasesService {
             orderNumber,
             supplierId: data.supplierId,
             orderDate: data.orderDate,
-            expectedDate: data.expectedDate,
             notes: data.notes,
             totalAmount,
             status: PurchaseOrderStatus.ORDERED,
@@ -291,7 +288,11 @@ export class PurchasesService {
             // Add to shelf stock and update weighted average cost
             if (item.productId) {
                 const currentStock = await this.shelvesService.getProductTotalStock(item.productId);
-                await this.shelvesService.addStock(item.shelfId, item.productId, item.quantity);
+                await this.shelvesService.addStockWithHistory(item.shelfId, item.productId, item.quantity, {
+                    referenceNumber: receiptNumber,
+                    notes: data.notes,
+                    userId: data.receivedByUserId,
+                });
                 await this.productsService.addStockWithCost(item.productId, item.quantity, item.unitCost, currentStock);
             } else if (item.consumableId) {
                 await this.shelvesService.addConsumableStock(item.shelfId, item.consumableId, item.quantity);

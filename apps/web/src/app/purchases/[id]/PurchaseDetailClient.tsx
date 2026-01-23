@@ -100,7 +100,6 @@ interface PurchaseOrder {
     status: string;
     totalAmount: number;
     orderDate: string;
-    expectedDate?: string;
     notes?: string;
     items: PurchaseOrderItem[];
     goodsReceipts: GoodsReceipt[];
@@ -290,16 +289,6 @@ export function PurchaseDetailClient({ id }: { id: string }) {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">{new Date(purchase.orderDate).toLocaleDateString('tr-TR')}</div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium text-muted-foreground">Beklenen Tarih</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">
-                            {purchase.expectedDate ? new Date(purchase.expectedDate).toLocaleDateString('tr-TR') : '-'}
-                        </div>
                     </CardContent>
                 </Card>
             </div>

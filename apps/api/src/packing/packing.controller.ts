@@ -7,11 +7,16 @@ import {
     Body,
     Query,
     ParseUUIDPipe,
+    UseGuards,
+    Req,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { PackingService } from './packing.service';
 import { StartPackingDto, ScanBarcodeDto, CompleteOrderDto, ProcessShipmentDto } from './dto/packing.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('packing')
+@UseGuards(JwtAuthGuard)
 export class PackingController {
     constructor(private readonly packingService: PackingService) { }
 

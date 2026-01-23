@@ -9,6 +9,8 @@ import {
     Order,
     OrderHistoryEvent,
     OrderStatus,
+    getOrderStockMovements,
+    StockMovement,
 } from '@/lib/api';
 
 import {
@@ -48,6 +50,9 @@ import {
     PackageCheck,
     Send,
     AlertCircle,
+    ArrowDownLeft,
+    ArrowUpRight,
+    ArrowLeftRight,
 } from 'lucide-react';
 
 interface Props {
@@ -91,7 +96,7 @@ const actionIcons: Record<string, React.ReactNode> = {
     PACKING_COMPLETED: <CheckCircle2 className="h-4 w-4" />,
     INVOICE_CREATED: <FileText className="h-4 w-4" />,
     INTEGRATION_STATUS_PICKING: <Send className="h-4 w-4" />,
-    INTEGRATION_STATUS_INVOICED: <FileText className="h-4 w-4" />,
+    INTEGRATION_STATUS_INVOICED: <Send className="h-4 w-4" />,
     WAYBILL_CREATED: <FileText className="h-4 w-4" />,
     CARGO_CREATED: <Truck className="h-4 w-4" />,
     CARGO_LABEL_FETCHED: <FileText className="h-4 w-4" />,
@@ -112,8 +117,8 @@ const actionColors: Record<string, string> = {
     PACKING_STARTED: 'bg-orange-500',
     PACKING_COMPLETED: 'bg-green-500',
     INVOICE_CREATED: 'bg-purple-500',
-    INTEGRATION_STATUS_PICKING: 'bg-cyan-500',
-    INTEGRATION_STATUS_INVOICED: 'bg-purple-600',
+    INTEGRATION_STATUS_PICKING: 'bg-sky-500',
+    INTEGRATION_STATUS_INVOICED: 'bg-violet-500',
     WAYBILL_CREATED: 'bg-teal-500',
     CARGO_CREATED: 'bg-blue-600',
     CARGO_LABEL_FETCHED: 'bg-blue-400',
@@ -134,8 +139,8 @@ const actionLabels: Record<string, string> = {
     PACKING_STARTED: 'Paketleme Başladı',
     PACKING_COMPLETED: 'Paketleme Tamamlandı',
     INVOICE_CREATED: 'Fatura Kesildi',
-    INTEGRATION_STATUS_PICKING: 'Entegrasyon: Picking',
-    INTEGRATION_STATUS_INVOICED: 'Entegrasyon: Invoiced',
+    INTEGRATION_STATUS_PICKING: 'Pazar Yerine Statü Gönderildi (Picking)',
+    INTEGRATION_STATUS_INVOICED: 'Pazar Yerine Statü Gönderildi (Faturalı)',
     WAYBILL_CREATED: 'İrsaliye Kesildi',
     CARGO_CREATED: 'Kargo Kaydı Oluşturuldu',
     CARGO_LABEL_FETCHED: 'Kargo Etiketi Alındı',
@@ -146,6 +151,28 @@ const actionLabels: Record<string, string> = {
     RETURNED: 'İade Edildi',
     STATUS_CHANGED: 'Durum Değişti',
     NOTE_ADDED: 'Not Eklendi',
+};
+
+const movementTypeLabels: Record<string, string> = {
+    PICKING: 'Toplama',
+    PACKING_IN: 'Paketleme Girişi',
+    PACKING_OUT: 'Paketleme Çıkışı',
+    RECEIVING: 'Mal Kabul',
+    TRANSFER: 'Transfer',
+    ADJUSTMENT: 'Düzeltme',
+    RETURN: 'İade',
+    CANCEL: 'İptal',
+};
+
+const movementTypeColors: Record<string, string> = {
+    PICKING: 'bg-blue-500',
+    PACKING_IN: 'bg-purple-500',
+    PACKING_OUT: 'bg-green-500',
+    RECEIVING: 'bg-yellow-500',
+    TRANSFER: 'bg-gray-500',
+    ADJUSTMENT: 'bg-orange-500',
+    RETURN: 'bg-red-500',
+    CANCEL: 'bg-red-600',
 };
 
 function formatDate(dateStr: string): string {
@@ -170,18 +197,21 @@ export function OrderDetailClient({ orderId }: Props) {
     const router = useRouter();
     const [order, setOrder] = useState<Order | null>(null);
     const [timeline, setTimeline] = useState<OrderHistoryEvent[]>([]);
+    const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const [orderRes, timelineRes] = await Promise.all([
+            const [orderRes, timelineRes, movementsRes] = await Promise.all([
                 getOrder(orderId),
                 getOrderTimeline(orderId),
+                getOrderStockMovements(orderId),
             ]);
             setOrder(orderRes.data);
             setTimeline(timelineRes.data);
+            setStockMovements(movementsRes.data || []);
         } catch (err: any) {
             setError(err.message || 'Sipariş yüklenemedi');
         } finally {
@@ -374,45 +404,136 @@ export function OrderDetailClient({ orderId }: Props) {
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
-                            {timeline.length === 0 ? (
+                            <div className="relative">
+                                <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-gray-200" />
+                                <div className="space-y-4">
+                                    {order && (
+                                        <div className="relative pl-8">
+                                            <div className="absolute left-0 w-6 h-6 rounded-full flex items-center justify-center text-white bg-emerald-500">
+                                                <Package className="h-4 w-4" />
+                                            </div>
+                                            <div className="bg-emerald-50 rounded-lg p-3 border border-emerald-100">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <p className="font-medium text-sm text-emerald-800">
+                                                        Sipariş Geldi
+                                                        {order.storeName && (
+                                                            <span className="ml-2 text-xs font-normal text-emerald-600">
+                                                                ({order.storeName})
+                                                            </span>
+                                                        )}
+                                                    </p>
+                                                    <time className="text-xs text-emerald-600 whitespace-nowrap font-medium">
+                                                        {formatDate(order.createdAt)}
+                                                    </time>
+                                                </div>
+                                                <p className="text-sm text-emerald-700 mt-1">
+                                                    Sipariş #{order.orderNumber} sisteme alındı
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {timeline.map((event) => (
+                                        <div key={event.id} className="relative pl-8">
+                                            <div
+                                                className={`absolute left-0 w-6 h-6 rounded-full flex items-center justify-center text-white ${actionColors[event.action] || 'bg-gray-500'}`}
+                                            >
+                                                {actionIcons[event.action] || <Circle className="h-3 w-3" />}
+                                            </div>
+                                            <div className="bg-gray-50 rounded-lg p-3">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <p className="font-medium text-sm">
+                                                        {actionLabels[event.action] || event.action}
+                                                    </p>
+                                                    <time className="text-xs text-muted-foreground whitespace-nowrap">
+                                                        {formatDate(event.createdAt)}
+                                                    </time>
+                                                </div>
+                                                {event.description && (
+                                                    <p className="text-sm text-muted-foreground mt-1">
+                                                        {event.description}
+                                                    </p>
+                                                )}
+                                                {event.userName && (
+                                                    <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                                                        <User className="h-3 w-3" />
+                                                        {event.userName}
+                                                    </p>
+                                                )}
+                                                {event.routeName && (
+                                                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                                        <Route className="h-3 w-3" />
+                                                        {event.routeName}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {timeline.length === 0 && !order && (
+                                        <p className="text-muted-foreground text-sm text-center py-4">
+                                            Henüz geçmiş kaydı yok
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Stock Movements */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <ArrowLeftRight className="h-5 w-5" />
+                                Stok Hareketleri
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            {stockMovements.length === 0 ? (
                                 <p className="text-muted-foreground text-sm text-center py-4">
-                                    Henüz geçmiş kaydı yok
+                                    Stok hareketi bulunamadı
                                 </p>
                             ) : (
                                 <div className="relative">
                                     <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-gray-200" />
                                     <div className="space-y-4">
-                                        {timeline.map((event, index) => (
-                                            <div key={event.id} className="relative pl-8">
+                                        {stockMovements.map((movement) => (
+                                            <div key={movement.id} className="relative pl-8">
                                                 <div
-                                                    className={`absolute left-0 w-6 h-6 rounded-full flex items-center justify-center text-white ${actionColors[event.action] || 'bg-gray-500'}`}
+                                                    className={`absolute left-0 w-6 h-6 rounded-full flex items-center justify-center text-white ${movementTypeColors[movement.type] || 'bg-gray-500'}`}
                                                 >
-                                                    {actionIcons[event.action] || <Circle className="h-3 w-3" />}
+                                                    {movement.direction === 'IN' ? (
+                                                        <ArrowDownLeft className="h-3 w-3" />
+                                                    ) : (
+                                                        <ArrowUpRight className="h-3 w-3" />
+                                                    )}
                                                 </div>
                                                 <div className="bg-gray-50 rounded-lg p-3">
                                                     <div className="flex items-start justify-between gap-2">
                                                         <p className="font-medium text-sm">
-                                                            {actionLabels[event.action] || event.action}
+                                                            {movementTypeLabels[movement.type] || movement.type}
+                                                            <span className="text-muted-foreground font-normal ml-1">
+                                                                ({movement.direction === 'IN' ? 'Giriş' : 'Çıkış'})
+                                                            </span>
                                                         </p>
                                                         <time className="text-xs text-muted-foreground whitespace-nowrap">
-                                                            {formatDate(event.createdAt)}
+                                                            {formatDate(movement.createdAt)}
                                                         </time>
                                                     </div>
-                                                    {event.description && (
-                                                        <p className="text-sm text-muted-foreground mt-1">
-                                                            {event.description}
-                                                        </p>
-                                                    )}
-                                                    {event.userName && (
-                                                        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                                                            <User className="h-3 w-3" />
-                                                            {event.userName}
-                                                        </p>
-                                                    )}
-                                                    {event.routeName && (
+                                                    <p className="text-sm text-muted-foreground mt-1">
+                                                        {movement.product?.name || 'Ürün'} - {movement.direction === 'IN' ? '+' : '-'}{movement.quantity} adet
+                                                    </p>
+                                                    {movement.shelf && (
                                                         <p className="text-xs text-muted-foreground flex items-center gap-1">
-                                                            <Route className="h-3 w-3" />
-                                                            {event.routeName}
+                                                            <Package className="h-3 w-3" />
+                                                            {movement.shelf.name}
+                                                            {movement.sourceShelf && movement.targetShelf && (
+                                                                <span>({movement.sourceShelf.name} → {movement.targetShelf.name})</span>
+                                                            )}
+                                                        </p>
+                                                    )}
+                                                    {movement.user && (
+                                                        <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                                            <User className="h-3 w-3" />
+                                                            {movement.user.firstName} {movement.user.lastName}
                                                         </p>
                                                     )}
                                                 </div>

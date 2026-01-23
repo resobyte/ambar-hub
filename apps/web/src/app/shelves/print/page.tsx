@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
 import JsBarcode from 'jsbarcode';
 
 interface ShelfData {
@@ -12,23 +11,26 @@ interface ShelfData {
     rafId: number | null;
 }
 
+const STORAGE_KEY = 'shelves-print-data';
+
 export default function PrintBarcodesPage() {
-    const searchParams = useSearchParams();
     const [shelves, setShelves] = useState<ShelfData[]>([]);
     const barcodeRefs = useRef<{ [key: string]: SVGSVGElement | null }>({});
 
     useEffect(() => {
-        // Get shelf data from query params
-        const data = searchParams.get('data');
+        // Get shelf data from sessionStorage
+        const data = sessionStorage.getItem(STORAGE_KEY);
         if (data) {
             try {
-                const parsed = JSON.parse(decodeURIComponent(data)) as ShelfData[];
+                const parsed = JSON.parse(data) as ShelfData[];
                 setShelves(parsed);
+                // Clear after reading
+                sessionStorage.removeItem(STORAGE_KEY);
             } catch (e) {
                 console.error('Failed to parse shelf data', e);
             }
         }
-    }, [searchParams]);
+    }, []);
 
     useEffect(() => {
         shelves.forEach(shelf => {

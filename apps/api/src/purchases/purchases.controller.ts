@@ -1,8 +1,11 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
+import { Request } from 'express';
 import { PurchasesService } from './purchases.service';
 import { PurchaseOrderStatus } from './enums/purchase-order-status.enum';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('purchases')
+@UseGuards(JwtAuthGuard)
 export class PurchasesController {
     constructor(private readonly purchasesService: PurchasesService) { }
 
@@ -64,8 +67,13 @@ export class PurchasesController {
 
     // Goods Receipt
     @Post(':id/receive')
-    receiveGoods(@Param('id') purchaseOrderId: string, @Body() data: any) {
-        return this.purchasesService.receiveGoods(purchaseOrderId, data);
+    receiveGoods(
+        @Param('id') purchaseOrderId: string,
+        @Body() data: any,
+        @Req() req: Request,
+    ) {
+        const userId = (req as Request & { user?: { id: string } }).user?.id;
+        return this.purchasesService.receiveGoods(purchaseOrderId, { ...data, receivedByUserId: userId });
     }
 
     @Get('receipts/:id')

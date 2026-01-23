@@ -55,6 +55,7 @@ import {
     Upload,
     FileSpreadsheet,
     Download,
+    RefreshCw,
 } from 'lucide-react';
 
 const isServer = typeof window === 'undefined';
@@ -233,15 +234,35 @@ export function ShelvesList() {
         return fetchWarehouseShelves(warehouseId, true);
     };
 
-    const fetchShelfStocks = async (shelfId: string) => {
+    const [stockOrders, setStockOrders] = useState<Record<string, Array<{ orderId: string; orderNumber: string; quantity: number; routeId?: string; movedAt: Date }>>>({});
+
+    const fetchShelfStocks = async (shelfId: string, shelfType?: string) => {
         setLoadingStocks(true);
+        setStockOrders({});
         try {
-            const res = await fetch(`${API_URL}/shelves/${shelfId}/stock`, { credentials: 'include' });
+            const isPoolShelf = shelfType === 'PICKING' || shelfType === 'PACKING';
+            const endpoint = isPoolShelf 
+                ? `${API_URL}/shelves/${shelfId}/stock-with-orders`
+                : `${API_URL}/shelves/${shelfId}/stock`;
+            
+            const res = await fetch(endpoint, { credentials: 'include' });
             const json = await res.json();
             const data = json.data || json;
-            setShelfStocks(Array.isArray(data) ? data : []);
+            
+            if (isPoolShelf && Array.isArray(data)) {
+                const stocks = data.map((item: { stock: StockItem; orders: Array<{ orderId: string; orderNumber: string; quantity: number; routeId?: string; movedAt: Date }> }) => item.stock);
+                const ordersMap: Record<string, Array<{ orderId: string; orderNumber: string; quantity: number; routeId?: string; movedAt: Date }>> = {};
+                data.forEach((item: { stock: StockItem; orders: Array<{ orderId: string; orderNumber: string; quantity: number; routeId?: string; movedAt: Date }> }) => {
+                    ordersMap[item.stock.productId] = item.orders;
+                });
+                setShelfStocks(stocks);
+                setStockOrders(ordersMap);
+            } else {
+                setShelfStocks(Array.isArray(data) ? data : []);
+            }
         } catch {
             setShelfStocks([]);
+            setStockOrders({});
         } finally {
             setLoadingStocks(false);
         }
@@ -254,9 +275,10 @@ export function ShelvesList() {
     useEffect(() => {
         setStockSearchQuery('');
         if (selectedItem?.type === 'shelf') {
-            fetchShelfStocks(selectedItem.data.id);
+            fetchShelfStocks(selectedItem.data.id, selectedItem.data.type);
         } else {
             setShelfStocks([]);
+            setStockOrders({});
         }
     }, [selectedItem]);
 
@@ -555,6 +577,27 @@ export function ShelvesList() {
 
     const removeSelectedProduct = (productId: string) => {
         setSelectedProducts(prev => prev.filter(p => p.id !== productId));
+    };
+
+    const rebuildWarehouseTree = async (warehouseId: string) => {
+        try {
+            const res = await fetch(`${API_URL}/shelves/tree/${warehouseId}/rebuild`, {
+                method: 'POST',
+                credentials: 'include',
+            });
+            const data = await res.json();
+            if (res.ok) {
+                toast({
+                    title: 'Başarılı',
+                    description: `Raf ağacı yeniden oluşturuldu. ${data.fixed} raf düzeltildi.`,
+                });
+                await fetchWarehouseShelves(warehouseId, true);
+            } else {
+                throw new Error(data.message || 'Rebuild failed');
+            }
+        } catch (err: any) {
+            toast({ variant: 'destructive', title: 'Hata', description: err.message || 'Ağaç yeniden oluşturulamadı' });
+        }
     };
 
     const goToShelfWithProduct = async (shelfId: string, warehouseId: string) => {
@@ -926,14 +969,15 @@ export function ShelvesList() {
                                     variant="outline"
                                     size="sm"
                                     onClick={() => {
-                                        const data = encodeURIComponent(JSON.stringify([{
+                                        const data = JSON.stringify([{
                                             id: shelf.id,
                                             name: shelf.name,
                                             barcode: shelf.barcode,
                                             globalSlot: shelf.globalSlot,
                                             rafId: shelf.rafId,
-                                        }]));
-                                        window.open(`/shelves/print?data=${data}`, '_blank');
+                                        }]);
+                                        sessionStorage.setItem('shelves-print-data', data);
+                                        window.open('/shelves/print', '_blank');
                                     }}
                                 >
                                     <Printer className="w-4 h-4 mr-2" />
@@ -990,14 +1034,24 @@ export function ShelvesList() {
                                         <CardTitle className="text-lg">Kök Raflar</CardTitle>
                                         <p className="text-sm text-muted-foreground mt-1">Depodaki ana raf grupları</p>
                                     </div>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => handleCreate(selectedItem.data.id)}
-                                    >
-                                        <Plus className="w-4 h-4 mr-2" />
-                                        Raf Ekle
-                                    </Button>
+                                    <div className="flex gap-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => rebuildWarehouseTree(selectedItem.data.id)}
+                                        >
+                                            <RefreshCw className="w-4 h-4 mr-2" />
+                                            Ağacı Onar
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => handleCreate(selectedItem.data.id)}
+                                        >
+                                            <Plus className="w-4 h-4 mr-2" />
+                                            Raf Ekle
+                                        </Button>
+                                    </div>
                                 </CardHeader>
                                 <CardContent>
                                     {loadingWarehouse === selectedItem.data.id ? (
@@ -1179,47 +1233,73 @@ export function ShelvesList() {
                                         </div>
                                     ) : (
                                         <div className="space-y-3">
-                                            {filteredStocks.map((stock: StockItem) => (
-                                                <Card key={stock.product?.id || stock.productId} className="hover:shadow-sm transition-all group">
-                                                    <CardContent className="p-4">
-                                                        <div className="flex items-center justify-between gap-4">
-                                                            <div className="flex items-center gap-4 flex-1 min-w-0">
-                                                                <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center flex-shrink-0">
-                                                                    <Package className="w-6 h-6 text-primary" />
+                                            {filteredStocks.map((stock: StockItem) => {
+                                                const orders = stockOrders[stock.productId] || [];
+                                                const isPoolShelf = shelf?.type === 'PICKING' || shelf?.type === 'PACKING';
+                                                return (
+                                                    <Card key={stock.product?.id || stock.productId} className="hover:shadow-sm transition-all group">
+                                                        <CardContent className="p-4">
+                                                            <div className="flex items-center justify-between gap-4">
+                                                                <div className="flex items-center gap-4 flex-1 min-w-0">
+                                                                    <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                                                                        <Package className="w-6 h-6 text-primary" />
+                                                                    </div>
+                                                                    <div className="min-w-0 flex-1">
+                                                                        <p className="font-semibold truncate">{stock.product?.name || 'Bilinmeyen Ürün'}</p>
+                                                                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                                                            {stock.product?.barcode && (
+                                                                                <Badge variant="outline" className="font-mono text-xs">
+                                                                                    {stock.product.barcode}
+                                                                                </Badge>
+                                                                            )}
+                                                                            {stock.product?.sku && (
+                                                                                <span className="text-xs text-muted-foreground">SKU: {stock.product.sku}</span>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
-                                                                <div className="min-w-0 flex-1">
-                                                                    <p className="font-semibold truncate">{stock.product?.name || 'Bilinmeyen Ürün'}</p>
-                                                                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                                                        {stock.product?.barcode && (
-                                                                            <Badge variant="outline" className="font-mono text-xs">
-                                                                                {stock.product.barcode}
-                                                                            </Badge>
-                                                                        )}
-                                                                        {stock.product?.sku && (
-                                                                            <span className="text-xs text-muted-foreground">SKU: {stock.product.sku}</span>
+                                                                <div className="text-right flex-shrink-0">
+                                                                    <p className="text-2xl font-bold text-primary">{stock.quantity?.toLocaleString('tr-TR')}</p>
+                                                                    <p className="text-xs text-muted-foreground">adet</p>
+                                                                </div>
+                                                            </div>
+                                                            {isPoolShelf && orders.length > 0 && (
+                                                                <div className="mt-3 pt-3 border-t">
+                                                                    <p className="text-xs font-medium text-muted-foreground mb-2">İlişkili Siparişler:</p>
+                                                                    <div className="flex flex-wrap gap-1">
+                                                                        {orders.slice(0, 5).map((order, idx) => (
+                                                                            <a
+                                                                                key={`${order.orderId}-${idx}`}
+                                                                                href={`/orders/${order.orderId}`}
+                                                                                className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs hover:bg-blue-100 transition-colors"
+                                                                            >
+                                                                                <span className="font-mono">{order.orderNumber}</span>
+                                                                                <span className="text-blue-500">x{order.quantity}</span>
+                                                                            </a>
+                                                                        ))}
+                                                                        {orders.length > 5 && (
+                                                                            <span className="text-xs text-muted-foreground px-2 py-1">
+                                                                                +{orders.length - 5} daha
+                                                                            </span>
                                                                         )}
                                                                     </div>
                                                                 </div>
+                                                            )}
+                                                            <div className="flex justify-end mt-3">
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                                                    onClick={() => openTransferModal(shelf?.id, stock.productId)}
+                                                                >
+                                                                    <ArrowRightLeft className="w-4 h-4 mr-2" />
+                                                                    Transfer
+                                                                </Button>
                                                             </div>
-                                                            <div className="text-right flex-shrink-0">
-                                                                <p className="text-2xl font-bold text-primary">{stock.quantity?.toLocaleString('tr-TR')}</p>
-                                                                <p className="text-xs text-muted-foreground">adet</p>
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex justify-end mt-3">
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                className="opacity-0 group-hover:opacity-100 transition-opacity"
-                                                                onClick={() => openTransferModal(shelf?.id, stock.productId)}
-                                                            >
-                                                                <ArrowRightLeft className="w-4 h-4 mr-2" />
-                                                                Transfer
-                                                            </Button>
-                                                        </div>
-                                                    </CardContent>
-                                                </Card>
-                                            ))}
+                                                        </CardContent>
+                                                    </Card>
+                                                );
+                                            })}
                                         </div>
                                     )}
                                 </CardContent>
@@ -1265,8 +1345,8 @@ export function ShelvesList() {
                                 toast({ variant: 'destructive', title: 'Hata', description: 'Yazdırılacak raf bulunamadı' });
                                 return;
                             }
-                            const data = encodeURIComponent(JSON.stringify(allShelves));
-                            window.open(`/shelves/print?data=${data}`, '_blank');
+                            sessionStorage.setItem('shelves-print-data', JSON.stringify(allShelves));
+                            window.open('/shelves/print', '_blank');
                         }}
                     >
                         <Printer className="w-4 h-4 mr-2" />
@@ -1536,7 +1616,7 @@ export function ShelvesList() {
                                         <CommandList className="max-h-[300px] overflow-y-auto">
                                             <CommandEmpty>Raf bulunamadı</CommandEmpty>
                                             {globalShelves
-                                                .filter((s: Shelf) => s.type !== 'WAREHOUSE' && s.isShelvable !== false)
+                                                .filter((s: Shelf) => s.type !== 'WAREHOUSE' && (s.isShelvable === true || s.type === 'RECEIVING'))
                                                 .filter((s: Shelf) =>
                                                     !fromShelfSearch ||
                                                     s.name.toLowerCase().includes(fromShelfSearch.toLowerCase()) ||
@@ -1612,7 +1692,7 @@ export function ShelvesList() {
                                         <CommandList className="max-h-[300px] overflow-y-auto">
                                             <CommandEmpty>Raf bulunamadı</CommandEmpty>
                                             {globalShelves
-                                                .filter((s: Shelf) => s.id !== transferFormData.fromShelfId && s.type !== 'WAREHOUSE' && s.isShelvable !== false)
+                                                .filter((s: Shelf) => s.id !== transferFormData.fromShelfId && s.type !== 'WAREHOUSE' && (s.isShelvable === true || s.type === 'RECEIVING'))
                                                 .filter((s: Shelf) =>
                                                     !toShelfSearch ||
                                                     s.name.toLowerCase().includes(toShelfSearch.toLowerCase()) ||

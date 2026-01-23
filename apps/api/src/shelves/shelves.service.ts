@@ -208,13 +208,95 @@ export class ShelvesService {
             if (dto.isSellable === undefined) dto.isSellable = rules.isSellable;
         }
 
+        // Handle parent change - TypeORM tree requires parent relation, not just parentId
+        if (dto.parentId !== undefined && dto.parentId !== shelf.parentId) {
+            if (dto.parentId) {
+                const newParent = await this.shelfRepository.findOne({ where: { id: dto.parentId } });
+                if (!newParent) {
+                    throw new BadRequestException('Parent shelf not found');
+                }
+                shelf.parent = newParent;
+                shelf.parentId = dto.parentId;
+            } else {
+                shelf.parent = null as any;
+                shelf.parentId = null;
+            }
+            delete (dto as any).parentId;
+        }
+
         Object.assign(shelf, dto);
-        return this.shelfRepository.save(shelf);
+        const saved = await this.shelfRepository.save(shelf);
+
+        // Rebuild mpath for this shelf and its descendants
+        const correctMpath = await this.buildMpathForShelf(saved);
+        if ((saved as any).mpath !== correctMpath) {
+            await this.shelfRepository.query(
+                `UPDATE shelves SET mpath = ? WHERE id = ?`,
+                [correctMpath, saved.id]
+            );
+            this.logger.log(`Fixed mpath for ${saved.name}: ${correctMpath}`);
+        }
+
+        return saved;
+    }
+
+    private async buildMpathForShelf(shelf: Shelf): Promise<string> {
+        if (!shelf.parentId) {
+            return `${shelf.id}.`;
+        }
+        const parent = await this.shelfRepository.findOne({ where: { id: shelf.parentId } });
+        if (!parent) {
+            return `${shelf.id}.`;
+        }
+        const parentMpath = await this.buildMpathForShelf(parent);
+        return parentMpath + `${shelf.id}.`;
     }
 
     async remove(id: string): Promise<void> {
         const shelf = await this.findOne(id);
         await this.shelfRepository.remove(shelf);
+    }
+
+    async rebuildTreePaths(warehouseId: string): Promise<{ fixed: number; errors: string[] }> {
+        const errors: string[] = [];
+        let fixed = 0;
+
+        const allShelves = await this.shelfRepository.find({
+            where: { warehouseId },
+            order: { name: 'ASC' },
+        });
+
+        const shelfMap = new Map<string, Shelf>();
+        allShelves.forEach(s => shelfMap.set(s.id, s));
+
+        const buildMpath = (shelf: Shelf): string => {
+            if (!shelf.parentId) {
+                return `${shelf.id}.`;
+            }
+            const parent = shelfMap.get(shelf.parentId);
+            if (!parent) {
+                errors.push(`Shelf ${shelf.name} (${shelf.id}) has invalid parentId: ${shelf.parentId}`);
+                return `${shelf.id}.`;
+            }
+            return buildMpath(parent) + `${shelf.id}.`;
+        };
+
+        for (const shelf of allShelves) {
+            const correctMpath = buildMpath(shelf);
+            const currentMpath = (shelf as any).mpath;
+
+            if (currentMpath !== correctMpath) {
+                this.logger.log(`Fixing mpath for ${shelf.name}: ${currentMpath} -> ${correctMpath}`);
+                await this.shelfRepository.query(
+                    `UPDATE shelves SET mpath = ? WHERE id = ?`,
+                    [correctMpath, shelf.id]
+                );
+                fixed++;
+            }
+        }
+
+        this.logger.log(`Tree rebuild complete. Fixed: ${fixed}, Errors: ${errors.length}`);
+        return { fixed, errors };
     }
 
     // Shelf Stock operations
@@ -223,6 +305,54 @@ export class ShelvesService {
             where: { shelfId },
             relations: ['product'],
         });
+    }
+
+    async getStockWithOrders(shelfId: string): Promise<Array<{
+        stock: ShelfStock;
+        orders: Array<{
+            orderId: string;
+            orderNumber: string;
+            quantity: number;
+            routeId?: string;
+            movedAt: Date;
+        }>;
+    }>> {
+        const stocks = await this.shelfStockRepository.find({
+            where: { shelfId },
+            relations: ['product'],
+        });
+
+        const result = [];
+
+        for (const stock of stocks) {
+            const movements = await this.movementRepository.find({
+                where: {
+                    shelfId,
+                    productId: stock.productId,
+                    direction: MovementDirection.IN,
+                },
+                relations: ['order'],
+                order: { createdAt: 'DESC' },
+                take: 20,
+            });
+
+            const orders = movements
+                .filter(m => m.order)
+                .map(m => ({
+                    orderId: m.orderId!,
+                    orderNumber: m.order?.orderNumber || '',
+                    quantity: m.quantity,
+                    routeId: m.routeId || undefined,
+                    movedAt: m.createdAt,
+                }));
+
+            result.push({
+                stock,
+                orders,
+            });
+        }
+
+        return result;
     }
 
     async addStock(shelfId: string, productId: string, quantity: number): Promise<ShelfStock> {
@@ -243,6 +373,47 @@ export class ShelvesService {
         const savedStock = await this.shelfStockRepository.save(stock);
         await this.syncProductStock(productId, shelfId);
         return savedStock;
+    }
+
+    async addStockWithHistory(
+        shelfId: string,
+        productId: string,
+        quantity: number,
+        options?: {
+            type?: MovementType;
+            orderId?: string;
+            routeId?: string;
+            referenceNumber?: string;
+            notes?: string;
+            userId?: string;
+        }
+    ): Promise<{ stock: ShelfStock; movement: ShelfStockMovement }> {
+        const existingStock = await this.shelfStockRepository.findOne({
+            where: { shelfId, productId },
+        });
+        const quantityBefore = existingStock?.quantity || 0;
+
+        const stock = await this.addStock(shelfId, productId, quantity);
+
+        const movement = await this.recordMovement({
+            shelfId,
+            productId,
+            type: options?.type || MovementType.RECEIVING,
+            direction: MovementDirection.IN,
+            quantity,
+            quantityBefore,
+            quantityAfter: quantityBefore + quantity,
+            orderId: options?.orderId,
+            routeId: options?.routeId,
+            targetShelfId: shelfId,
+            referenceNumber: options?.referenceNumber,
+            notes: options?.notes,
+            userId: options?.userId,
+        });
+
+        this.logger.log(`Stock added with history: ${quantity} x ${productId} to shelf ${shelfId}`);
+
+        return { stock, movement };
     }
 
     async removeStock(shelfId: string, productId: string, quantity: number): Promise<ShelfStock | null> {
@@ -615,6 +786,10 @@ export class ShelvesService {
             }
         }
 
+        // Third pass: Rebuild all mpath values to ensure tree integrity
+        this.logger.log('Rebuilding tree paths after import...');
+        await this.rebuildTreePaths(warehouseId);
+
         return { success: successCount, updated: updatedCount, errors };
     }
 
@@ -836,6 +1011,9 @@ export class ShelvesService {
             .leftJoinAndSelect('movement.shelf', 'shelf')
             .leftJoinAndSelect('movement.product', 'product')
             .leftJoinAndSelect('movement.order', 'order')
+            .leftJoinAndSelect('movement.user', 'user')
+            .leftJoinAndSelect('movement.sourceShelf', 'sourceShelf')
+            .leftJoinAndSelect('movement.targetShelf', 'targetShelf')
             .orderBy('movement.createdAt', 'DESC');
 
         if (filters.shelfId) {
@@ -871,15 +1049,27 @@ export class ShelvesService {
         return { data, total };
     }
 
-    async getPackingShelf(warehouseId: string): Promise<Shelf | null> {
+    async getPackingShelf(warehouseId?: string): Promise<Shelf | null> {
+        if (warehouseId) {
+            const shelf = await this.shelfRepository.findOne({
+                where: { warehouseId, type: ShelfType.PACKING },
+            });
+            if (shelf) return shelf;
+        }
         return this.shelfRepository.findOne({
-            where: { warehouseId, type: ShelfType.PACKING },
+            where: { type: ShelfType.PACKING },
         });
     }
 
-    async getPickingShelf(warehouseId: string): Promise<Shelf | null> {
+    async getPickingShelf(warehouseId?: string): Promise<Shelf | null> {
+        if (warehouseId) {
+            const shelf = await this.shelfRepository.findOne({
+                where: { warehouseId, type: ShelfType.PICKING },
+            });
+            if (shelf) return shelf;
+        }
         return this.shelfRepository.findOne({
-            where: { warehouseId, type: ShelfType.PICKING },
+            where: { type: ShelfType.PICKING },
         });
     }
 }

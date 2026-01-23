@@ -18,6 +18,8 @@ import { ShelfStock } from '../shelves/entities/shelf-stock.entity';
 import { Shelf } from '../shelves/entities/shelf.entity';
 import { OrderHistoryService } from '../orders/order-history.service';
 import { OrderHistoryAction } from '../orders/entities/order-history.entity';
+import { ShelvesService } from '../shelves/shelves.service';
+import { MovementType } from '../shelves/entities/shelf-stock-movement.entity';
 
 export interface PickingItem {
     barcode: string;
@@ -82,6 +84,7 @@ export class PickingService {
         private readonly shelfRepository: Repository<Shelf>,
         @Inject(forwardRef(() => OrderHistoryService))
         private readonly orderHistoryService: OrderHistoryService,
+        private readonly shelvesService: ShelvesService,
     ) { }
 
     async getPickingProgress(routeId: string): Promise<PickingProgress> {
@@ -244,7 +247,7 @@ export class PickingService {
         };
     }
 
-    async scanBarcode(routeId: string, barcode: string, quantity: number = 1): Promise<{
+    async scanBarcode(routeId: string, barcode: string, quantity: number = 1, userId?: string): Promise<{
         success: boolean;
         message: string;
         item?: PickingItem;
@@ -298,6 +301,74 @@ export class PickingService {
         }
 
         routePickedItems.set(barcode, newQty);
+
+        // Transfer stock from source shelf to picking pool
+        const product = await this.productRepository.findOne({
+            where: { barcode },
+        });
+
+        if (!product) {
+            this.logger.warn(`Product not found for barcode: ${barcode}`);
+        } else {
+            const pickingShelf = await this.shelvesService.getPickingShelf();
+            
+            if (!pickingShelf) {
+                this.logger.warn(`No picking shelf found in system`);
+            } else {
+                if (item.shelfId) {
+                    const sourceShelf = await this.shelfRepository.findOne({
+                        where: { id: item.shelfId },
+                    });
+
+                    if (sourceShelf) {
+                        try {
+                            await this.shelvesService.transferWithHistory(
+                                item.shelfId,
+                                pickingShelf.id,
+                                product.id,
+                                quantity,
+                                {
+                                    type: MovementType.PICKING,
+                                    routeId,
+                                    userId,
+                                }
+                            );
+                            this.logger.log(`Transferred ${quantity} of ${barcode} from shelf ${sourceShelf.barcode} to picking pool`);
+                        } catch (error) {
+                            this.logger.warn(`Failed to transfer stock for ${barcode}: ${error.message}`);
+                        }
+                    }
+                } else {
+                    this.logger.warn(`No source shelf found for product ${barcode} - searching for any stock...`);
+                    const anyStock = await this.shelfStockRepository.findOne({
+                        where: { productId: product.id },
+                        relations: ['shelf'],
+                        order: { quantity: 'DESC' },
+                    });
+                    
+                    if (anyStock && anyStock.quantity >= quantity) {
+                        try {
+                            await this.shelvesService.transferWithHistory(
+                                anyStock.shelfId,
+                                pickingShelf.id,
+                                product.id,
+                                quantity,
+                                {
+                                    type: MovementType.PICKING,
+                                    routeId,
+                                    userId,
+                                }
+                            );
+                            this.logger.log(`Transferred ${quantity} of ${barcode} from shelf ${anyStock.shelf?.barcode || anyStock.shelfId} to picking pool (fallback)`);
+                        } catch (error) {
+                            this.logger.warn(`Failed to transfer stock for ${barcode} (fallback): ${error.message}`);
+                        }
+                    } else {
+                        this.logger.warn(`No stock found for product ${barcode} to transfer to picking pool`);
+                    }
+                }
+            }
+        }
 
         // Get updated progress
         const updatedProgress = await this.getPickingProgress(routeId);
@@ -505,7 +576,8 @@ export class PickingService {
     async scanProductWithShelfValidation(
         routeId: string,
         productBarcode: string,
-        quantity: number = 1
+        quantity: number = 1,
+        userId?: string
     ): Promise<{
         success: boolean;
         message: string;
@@ -585,23 +657,40 @@ export class PickingService {
 
         routePickedItems.set(productBarcode, newQty);
 
-        // Deduct stock from shelf
+        // Transfer stock from source shelf to picking pool
         if (state.currentShelfId) {
             const product = await this.productRepository.findOne({
                 where: { barcode: productBarcode },
             });
 
             if (product) {
-                const shelfStock = await this.shelfStockRepository.findOne({
-                    where: { shelfId: state.currentShelfId, productId: product.id },
+                const sourceShelf = await this.shelfRepository.findOne({
+                    where: { id: state.currentShelfId },
                 });
 
-                if (shelfStock && shelfStock.quantity >= quantity) {
-                    shelfStock.quantity -= quantity;
-                    await this.shelfStockRepository.save(shelfStock);
-                    this.logger.log(`Deducted ${quantity} of ${productBarcode} from shelf ${state.currentShelfBarcode}`);
-                } else {
-                    this.logger.warn(`Insufficient stock on shelf for ${productBarcode}. Available: ${shelfStock?.quantity || 0}`);
+                if (sourceShelf) {
+                    const pickingShelf = await this.shelvesService.getPickingShelf();
+
+                    if (pickingShelf) {
+                        try {
+                            await this.shelvesService.transferWithHistory(
+                                state.currentShelfId,
+                                pickingShelf.id,
+                                product.id,
+                                quantity,
+                                {
+                                    type: MovementType.PICKING,
+                                    routeId,
+                                    userId,
+                                }
+                            );
+                            this.logger.log(`Transferred ${quantity} of ${productBarcode} from shelf ${state.currentShelfBarcode} to picking pool`);
+                        } catch (error) {
+                            this.logger.warn(`Failed to transfer stock for ${productBarcode}: ${error.message}`);
+                        }
+                    } else {
+                        this.logger.warn(`No picking shelf found in system`);
+                    }
                 }
             }
         }

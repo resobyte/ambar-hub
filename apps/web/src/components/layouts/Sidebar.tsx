@@ -91,7 +91,7 @@ export function Sidebar({ routes, currentPath, isMobileMenuOpen, onMobileMenuClo
   const otherGroups = Object.entries(groupedRoutes)
     .filter(([group]) => group !== 'Diğer')
     .sort((a, b) => {
-      const order = ['Sipariş İşlemleri', 'Depo & Stok', 'Satın Alma', 'Entegrasyonlar', 'Ayarlar'];
+      const order = ['Sipariş İşlemleri', 'Operasyon', 'Depo & Stok', 'Satın Alma', 'Entegrasyonlar', 'Ayarlar'];
       return order.indexOf(a[0]) - order.indexOf(b[0]);
     });
 
@@ -184,9 +184,9 @@ export function Sidebar({ routes, currentPath, isMobileMenuOpen, onMobileMenuClo
                       )} />
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="center" className="w-48">
+                  <DropdownMenuContent align="center" className="w-52 p-2">
                     {groupRoutes.map((route) => (
-                      <DropdownMenuItem key={route.path} asChild>
+                      <DropdownMenuItem key={route.path} asChild className="py-2.5 px-3">
                         <Link
                           href={route.path}
                           className={cn(

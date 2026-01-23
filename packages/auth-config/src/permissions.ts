@@ -33,6 +33,14 @@ export const ROUTE_PERMISSIONS: RouteConfig[] = [
     showInSidebar: true,
     group: 'Depo & Stok',
   },
+  {
+    path: '/stock-movements',
+    label: 'Stok Hareketleri',
+    icon: 'route',
+    roles: [Role.PLATFORM_OWNER],
+    showInSidebar: true,
+    group: 'Depo & Stok',
+  },
   // Sipariş İşlemleri
   {
     path: '/orders',
@@ -58,13 +66,14 @@ export const ROUTE_PERMISSIONS: RouteConfig[] = [
     showInSidebar: true,
     group: 'Sipariş İşlemleri',
   },
+  // Operasyon
   {
     path: '/routes',
     label: 'Rotalar',
     icon: 'route',
     roles: [Role.PLATFORM_OWNER],
     showInSidebar: true,
-    group: 'Sipariş İşlemleri',
+    group: 'Operasyon',
   },
   {
     path: '/picking',
@@ -72,7 +81,7 @@ export const ROUTE_PERMISSIONS: RouteConfig[] = [
     icon: 'picking',
     roles: [Role.PLATFORM_OWNER],
     showInSidebar: true,
-    group: 'Sipariş İşlemleri',
+    group: 'Operasyon',
   },
   {
     path: '/packing',
@@ -80,7 +89,7 @@ export const ROUTE_PERMISSIONS: RouteConfig[] = [
     icon: 'package',
     roles: [Role.PLATFORM_OWNER],
     showInSidebar: true,
-    group: 'Sipariş İşlemleri',
+    group: 'Operasyon',
   },
   {
     path: '/faulty-orders',

@@ -64,7 +64,7 @@ export class OrderHistoryService {
         return this.historyRepository.find({
             where: { orderId },
             relations: ['user'],
-            order: { createdAt: 'DESC' },
+            order: { createdAt: 'ASC' },
         });
     }
 

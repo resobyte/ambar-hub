@@ -1,12 +1,15 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseInterceptors, UploadedFile, Res } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseInterceptors, UploadedFile, Res, Req, UseGuards } from '@nestjs/common';
+import { Request } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { ShelvesService } from './shelves.service';
 import { CreateShelfDto } from './dto/create-shelf.dto';
 import { UpdateShelfDto } from './dto/update-shelf.dto';
 import { MovementType } from './entities/shelf-stock-movement.entity';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('shelves')
+@UseGuards(JwtAuthGuard)
 export class ShelvesController {
     constructor(private readonly shelvesService: ShelvesService) { }
 
@@ -43,6 +46,11 @@ export class ShelvesController {
     @Get('tree/:warehouseId')
     findTree(@Param('warehouseId') warehouseId: string) {
         return this.shelvesService.findTree(warehouseId);
+    }
+
+    @Post('tree/:warehouseId/rebuild')
+    rebuildTree(@Param('warehouseId') warehouseId: string) {
+        return this.shelvesService.rebuildTreePaths(warehouseId);
     }
 
     @Get('receiving/:warehouseId')
@@ -85,23 +93,36 @@ export class ShelvesController {
         return this.shelvesService.getStock(id);
     }
 
+    @Get(':id/stock-with-orders')
+    getStockWithOrders(@Param('id') id: string) {
+        return this.shelvesService.getStockWithOrders(id);
+    }
+
     @Post(':id/stock')
     addStock(
         @Param('id') shelfId: string,
-        @Body() body: { productId: string; quantity: number },
+        @Body() body: { productId: string; quantity: number; notes?: string },
+        @Req() req: Request,
     ) {
-        return this.shelvesService.addStock(shelfId, body.productId, body.quantity);
+        const userId = (req as Request & { user?: { id: string } }).user?.id;
+        return this.shelvesService.addStockWithHistory(shelfId, body.productId, body.quantity, {
+            userId,
+            notes: body.notes,
+        });
     }
 
     @Post('transfer')
     transferStock(
         @Body() body: { fromShelfId: string; toShelfId: string; productId: string; quantity: number },
+        @Req() req: Request,
     ) {
-        return this.shelvesService.transferStock(
+        const userId = (req as Request & { user?: { id: string } }).user?.id;
+        return this.shelvesService.transferWithHistory(
             body.fromShelfId,
             body.toShelfId,
             body.productId,
             body.quantity,
+            { userId },
         );
     }
 

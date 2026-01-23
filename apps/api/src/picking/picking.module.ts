@@ -10,6 +10,7 @@ import { Shelf } from '../shelves/entities/shelf.entity';
 import { PickingService } from './picking.service';
 import { PickingController } from './picking.controller';
 import { OrdersModule } from '../orders/orders.module';
+import { ShelvesModule } from '../shelves/shelves.module';
 
 @Module({
     imports: [
@@ -23,6 +24,7 @@ import { OrdersModule } from '../orders/orders.module';
             Shelf,
         ]),
         forwardRef(() => OrdersModule),
+        ShelvesModule,
     ],
     controllers: [PickingController],
     providers: [PickingService],

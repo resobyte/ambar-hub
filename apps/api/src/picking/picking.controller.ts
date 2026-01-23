@@ -5,13 +5,22 @@ import {
     Param,
     Body,
     ParseUUIDPipe,
+    UseGuards,
+    Req,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { PickingService, PickingProgress, CurrentPickingState } from './picking.service';
 import { ScanPickingBarcodeDto, BulkScanDto, ScanShelfDto, ScanProductWithShelfDto } from './dto/picking.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('picking')
+@UseGuards(JwtAuthGuard)
 export class PickingController {
     constructor(private readonly pickingService: PickingService) { }
+
+    private getUserId(req: Request): string | undefined {
+        return (req as Request & { user?: { id: string } }).user?.id;
+    }
 
     @Get('progress/:routeId')
     async getProgress(@Param('routeId', ParseUUIDPipe) routeId: string): Promise<{
@@ -55,11 +64,13 @@ export class PickingController {
     }
 
     @Post('scan-product')
-    async scanProductWithShelf(@Body() dto: ScanProductWithShelfDto) {
+    async scanProductWithShelf(@Body() dto: ScanProductWithShelfDto, @Req() req: Request) {
+        const userId = this.getUserId(req);
         const result = await this.pickingService.scanProductWithShelfValidation(
             dto.routeId,
             dto.productBarcode,
             dto.quantity,
+            userId,
         );
         return {
             success: result.success,
@@ -73,8 +84,9 @@ export class PickingController {
     }
 
     @Post('scan')
-    async scanBarcode(@Body() dto: ScanPickingBarcodeDto) {
-        const result = await this.pickingService.scanBarcode(dto.routeId, dto.barcode, dto.quantity);
+    async scanBarcode(@Body() dto: ScanPickingBarcodeDto, @Req() req: Request) {
+        const userId = this.getUserId(req);
+        const result = await this.pickingService.scanBarcode(dto.routeId, dto.barcode, dto.quantity, userId);
         return {
             success: result.success,
             message: result.message,

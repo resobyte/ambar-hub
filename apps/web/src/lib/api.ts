@@ -1321,6 +1321,60 @@ export async function getOrderTimeline(orderId: string): Promise<ApiResponse<Ord
   return res.json();
 }
 
+export interface StockMovement {
+  id: string;
+  shelfId: string;
+  shelf?: {
+    id: string;
+    name: string;
+    barcode: string;
+  };
+  productId: string;
+  product?: {
+    id: string;
+    name: string;
+    barcode: string;
+    sku: string;
+  };
+  type: string;
+  direction: string;
+  quantity: number;
+  quantityBefore: number;
+  quantityAfter: number;
+  orderId?: string;
+  routeId?: string;
+  sourceShelfId?: string;
+  sourceShelf?: {
+    id: string;
+    name: string;
+  };
+  targetShelfId?: string;
+  targetShelf?: {
+    id: string;
+    name: string;
+  };
+  referenceNumber?: string;
+  notes?: string;
+  userId?: string;
+  user?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+  };
+  createdAt: string;
+}
+
+export async function getOrderStockMovements(orderId: string): Promise<{ success: boolean; data: StockMovement[] }> {
+  const res = await fetch(`${API_URL}/shelves/movements/history?orderId=${orderId}&limit=100`, {
+    cache: 'no-store',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    return { success: false, data: [] };
+  }
+  return res.json();
+}
+
 export async function syncOrders(integrationId: string): Promise<{ success: boolean; message: string }> {
   const res = await fetch(`${API_URL}/orders/sync/${integrationId}`, {
     method: 'POST',

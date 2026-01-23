@@ -47,9 +47,6 @@ export class PurchaseOrder extends BaseEntity {
     @Column({ name: 'order_date', type: 'date' })
     orderDate: Date;
 
-    @Column({ name: 'expected_date', type: 'date', nullable: true })
-    expectedDate: Date;
-
     @Column({ type: 'text', nullable: true })
     notes: string;
 

@@ -78,10 +78,8 @@ interface PurchaseOrder {
     status: string;
     totalAmount: number;
     orderDate: string;
-    expectedDate?: string;
     items: PurchaseOrderItem[];
     type: string;
-
 }
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
@@ -122,11 +120,9 @@ export function PurchasesList() {
     const [formData, setFormData] = useState<{
         supplierId: string;
         orderDate: string;
-        expectedDate: string;
         notes: string;
         type: string;
         invoiceNumber: string;
-
         items: {
             type: 'PRODUCT' | 'CONSUMABLE';
             productId?: string;
@@ -138,11 +134,9 @@ export function PurchasesList() {
     }>({
         supplierId: '',
         orderDate: new Date().toISOString().split('T')[0],
-        expectedDate: '',
         notes: '',
         type: 'MANUAL',
         invoiceNumber: '',
-
         items: [{ type: 'PRODUCT', productId: '', productName: '', orderedQuantity: 1, unitPrice: 0 }],
     });
 
@@ -202,11 +196,9 @@ export function PurchasesList() {
         setFormData({
             supplierId: suppliers[0]?.id || '',
             orderDate: new Date().toISOString().split('T')[0],
-            expectedDate: '',
             notes: '',
             type: 'MANUAL',
             invoiceNumber: '',
-
             items: [{ type: 'PRODUCT', productId: defaultProductId, productName: '', orderedQuantity: 1, unitPrice: 0 }],
         });
         setIsModalOpen(true);
@@ -235,11 +227,9 @@ export function PurchasesList() {
             setFormData({
                 supplierId: data.supplierId || '',
                 orderDate: data.orderDate ? new Date(data.orderDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-                expectedDate: '',
                 notes: `Fatura No: ${data.invoiceNumber}`,
                 type: 'INVOICE',
                 invoiceNumber: data.invoiceNumber,
-
                 items: data.items.map((item: any) => {
                     // Try to match product by ID (backend) or SKU/Barcode (frontend fallback)
                     const matchedProduct = products.find(p =>
@@ -578,10 +568,6 @@ export function PurchasesList() {
                                 <Label>Sipariş Tarihi</Label>
                                 <Input type="date" value={formData.orderDate} onChange={(e) => setFormData({ ...formData, orderDate: e.target.value })} required />
                             </div>
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Beklenen Tarih</Label>
-                            <Input type="date" value={formData.expectedDate} onChange={(e) => setFormData({ ...formData, expectedDate: e.target.value })} />
                         </div>
 
                         <div className="border-t pt-4">
