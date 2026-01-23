@@ -10,6 +10,7 @@ import { IntegrationStore } from '../integration-stores/entities/integration-sto
 import { InvoiceStatus } from './enums/invoice-status.enum';
 import { OrderHistoryService } from '../orders/order-history.service';
 import { OrderHistoryAction } from '../orders/entities/order-history.entity';
+import { OrderStatus } from '../orders/enums/order-status.enum';
 
 @Injectable()
 export class InvoicesService {
@@ -490,7 +491,15 @@ export class InvoicesService {
                 this.logger.warn(`Failed to log invoice history: ${historyError.message}`);
             }
 
-            // 10. Send Invoiced status to Trendyol if applicable
+            // 10. Update order status to INVOICED
+            try {
+                await this.orderRepository.update(order.id, { status: OrderStatus.INVOICED });
+                this.logger.log(`Order ${order.id} status updated to INVOICED`);
+            } catch (statusError) {
+                this.logger.warn(`Failed to update order status: ${statusError.message}`);
+            }
+
+            // 11. Send Invoiced status to Trendyol if applicable
             if (order.integrationId && order.storeId) {
                 try {
                     await this.sendInvoicedStatusToIntegration(order, savedInvoice);

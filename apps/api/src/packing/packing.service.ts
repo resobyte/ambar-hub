@@ -317,8 +317,8 @@ export class PackingService {
             { isPacked: true, packedAt: new Date() }
         );
 
-        // Update order status
-        await this.orderRepository.update(dto.orderId, { status: OrderStatus.INVOICED });
+        // Update order status to PACKED (will be INVOICED when invoice is actually created)
+        await this.orderRepository.update(dto.orderId, { status: OrderStatus.PACKED });
 
         // Get route info for logging
         const route = await this.routeRepository.findOne({ where: { id: session.routeId } });
@@ -366,7 +366,7 @@ export class PackingService {
                     orderId: dto.orderId,
                     action: OrderHistoryAction.SHIPPED,
                     userId: session.userId,
-                    previousStatus: OrderStatus.INVOICED,
+                    previousStatus: OrderStatus.PACKED,
                     newStatus: OrderStatus.SHIPPED,
                     description: `Kargoya verildi${shipmentResult.invoiceNumber ? ` - Fatura: ${shipmentResult.invoiceNumber}` : ''}`,
                     metadata: {
@@ -582,6 +582,8 @@ export class PackingService {
             } catch (error) {
                 this.logger.warn(`Failed to queue invoice: ${error.message}`);
             }
+        } else {
+            this.logger.log(`Invoice queueing skipped - invoiceEnabled is ${storeConfig?.invoiceEnabled} for store ${storeConfig?.storeId || 'unknown'}`);
         }
 
         // 4. Get cargo label (ZPL or HTML fallback)

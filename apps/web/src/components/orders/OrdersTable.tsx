@@ -179,6 +179,7 @@ export function OrdersTable({
             case OrderStatus.UNSUPPLIED: return 'bg-red-100 text-red-800 border-red-200 hover:bg-red-200';
             case OrderStatus.CREATED: return 'bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-200';
             case OrderStatus.PICKING: return 'bg-orange-100 text-orange-800 border-orange-200 hover:bg-orange-200';
+            case OrderStatus.PACKED: return 'bg-indigo-100 text-indigo-800 border-indigo-200 hover:bg-indigo-200';
             case OrderStatus.INVOICED: return 'bg-purple-100 text-purple-800 border-purple-200 hover:bg-purple-200';
             case OrderStatus.RETURNED: return 'bg-pink-100 text-pink-800 border-pink-200 hover:bg-pink-200';
             case OrderStatus.REPACK: return 'bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-200';
@@ -191,6 +192,7 @@ export function OrdersTable({
         switch (status) {
             case OrderStatus.CREATED: return 'Oluşturuldu';
             case OrderStatus.PICKING: return 'Toplama';
+            case OrderStatus.PACKED: return 'Paketlendi';
             case OrderStatus.INVOICED: return 'Faturalandı';
             case OrderStatus.SHIPPED: return 'Kargoya Verildi';
             case OrderStatus.DELIVERED: return 'Teslim Edildi';
@@ -419,6 +421,7 @@ export function OrdersTable({
                                     { value: "", label: "Tümü" },
                                     { value: "CREATED", label: "Oluşturuldu" },
                                     { value: "PICKING", label: "Toplama" },
+                                    { value: "PACKED", label: "Paketlendi" },
                                     { value: "INVOICED", label: "Faturalandı" },
                                     { value: "SHIPPED", label: "Kargoya Verildi" },
                                     { value: "DELIVERED", label: "Teslim Edildi" },
