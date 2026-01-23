@@ -61,30 +61,12 @@ import {
     updateProductStore,
     deleteProductStore,
     Product,
+    ProductStore,
+    Store as ApiStore,
 } from '@/lib/api';
 
 interface Props {
     productId: string;
-}
-
-interface ProductStore {
-    id: string;
-    productId: string;
-    storeId: string;
-    store?: Store;
-    storeName?: string;
-    storeSku: string | null;
-    storeSalePrice: number | null;
-    stockQuantity: number;
-    sellableQuantity: number;
-    reservableQuantity: number;
-    committedQuantity?: number;
-    isActive: boolean;
-}
-
-interface Store {
-    id: string;
-    name: string;
 }
 
 export function ProductDetailClient({ productId }: Props) {
@@ -94,7 +76,7 @@ export function ProductDetailClient({ productId }: Props) {
     const [loading, setLoading] = useState(true);
     const [product, setProduct] = useState<Product | null>(null);
     const [productStores, setProductStores] = useState<ProductStore[]>([]);
-    const [stores, setStores] = useState<Store[]>([]);
+    const [stores, setStores] = useState<ApiStore[]>([]);
 
     // Store modal
     const [isStoreModalOpen, setIsStoreModalOpen] = useState(false);

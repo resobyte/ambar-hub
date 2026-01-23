@@ -355,16 +355,20 @@ export function ShelvesList() {
 
             if (editingShelf && selectedItem?.type === 'shelf' && selectedItem.data.id === editingShelf.id) {
                 // Update selected item immediately to reflect changes in UI
-                setSelectedItem(prev => prev ? {
-                    ...prev,
-                    data: {
-                        ...prev.data,
-                        ...updatedShelf,
-                        // Preserve relations if missing in response
-                        children: prev.data.children,
-                        stocks: prev.data.stocks
-                    }
-                } : null);
+                setSelectedItem(prev => {
+                    if (!prev || prev.type !== 'shelf') return prev;
+                    const shelfData = prev.data as Shelf;
+                    return {
+                        ...prev,
+                        data: {
+                            ...shelfData,
+                            ...updatedShelf,
+                            // Preserve relations if missing in response
+                            children: shelfData.children,
+                            stocks: shelfData.stocks
+                        }
+                    };
+                });
             }
 
             if (formData.warehouseId) {
