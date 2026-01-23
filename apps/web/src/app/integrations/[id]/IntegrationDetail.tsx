@@ -329,13 +329,18 @@ export function IntegrationDetail({ integrationId }: Props) {
     const handleSaveStoreConnection = async () => {
         setSaving(true);
         try {
+            // Convert null values to undefined for API compatibility
+            const formData = Object.fromEntries(
+                Object.entries(storeForm).map(([k, v]) => [k, v === null ? undefined : v])
+            );
+            
             if (editingStoreConnection) {
-                await updateIntegrationStore(editingStoreConnection.id, storeForm);
+                await updateIntegrationStore(editingStoreConnection.id, formData as any);
                 toast({ title: 'Başarılı', description: 'Mağaza bağlantısı güncellendi', variant: 'success' });
             } else {
                 await createIntegrationStore({
                     integrationId,
-                    ...storeForm,
+                    ...formData,
                 } as any);
                 toast({ title: 'Başarılı', description: 'Mağaza bağlantısı oluşturuldu', variant: 'success' });
             }
