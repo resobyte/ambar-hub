@@ -13,6 +13,7 @@ import { InvoicesService } from '../invoices/invoices.service';
 import { Product } from '../products/entities/product.entity';
 import { Supplier } from '../suppliers/entities/supplier.entity';
 import { ConsumablesService } from '../consumables/consumables.service';
+import { ProductsService } from '../products/products.service';
 
 @Injectable()
 export class PurchasesService {
@@ -28,10 +29,11 @@ export class PurchasesService {
         private readonly shelvesService: ShelvesService,
         private readonly invoicesService: InvoicesService,
         @InjectRepository(Supplier)
-        private readonly supplierRepository: Repository<Supplier>, // We'll need to inject Supplier Repo effectively, or use SupplierService. For now, assuming direct repo access is fine if module imports it, or we need to add SupplierModule. Let's check imports.
+        private readonly supplierRepository: Repository<Supplier>,
         @InjectRepository(Product)
         private readonly productRepository: Repository<Product>,
         private readonly consumablesService: ConsumablesService,
+        private readonly productsService: ProductsService,
     ) { }
 
     // Generate unique order number
@@ -286,13 +288,14 @@ export class PurchasesService {
             });
             await this.grItemRepository.save(grItem);
 
-            // Add to shelf stock
+            // Add to shelf stock and update weighted average cost
             if (item.productId) {
+                const currentStock = await this.shelvesService.getProductTotalStock(item.productId);
                 await this.shelvesService.addStock(item.shelfId, item.productId, item.quantity);
+                await this.productsService.addStockWithCost(item.productId, item.quantity, item.unitCost, currentStock);
             } else if (item.consumableId) {
                 await this.shelvesService.addConsumableStock(item.shelfId, item.consumableId, item.quantity);
-                // Also update weighted average cost/stock in ConsumablesService
-                await this.consumablesService.addStockWithCost(item.consumableId, item.quantity, item.unitCost);
+                await this.consumablesService.addStockWithCostAndUpdateVariants(item.consumableId, item.quantity, item.unitCost);
             }
 
             // Update PO item received quantity

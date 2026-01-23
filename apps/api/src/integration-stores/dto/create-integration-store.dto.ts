@@ -64,6 +64,11 @@ export class CreateIntegrationStoreDto {
   // Fatura Ayarları (Invoice Settings)
   // =============================================
 
+  // Fatura Aktif mi?
+  @IsBoolean()
+  @IsOptional()
+  invoiceEnabled?: boolean;
+
   // Genel Fatura Ayarları
   @IsString()
   @IsOptional()

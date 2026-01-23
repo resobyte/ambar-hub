@@ -110,6 +110,9 @@ export class Order extends BaseEntity {
     @Column({ name: 'cargo_label_zpl', type: 'text', nullable: true })
     cargoLabelZpl: string;
 
+    @Column({ name: 'cargo_label_html', type: 'text', nullable: true })
+    cargoLabelHtml: string;
+
     @Column({ name: 'cargo_sender_number', nullable: true })
     cargoSenderNumber: string;
 
@@ -202,6 +205,12 @@ export class Order extends BaseEntity {
     // ─────────────────────────────────────────────────────────────
     @Column('simple-json', { name: 'package_histories', nullable: true })
     packageHistories: object[];
+
+    // ─────────────────────────────────────────────────────────────
+    // Waybill (İrsaliye)
+    // ─────────────────────────────────────────────────────────────
+    @Column({ name: 'waybill_id', nullable: true })
+    waybillId: string;
 
     // ─────────────────────────────────────────────────────────────
     // Items Relation

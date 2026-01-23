@@ -600,8 +600,8 @@ export function PurchasesList() {
                             </div>
                             <div className="space-y-2">
                                 {formData.items.map((item, index) => (
-                                    <div key={index} className={`flex gap-2 items-start p-2 rounded-md border transition-colors ${item.type === 'CONSUMABLE' ? 'bg-orange-50/50 border-orange-100' : 'bg-muted/20 border-transparent hover:border-border'}`}>
-                                        <div className="flex flex-col gap-2 w-32">
+                                    <div key={index} className={`flex gap-2 items-center p-2 rounded-md border transition-colors ${item.type === 'CONSUMABLE' ? 'bg-orange-50/50 border-orange-100' : 'bg-muted/20 border-transparent hover:border-border'}`}>
+                                        <div className="w-32 shrink-0">
                                             <div className="flex rounded-md shadow-sm border bg-muted p-1 gap-1">
                                                 <Button
                                                     type="button"
@@ -624,7 +624,7 @@ export function PurchasesList() {
                                             </div>
                                         </div>
 
-                                        <div className="flex-1">
+                                        <div className="flex-1 min-w-0">
                                             {item.type === 'PRODUCT' ? (
                                                 <Combobox
                                                     options={products.map(p => ({ value: p.id, label: `${p.name} [${p.barcode || p.sku}]` }))}
@@ -633,22 +633,22 @@ export function PurchasesList() {
                                                     placeholder="Ürün Ara..."
                                                     searchPlaceholder="Ürün adı, barkod veya SKU ara..."
                                                     emptyMessage="Ürün bulunamadı."
-                                                    className="w-full"
+                                                    className="w-full h-9"
                                                 />
                                             ) : (
                                                 <Combobox
-                                                    options={consumables.map(c => ({ value: c.id, label: `${c.name} [${c.type}]` }))}
+                                                    options={consumables.filter(c => !c.parentId).map(c => ({ value: c.id, label: `${c.name} [${c.sku || c.barcode || c.type}]` }))}
                                                     value={item.consumableId}
                                                     onValueChange={(v) => updateItem(index, 'consumableId', v)}
                                                     placeholder="Malzeme Ara..."
                                                     searchPlaceholder="Malzeme adı ara..."
                                                     emptyMessage="Malzeme bulunamadı."
-                                                    className="w-full"
+                                                    className="w-full h-9"
                                                 />
                                             )}
                                         </div>
 
-                                        <div className="w-20">
+                                        <div className="w-20 shrink-0">
                                             <Input
                                                 type="number"
                                                 className="h-9"
@@ -656,7 +656,7 @@ export function PurchasesList() {
                                                 onChange={(e) => updateItem(index, 'orderedQuantity', parseInt(e.target.value) || 0)}
                                             />
                                         </div>
-                                        <div className="w-28">
+                                        <div className="w-28 shrink-0">
                                             <Input
                                                 type="number"
                                                 className="h-9"
@@ -665,7 +665,7 @@ export function PurchasesList() {
                                                 onChange={(e) => updateItem(index, 'unitPrice', parseFloat(e.target.value) || 0)}
                                             />
                                         </div>
-                                        <div className="pt-0">
+                                        <div className="shrink-0">
                                             <Button
                                                 type="button"
                                                 variant="ghost"

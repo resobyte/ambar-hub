@@ -30,4 +30,17 @@ export class ConsumablesController {
     remove(@Param('id') id: string) {
         return this.consumablesService.remove(id);
     }
+
+    @Post(':id/consume-from-parent')
+    consumeFromParent(@Param('id') id: string, @Body('quantity') quantity: number) {
+        return this.consumablesService.consumeFromParent(id, quantity);
+    }
+
+    @Post(':id/add-stock')
+    addStock(
+        @Param('id') id: string,
+        @Body() body: { quantity: number; unitCost: number }
+    ) {
+        return this.consumablesService.addStockWithCost(id, body.quantity, body.unitCost);
+    }
 }

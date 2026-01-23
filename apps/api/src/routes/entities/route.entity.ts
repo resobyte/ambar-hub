@@ -2,6 +2,7 @@ import { Entity, Column, OneToMany, ManyToOne, JoinColumn } from 'typeorm';
 import { BaseEntity } from '../../common/entities/base.entity';
 import { Order } from '../../orders/entities/order.entity';
 import { RouteOrder } from './route-order.entity';
+import { RouteConsumable } from './route-consumable.entity';
 import { RouteStatus } from '../enums/route-status.enum';
 import { User } from '../../users/entities/user.entity';
 
@@ -18,6 +19,9 @@ export class Route extends BaseEntity {
 
     @OneToMany(() => RouteOrder, (routeOrder) => routeOrder.route, { cascade: true })
     routeOrders: RouteOrder[];
+
+    @OneToMany(() => RouteConsumable, (rc) => rc.route, { cascade: true })
+    routeConsumables: RouteConsumable[];
 
     get orders(): Order[] {
         return this.routeOrders?.map(ro => ro.order).filter(Boolean) || [];

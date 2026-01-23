@@ -6,8 +6,8 @@ import {
     Body,
     ParseUUIDPipe,
 } from '@nestjs/common';
-import { PickingService, PickingProgress } from './picking.service';
-import { ScanPickingBarcodeDto, BulkScanDto } from './dto/picking.dto';
+import { PickingService, PickingProgress, CurrentPickingState } from './picking.service';
+import { ScanPickingBarcodeDto, BulkScanDto, ScanShelfDto, ScanProductWithShelfDto } from './dto/picking.dto';
 
 @Controller('picking')
 export class PickingController {
@@ -20,6 +20,56 @@ export class PickingController {
     }> {
         const progress = await this.pickingService.getPickingProgress(routeId);
         return { success: true, data: progress };
+    }
+
+    @Get('next/:routeId')
+    async getNextItem(@Param('routeId', ParseUUIDPipe) routeId: string) {
+        const result = await this.pickingService.getNextPickingItem(routeId);
+        return {
+            success: true,
+            data: result,
+        };
+    }
+
+    @Get('state/:routeId')
+    async getState(@Param('routeId', ParseUUIDPipe) routeId: string): Promise<{
+        success: boolean;
+        data: CurrentPickingState;
+    }> {
+        const state = this.pickingService.getPickingState(routeId);
+        return { success: true, data: state };
+    }
+
+    @Post('scan-shelf')
+    async scanShelf(@Body() dto: ScanShelfDto) {
+        const result = await this.pickingService.scanShelf(dto.routeId, dto.shelfBarcode);
+        return {
+            success: result.success,
+            message: result.message,
+            data: {
+                expectedShelf: result.expectedShelf,
+                scannedShelf: result.scannedShelf,
+                nextItem: result.nextItem,
+            },
+        };
+    }
+
+    @Post('scan-product')
+    async scanProductWithShelf(@Body() dto: ScanProductWithShelfDto) {
+        const result = await this.pickingService.scanProductWithShelfValidation(
+            dto.routeId,
+            dto.productBarcode,
+            dto.quantity,
+        );
+        return {
+            success: result.success,
+            message: result.message,
+            data: {
+                item: result.item,
+                progress: result.progress,
+                requiresShelfScan: result.requiresShelfScan,
+            },
+        };
     }
 
     @Post('scan')

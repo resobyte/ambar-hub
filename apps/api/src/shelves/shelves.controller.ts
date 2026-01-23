@@ -4,6 +4,7 @@ import { Response } from 'express';
 import { ShelvesService } from './shelves.service';
 import { CreateShelfDto } from './dto/create-shelf.dto';
 import { UpdateShelfDto } from './dto/update-shelf.dto';
+import { MovementType } from './entities/shelf-stock-movement.entity';
 
 @Controller('shelves')
 export class ShelvesController {
@@ -102,5 +103,65 @@ export class ShelvesController {
             body.productId,
             body.quantity,
         );
+    }
+
+    @Get('movements/history')
+    async getMovementHistory(
+        @Query('shelfId') shelfId?: string,
+        @Query('productId') productId?: string,
+        @Query('orderId') orderId?: string,
+        @Query('routeId') routeId?: string,
+        @Query('type') type?: MovementType,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('page') page = '1',
+        @Query('limit') limit = '50',
+    ) {
+        const { data, total } = await this.shelvesService.getMovementHistory({
+            shelfId,
+            productId,
+            orderId,
+            routeId,
+            type,
+            startDate,
+            endDate,
+            page: parseInt(page, 10),
+            limit: parseInt(limit, 10),
+        });
+
+        return {
+            success: true,
+            data,
+            meta: {
+                page: parseInt(page, 10),
+                limit: parseInt(limit, 10),
+                total,
+                totalPages: Math.ceil(total / parseInt(limit, 10)),
+            },
+        };
+    }
+
+    @Get(':shelfId/movements')
+    async getShelfMovements(
+        @Param('shelfId') shelfId: string,
+        @Query('page') page = '1',
+        @Query('limit') limit = '50',
+    ) {
+        const { data, total } = await this.shelvesService.getMovementHistory({
+            shelfId,
+            page: parseInt(page, 10),
+            limit: parseInt(limit, 10),
+        });
+
+        return {
+            success: true,
+            data,
+            meta: {
+                page: parseInt(page, 10),
+                limit: parseInt(limit, 10),
+                total,
+                totalPages: Math.ceil(total / parseInt(limit, 10)),
+            },
+        };
     }
 }

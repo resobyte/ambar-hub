@@ -359,5 +359,53 @@ export class ProductsService {
 
     return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
   }
+
+  // ─────────────────────────────────────────────────────────────
+  // Weighted Average Cost Methods
+  // ─────────────────────────────────────────────────────────────
+
+  async addStockWithCost(productId: string, quantity: number, unitCost: number, currentStock: number): Promise<Product> {
+    const product = await this.productRepository.findOne({ where: { id: productId } });
+    if (!product) {
+      throw new NotFoundException(`Product with ID ${productId} not found`);
+    }
+
+    const currentAvgCost = Number(product.averageCost) || 0;
+    const addedQty = Number(quantity);
+    const addedCost = Number(unitCost);
+    const existingStock = Number(currentStock) || 0;
+
+    const totalValue = (existingStock * currentAvgCost) + (addedQty * addedCost);
+    const totalQty = existingStock + addedQty;
+
+    const newAvgCost = totalQty > 0 ? totalValue / totalQty : addedCost;
+
+    product.averageCost = newAvgCost;
+    return this.productRepository.save(product);
+  }
+
+  async recalculateCostOnReturn(productId: string, returnedQty: number, currentStock: number): Promise<Product> {
+    const product = await this.productRepository.findOne({ where: { id: productId } });
+    if (!product) {
+      throw new NotFoundException(`Product with ID ${productId} not found`);
+    }
+
+    const currentAvgCost = Number(product.averageCost) || 0;
+    const returnQty = Number(returnedQty);
+    const existingStock = Number(currentStock) || 0;
+
+    const totalValue = (existingStock * currentAvgCost) + (returnQty * currentAvgCost);
+    const totalQty = existingStock + returnQty;
+
+    const newAvgCost = totalQty > 0 ? totalValue / totalQty : currentAvgCost;
+
+    product.averageCost = newAvgCost;
+    return this.productRepository.save(product);
+  }
+
+  async getAverageCost(productId: string): Promise<number> {
+    const product = await this.productRepository.findOne({ where: { id: productId } });
+    return product ? Number(product.averageCost) || 0 : 0;
+  }
 }
 

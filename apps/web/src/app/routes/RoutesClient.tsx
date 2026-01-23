@@ -13,7 +13,10 @@ import {
     RouteSuggestion,
     RouteStatus,
     getStores,
-    Store
+    Store,
+    getConsumables,
+    Consumable,
+    RouteConsumableInput
 } from '@/lib/api';
 
 // ShadCN Components
@@ -55,13 +58,14 @@ import {
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
-import { Loader2, Plus, Printer, Trash2, Eye, Package, Route as RouteIcon, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, Plus, Printer, Trash2, Eye, Package, Route as RouteIcon, ChevronLeft, ChevronRight, Box } from 'lucide-react';
 
 export function RoutesClient() {
     const router = useRouter();
     const [routes, setRoutes] = useState<Route[]>([]);
     const [suggestions, setSuggestions] = useState<RouteSuggestion[]>([]);
     const [stores, setStores] = useState<Store[]>([]);
+    const [consumables, setConsumables] = useState<Consumable[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadingSuggestions, setLoadingSuggestions] = useState(true);
 
@@ -85,6 +89,7 @@ export function RoutesClient() {
     const [fifoLimit, setFifoLimit] = useState<number>(50);
     const [creating, setCreating] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [selectedConsumables, setSelectedConsumables] = useState<RouteConsumableInput[]>([]);
 
     // Compute status filter for API
     const getStatusFilter = useCallback((): RouteStatus[] | undefined => {
@@ -140,9 +145,22 @@ export function RoutesClient() {
         }
     }, []);
 
+    const fetchConsumables = useCallback(async () => {
+        try {
+            const response = await getConsumables();
+            if (response.success) {
+                // Only show parent consumables (not variants)
+                setConsumables(response.data?.filter(c => !c.parentId) || []);
+            }
+        } catch (err) {
+            console.error('Failed to fetch consumables:', err);
+        }
+    }, []);
+
     useEffect(() => { fetchRoutes(); }, [fetchRoutes]);
     useEffect(() => { fetchSuggestions(); }, [fetchSuggestions]);
     useEffect(() => { fetchStores(); }, [fetchStores]);
+    useEffect(() => { fetchConsumables(); }, [fetchConsumables]);
 
     // Filter and paginate routes
     const filteredRoutes = routes.filter(route => {
@@ -163,6 +181,7 @@ export function RoutesClient() {
         setRouteDescription(suggestion.description);
         setFifoLimit(Math.min(suggestion.orders.length, 50));
         setSelectedOrderIds(suggestion.orders.map(o => o.id));
+        setSelectedConsumables([]);
         setIsModalOpen(true);
     };
 
@@ -182,9 +201,11 @@ export function RoutesClient() {
         setCreating(true);
         setError(null);
         try {
+            const validConsumables = selectedConsumables.filter(c => c.quantity > 0);
             const response = await createRoute({
                 description: routeDescription.trim() || undefined,
                 orderIds: selectedOrderIds,
+                consumables: validConsumables.length > 0 ? validConsumables : undefined,
             });
             if (response.data?.id) {
                 try {
@@ -200,8 +221,10 @@ export function RoutesClient() {
             setRouteDescription('');
             setSelectedOrderIds([]);
             setSelectedSuggestion(null);
+            setSelectedConsumables([]);
             fetchRoutes();
             fetchSuggestions();
+            fetchConsumables();
         } catch (err: any) {
             setError(err.message || 'Rota oluşturulurken hata oluştu');
         } finally {
@@ -592,6 +615,86 @@ export function RoutesClient() {
                                 </p>
                             </div>
                         )}
+
+                        {/* Consumables Section */}
+                        <div className="space-y-3 p-4 bg-orange-50/50 border border-orange-100 rounded-lg">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <Box className="h-4 w-4 text-orange-600" />
+                                    <Label className="text-orange-800">Sarf Malzemeler</Label>
+                                </div>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setSelectedConsumables([...selectedConsumables, { consumableId: '', quantity: 1 }])}
+                                >
+                                    <Plus className="h-3 w-3 mr-1" /> Ekle
+                                </Button>
+                            </div>
+                            {selectedConsumables.length === 0 ? (
+                                <p className="text-xs text-muted-foreground">
+                                    Rota için sarf malzeme eklenmedi. İsterseniz ekleyebilirsiniz.
+                                </p>
+                            ) : (
+                                <div className="space-y-2">
+                                    {selectedConsumables.map((item, index) => {
+                                        const consumable = consumables.find(c => c.id === item.consumableId);
+                                        return (
+                                            <div key={index} className="flex items-center gap-2">
+                                                <Select
+                                                    value={item.consumableId}
+                                                    onValueChange={(v) => {
+                                                        const updated = [...selectedConsumables];
+                                                        updated[index].consumableId = v;
+                                                        setSelectedConsumables(updated);
+                                                    }}
+                                                >
+                                                    <SelectTrigger className="flex-1 h-9">
+                                                        <SelectValue placeholder="Malzeme seç" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {consumables.map(c => (
+                                                            <SelectItem key={c.id} value={c.id}>
+                                                                {c.name} (Stok: {c.stockQuantity})
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                <Input
+                                                    type="number"
+                                                    className="w-20 h-9"
+                                                    min={0.01}
+                                                    step={0.01}
+                                                    value={item.quantity}
+                                                    onChange={(e) => {
+                                                        const updated = [...selectedConsumables];
+                                                        updated[index].quantity = parseFloat(e.target.value) || 0;
+                                                        setSelectedConsumables(updated);
+                                                    }}
+                                                />
+                                                {consumable && (
+                                                    <span className="text-xs text-muted-foreground w-16">
+                                                        {consumable.unit === 'METER' ? 'm' : consumable.unit === 'KILOGRAM' ? 'kg' : 'adet'}
+                                                    </span>
+                                                )}
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-9 w-9 text-destructive hover:bg-destructive/10"
+                                                    onClick={() => {
+                                                        setSelectedConsumables(selectedConsumables.filter((_, i) => i !== index));
+                                                    }}
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
 
                         <div className="p-3 bg-primary/5 border rounded-lg">
                             <div className="flex items-center justify-between">

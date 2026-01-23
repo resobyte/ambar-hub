@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Route } from '../routes/entities/route.entity';
 import { RouteOrder } from '../routes/entities/route-order.entity';
@@ -6,8 +6,10 @@ import { Order } from '../orders/entities/order.entity';
 import { OrderItem } from '../orders/entities/order-item.entity';
 import { Product } from '../products/entities/product.entity';
 import { ShelfStock } from '../shelves/entities/shelf-stock.entity';
+import { Shelf } from '../shelves/entities/shelf.entity';
 import { PickingService } from './picking.service';
 import { PickingController } from './picking.controller';
+import { OrdersModule } from '../orders/orders.module';
 
 @Module({
     imports: [
@@ -18,7 +20,9 @@ import { PickingController } from './picking.controller';
             OrderItem,
             Product,
             ShelfStock,
+            Shelf,
         ]),
+        forwardRef(() => OrdersModule),
     ],
     controllers: [PickingController],
     providers: [PickingService],

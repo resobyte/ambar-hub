@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { Order, OrderStatus, createInvoiceFromOrder, getInvoicePdf, Integration, Store } from '@/lib/api';
 import { useToast } from '@/components/ui/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -40,7 +41,11 @@ import {
     Eye,
     ChevronLeft,
     X,
-    FileText
+    FileText,
+    Send,
+    ArrowUpDown,
+    ArrowUp,
+    ArrowDown,
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
@@ -198,6 +203,60 @@ export function OrdersTable({
         }
     }
 
+    const getDeliveryCountdown = (agreedDeliveryDate: string | undefined) => {
+        if (!agreedDeliveryDate) return { text: '-', isOverdue: false, isUrgent: false };
+
+        const now = new Date();
+        const deadline = new Date(agreedDeliveryDate);
+        const diffMs = deadline.getTime() - now.getTime();
+
+        if (diffMs <= 0) {
+            // Overdue
+            const overdueDiffMs = Math.abs(diffMs);
+            const hours = Math.floor(overdueDiffMs / (1000 * 60 * 60));
+            const minutes = Math.floor((overdueDiffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+            if (hours >= 24) {
+                const days = Math.floor(hours / 24);
+                return { text: `${days} gün gecikti`, isOverdue: true, isUrgent: true };
+            }
+            return { text: `${hours} sa ${minutes} dk gecikti`, isOverdue: true, isUrgent: true };
+        }
+
+        const hours = Math.floor(diffMs / (1000 * 60 * 60));
+        const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+        if (hours >= 24) {
+            const days = Math.floor(hours / 24);
+            const remainingHours = hours % 24;
+            return { text: `${days} gün ${remainingHours} sa`, isOverdue: false, isUrgent: false };
+        }
+
+        const isUrgent = hours < 4; // Less than 4 hours is urgent
+        return { text: `${String(hours).padStart(2, '0')} sa ${String(minutes).padStart(2, '0')} dk`, isOverdue: false, isUrgent };
+    }
+
+    const handleSort = (field: string) => {
+        const currentSortBy = filters.sortBy;
+        const currentSortOrder = filters.sortOrder || 'DESC';
+
+        if (currentSortBy === field) {
+            // Toggle sort order
+            onFilterChange({
+                ...filters,
+                sortBy: field,
+                sortOrder: currentSortOrder === 'ASC' ? 'DESC' : 'ASC',
+            });
+        } else {
+            // New field, default to DESC
+            onFilterChange({
+                ...filters,
+                sortBy: field,
+                sortOrder: 'DESC',
+            });
+        }
+    };
+
     const handleCreateInvoice = async (orderId: string) => {
         setInvoiceLoading(orderId);
         try {
@@ -266,6 +325,42 @@ export function OrdersTable({
             });
         } finally {
             setBulkLoading(false);
+        }
+    };
+
+    const handleCreateShipment = async (orderId: string) => {
+        setInvoiceLoading(orderId); // Re-using loading state for button spinner
+        try {
+            const res = await fetch(`/api/orders/${orderId}/create-shipment`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}), // Empty body for now, can extend later
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                toast({
+                    title: "Başarılı",
+                    description: data.message,
+                    variant: 'success',
+                });
+                // Ideally refresh orders or update local state
+                // window.location.reload(); // Simple refresh for now or trigger parent refresh
+            } else {
+                toast({
+                    variant: "destructive",
+                    title: "Hata",
+                    description: data.message,
+                });
+            }
+        } catch (error: any) {
+            toast({
+                variant: "destructive",
+                title: "Hata",
+                description: error.message || "Entegrasyon hatası",
+            });
+        } finally {
+            setInvoiceLoading(null);
         }
     };
 
@@ -509,13 +604,83 @@ export function OrdersTable({
                                         />
                                     </TableHead>
                                     <TableHead className="w-[50px]"></TableHead>
-                                    <TableHead className="font-semibold">Sipariş No</TableHead>
+                                    <TableHead className="font-semibold">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="-ml-3 h-8 data-[state=open]:bg-accent"
+                                            onClick={() => handleSort('orderNumber')}
+                                        >
+                                            Sipariş No
+                                            {filters.sortBy === 'orderNumber' ? (
+                                                filters.sortOrder === 'ASC' ? <ArrowUp className="ml-2 h-4 w-4" /> : <ArrowDown className="ml-2 h-4 w-4" />
+                                            ) : (
+                                                <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
+                                            )}
+                                        </Button>
+                                    </TableHead>
                                     <TableHead className="font-semibold">Kaynak</TableHead>
                                     <TableHead className="font-semibold">Müşteri</TableHead>
-                                    <TableHead className="font-semibold">Tarih</TableHead>
-                                    <TableHead className="font-semibold">Beklenen Kargolama</TableHead>
-                                    <TableHead className="font-semibold">Tutar</TableHead>
-                                    <TableHead className="font-semibold">Durum</TableHead>
+                                    <TableHead className="font-semibold">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="-ml-3 h-8 data-[state=open]:bg-accent"
+                                            onClick={() => handleSort('orderDate')}
+                                        >
+                                            Tarih
+                                            {filters.sortBy === 'orderDate' ? (
+                                                filters.sortOrder === 'ASC' ? <ArrowUp className="ml-2 h-4 w-4" /> : <ArrowDown className="ml-2 h-4 w-4" />
+                                            ) : (
+                                                <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
+                                            )}
+                                        </Button>
+                                    </TableHead>
+                                    <TableHead className="font-semibold">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="-ml-3 h-8 data-[state=open]:bg-accent"
+                                            onClick={() => handleSort('agreedDeliveryDate')}
+                                        >
+                                            Beklenen Kargolama
+                                            {filters.sortBy === 'agreedDeliveryDate' ? (
+                                                filters.sortOrder === 'ASC' ? <ArrowUp className="ml-2 h-4 w-4" /> : <ArrowDown className="ml-2 h-4 w-4" />
+                                            ) : (
+                                                <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
+                                            )}
+                                        </Button>
+                                    </TableHead>
+                                    <TableHead className="font-semibold">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="-ml-3 h-8 data-[state=open]:bg-accent"
+                                            onClick={() => handleSort('totalPrice')}
+                                        >
+                                            Tutar
+                                            {filters.sortBy === 'totalPrice' ? (
+                                                filters.sortOrder === 'ASC' ? <ArrowUp className="ml-2 h-4 w-4" /> : <ArrowDown className="ml-2 h-4 w-4" />
+                                            ) : (
+                                                <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
+                                            )}
+                                        </Button>
+                                    </TableHead>
+                                    <TableHead className="font-semibold">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="-ml-3 h-8 data-[state=open]:bg-accent"
+                                            onClick={() => handleSort('status')}
+                                        >
+                                            Durum
+                                            {filters.sortBy === 'status' ? (
+                                                filters.sortOrder === 'ASC' ? <ArrowUp className="ml-2 h-4 w-4" /> : <ArrowDown className="ml-2 h-4 w-4" />
+                                            ) : (
+                                                <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
+                                            )}
+                                        </Button>
+                                    </TableHead>
                                     <TableHead className="text-right font-semibold">İşlemler</TableHead>
                                 </TableRow>
                             </TableHeader>
@@ -537,8 +702,8 @@ export function OrdersTable({
                                     </TableRow>
                                 ) : (
                                     orders.map((order) => (
-                                        <>
-                                            <TableRow key={order.id} className="hover:bg-muted/30 group transition-colors data-[state=selected]:bg-muted" data-state={selectedIds.has(order.id) ? "selected" : ""}>
+                                        <React.Fragment key={order.id}>
+                                            <TableRow className="hover:bg-muted/30 group transition-colors data-[state=selected]:bg-muted" data-state={selectedIds.has(order.id) ? "selected" : ""}>
                                                 <TableCell className="text-center">
                                                     <Checkbox
                                                         checked={selectedIds.has(order.id)}
@@ -552,7 +717,9 @@ export function OrdersTable({
                                                 </TableCell>
                                                 <TableCell>
                                                     <div className="flex flex-col">
-                                                        <span className="font-medium text-foreground">{order.orderNumber}</span>
+                                                        <Link href={`/orders/${order.id}`} className="font-medium text-foreground hover:text-primary hover:underline">
+                                                            {order.orderNumber}
+                                                        </Link>
                                                         <span className="text-xs text-muted-foreground font-mono">{
                                                             // @ts-ignore
                                                             order.packageId
@@ -583,16 +750,19 @@ export function OrdersTable({
                                                         minute: '2-digit'
                                                     })}
                                                 </TableCell>
-                                                <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
-                                                    {order.agreedDeliveryDate
-                                                        ? new Date(order.agreedDeliveryDate).toLocaleString('tr-TR', {
-                                                            day: '2-digit',
-                                                            month: '2-digit',
-                                                            year: 'numeric',
-                                                            hour: '2-digit',
-                                                            minute: '2-digit'
-                                                        })
-                                                        : '-'}
+                                                <TableCell className="text-sm whitespace-nowrap">
+                                                    {(() => {
+                                                        const countdown = getDeliveryCountdown(order.agreedDeliveryDate);
+                                                        return (
+                                                            <span className={cn(
+                                                                countdown.isOverdue && "text-red-600 font-medium",
+                                                                countdown.isUrgent && !countdown.isOverdue && "text-orange-600 font-medium",
+                                                                !countdown.isOverdue && !countdown.isUrgent && "text-muted-foreground"
+                                                            )}>
+                                                                {countdown.text}
+                                                            </span>
+                                                        );
+                                                    })()}
                                                 </TableCell>
                                                 <TableCell className="font-medium">
                                                     {new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(order.totalPrice)}
@@ -614,6 +784,19 @@ export function OrdersTable({
                                                         >
                                                             {invoiceLoading === order.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
                                                         </Button>
+
+                                                        {!order.cargoTrackingNumber && !order.integration && (
+                                                            <Button
+                                                                size="icon"
+                                                                variant="ghost"
+                                                                className="h-8 w-8 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50"
+                                                                title="Aras Kargo'ya Gönder"
+                                                                onClick={() => handleCreateShipment(order.id)}
+                                                                disabled={invoiceLoading === order.id}
+                                                            >
+                                                                {invoiceLoading === order.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                                                            </Button>
+                                                        )}
 
                                                         {order.cargoTrackingNumber && (
                                                             <Button
@@ -712,7 +895,7 @@ export function OrdersTable({
                                                     </TableCell>
                                                 </TableRow>
                                             )}
-                                        </>
+                                        </React.Fragment>
                                     ))
                                 )}
                             </TableBody>

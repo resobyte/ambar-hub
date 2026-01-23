@@ -18,6 +18,27 @@ export class ScanPickingBarcodeDto {
     quantity?: number;
 }
 
+export class ScanShelfDto {
+    @IsString()
+    shelfBarcode: string;
+
+    @IsUUID()
+    routeId: string;
+}
+
+export class ScanProductWithShelfDto {
+    @IsString()
+    productBarcode: string;
+
+    @IsUUID()
+    routeId: string;
+
+    @IsNumber()
+    @IsOptional()
+    @Min(1)
+    quantity?: number;
+}
+
 export class BulkScanDto {
     @IsArray()
     @IsString({ each: true })

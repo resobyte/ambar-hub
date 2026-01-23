@@ -55,19 +55,8 @@ import {
   updateProduct,
   deleteProduct,
   getProductStores,
-  createProductStore,
-  updateProductStore,
-  deleteProductStore,
-  getStores,
-  getIntegrations,
-  getIntegrationStores,
-  getProductIntegrations,
-  createProductIntegration,
-  updateProductIntegration,
-  deleteProductIntegration,
   getProductSetItems,
   updateProductSetItems,
-  ProductSetItem,
   getBrands,
   getCategories,
   Brand,
@@ -76,54 +65,9 @@ import {
   ProductFilters,
 } from '@/lib/api';
 import { useToast } from '@/components/ui/use-toast';
-import { ProductStoreList } from '@/components/products/ProductStoreList';
 import { Combobox } from '@/components/ui/combobox';
-import { Loader2, Pencil, Trash2, Plus, Upload, Download, Search } from 'lucide-react';
+import { Loader2, Pencil, Trash2, Plus, Upload, Download, Search, ExternalLink } from 'lucide-react';
 
-
-interface ProductStore {
-  id: string;
-  productId: string;
-  storeId: string;
-  storeName?: string;
-  storeSku: string | null;
-  storeSalePrice: number | null;
-  stockQuantity: number;
-  sellableQuantity: number;
-  reservableQuantity: number;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface Store {
-  id: string;
-  name: string;
-}
-
-interface Integration {
-  id: string;
-  name: string;
-  type: string;
-  isActive: boolean;
-}
-
-interface IntegrationStore {
-  id: string;
-  integrationId: string;
-  storeId: string;
-  isActive: boolean;
-  integration?: Integration;
-}
-
-interface ProductIntegration {
-  id: string;
-  productStoreId: string;
-  integrationId: string;
-  integrationSalePrice: number | null;
-  isActive: boolean;
-  integration?: Integration;
-}
 
 interface ProductFormData {
   name: string;
@@ -141,37 +85,12 @@ interface ProductFormData {
   setPrice: number;
 }
 
-interface StoreConfigData {
-  storeId: string;
-  storeSku: string;
-  storeSalePrice: number;
-  stockQuantity: number;
-  sellableQuantity?: number;
-  reservableQuantity?: number;
-  isActive: boolean;
-}
-
-interface IntegrationConfigData {
-  integrationId: string;
-  integrationSalePrice: number;
-  isActive: boolean;
-}
-
 const VAT_RATES = [
   { value: '1', label: '1%' },
   { value: '8', label: '8%' },
   { value: '10', label: '10%' },
   { value: '20', label: '20%' },
 ];
-
-const DEFAULT_STORE_CONFIG: Omit<StoreConfigData, 'storeId' | 'storeSku' | 'storeSalePrice' | 'stockQuantity'> = {
-  isActive: true,
-};
-
-const DEFAULT_INTEGRATION_CONFIG: Omit<IntegrationConfigData, 'integrationId'> = {
-  integrationSalePrice: 0,
-  isActive: true,
-};
 
 const PRODUCT_TYPES = [
   { value: 'SIMPLE', label: 'Tekli Ürün' },
@@ -195,11 +114,6 @@ export function ProductsTable() {
   const [products, setProducts] = useState<Product[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [stores, setStores] = useState<Store[]>([]);
-  const [productStores, setProductStores] = useState<ProductStore[]>([]);
-  const [integrations, setIntegrations] = useState<Integration[]>([]);
-  const [integrationStores, setIntegrationStores] = useState<IntegrationStore[]>([]);
-  const [productIntegrations, setProductIntegrations] = useState<ProductIntegration[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
@@ -245,12 +159,6 @@ export function ProductsTable() {
     productType: 'SIMPLE',
     setPrice: 0,
   });
-  const [initialStoreConfigs, setInitialStoreConfigs] = useState<Map<string, StoreConfigData>>(new Map());
-  const [initialSelectedStoreIds, setInitialSelectedStoreIds] = useState<string[]>([]);
-  const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
-  const [storeConfigs, setStoreConfigs] = useState<Map<string, StoreConfigData>>(new Map());
-  const [integrationConfigs, setIntegrationConfigs] = useState<Map<string, Map<string, IntegrationConfigData>>>(new Map());
-  const [initialIntegrationConfigs, setInitialIntegrationConfigs] = useState<Map<string, Map<string, IntegrationConfigData>>>(new Map());
   const formDataRef = useRef(formData);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -328,67 +236,10 @@ export function ProductsTable() {
     }
   }, [toast]);
 
-  const fetchStores = useCallback(async () => {
-    try {
-      const response = await getStores(1, 100);
-      setStores(response.data);
-    } catch (err) {
-      toast({ variant: 'destructive', title: 'Hata', description: 'Mağazalar yüklenemedi' });
-    }
-  }, [toast]);
-
-  const fetchProductStores = useCallback(async () => {
-    try {
-      const data = await getProductStores();
-      setProductStores(data);
-    } catch (err) {
-      toast({ variant: 'destructive', title: 'Hata', description: 'Ürün-mağaza bağlantıları yüklenemedi' });
-    }
-  }, [toast]);
-
-  const fetchIntegrations = useCallback(async () => {
-    try {
-      const response = await getIntegrations(1, 100);
-      setIntegrations(response.data);
-    } catch (err) {
-      toast({ variant: 'destructive', title: 'Hata', description: 'Entegrasyonlar yüklenemedi' });
-    }
-  }, [toast]);
-
-  const fetchIntegrationStores = useCallback(async () => {
-    try {
-      const data = await getIntegrationStores();
-      setIntegrationStores(data);
-    } catch (err) {
-      toast({ variant: 'destructive', title: 'Hata', description: 'Entegrasyon-mağaza bağlantıları yüklenemedi' });
-    }
-  }, [toast]);
-
-  const fetchProductIntegrations = useCallback(async () => {
-    try {
-      const data = await getProductIntegrations();
-      setProductIntegrations(data);
-    } catch (err) {
-      toast({ variant: 'destructive', title: 'Hata', description: 'Ürün-entegrasyon bağlantıları yüklenemedi' });
-    }
-  }, [toast]);
-
   useEffect(() => {
     fetchProducts();
-    fetchStores();
-    fetchProductStores();
-    fetchIntegrations();
-    fetchIntegrationStores();
-    fetchProductIntegrations();
     fetchBrandsAndCategories();
-  }, [fetchProducts, fetchStores, fetchProductStores, fetchIntegrations, fetchIntegrationStores, fetchProductIntegrations, fetchBrandsAndCategories]);
-
-  const getStoreIntegrations = useCallback((storeId: string): Integration[] => {
-    return integrationStores
-      .filter(is => is.storeId === storeId && is.isActive)
-      .map(is => integrations.find(i => i.id === is.integrationId))
-      .filter((i): i is Integration => !!i && i.isActive);
-  }, [integrationStores, integrations]);
+  }, [fetchProducts, fetchBrandsAndCategories]);
 
   const handleCreate = useCallback(() => {
     setEditingProduct(null);
@@ -411,12 +262,6 @@ export function ProductsTable() {
     formDataRef.current = newData;
     setInitialFormData(newData);
     setSetComponents([]);
-    setSelectedStoreIds([]);
-    setInitialSelectedStoreIds([]);
-    setStoreConfigs(new Map());
-    setInitialStoreConfigs(new Map());
-    setIntegrationConfigs(new Map());
-    setInitialIntegrationConfigs(new Map());
     setIsModalOpen(true);
   }, []);
 
@@ -454,46 +299,8 @@ export function ProductsTable() {
       setSetComponents([]);
     }
 
-    const existingConfigs = productStores.filter(ps => ps && ps.productId === product.id);
-    const storeIds = existingConfigs.map(ps => ps.storeId);
-    setSelectedStoreIds(storeIds);
-
-    const configsMap = new Map<string, StoreConfigData>();
-    existingConfigs.forEach(ps => {
-      configsMap.set(ps.storeId, {
-        storeId: ps.storeId,
-        storeSku: ps.storeSku || '',
-        storeSalePrice: ps.storeSalePrice || 0,
-        stockQuantity: ps.stockQuantity,
-        sellableQuantity: ps.sellableQuantity,
-        reservableQuantity: ps.reservableQuantity,
-        isActive: ps.isActive,
-      });
-    });
-    setStoreConfigs(configsMap);
-    setInitialStoreConfigs(new Map(configsMap));
-    setInitialSelectedStoreIds([...storeIds]);
-
-    const integrationConfigsMap = new Map<string, Map<string, IntegrationConfigData>>();
-    existingConfigs.forEach(ps => {
-      const storeIntegrations = productIntegrations.filter(
-        pi => pi.productStoreId === ps.id
-      );
-      const storeMap = new Map<string, IntegrationConfigData>();
-      storeIntegrations.forEach(pi => {
-        storeMap.set(pi.integrationId, {
-          integrationId: pi.integrationId,
-          integrationSalePrice: pi.integrationSalePrice || 0,
-          isActive: pi.isActive,
-        });
-      });
-      integrationConfigsMap.set(ps.storeId, storeMap);
-    });
-    setIntegrationConfigs(integrationConfigsMap);
-    setInitialIntegrationConfigs(new Map(integrationConfigsMap));
-
     setIsModalOpen(true);
-  }, [productStores, productIntegrations]);
+  }, []);
 
   const handleDelete = useCallback((id: string) => {
     setDeletingProductId(id);
@@ -505,6 +312,7 @@ export function ProductsTable() {
     try {
       const currentFormData = formDataRef.current;
       let productId: string;
+      const isNewProduct = !editingProduct;
 
       if (editingProduct) {
         const updated = await updateProduct(editingProduct.id, currentFormData);
@@ -513,94 +321,29 @@ export function ProductsTable() {
       } else {
         const created = await createProduct(currentFormData);
         productId = created.data.id;
-        toast({ title: 'Başarılı', description: 'Ürün başarıyla oluşturuldu', variant: 'success' });
+        toast({
+          title: 'Başarılı',
+          description: 'Ürün oluşturuldu. Mağazaya eklemek için ürün detayına gidin.',
+          variant: 'success',
+          action: (
+            <Button variant="outline" size="sm" onClick={() => window.location.href = `/products/${productId}`}>
+              <ExternalLink className="w-4 h-4 mr-1" />
+              Detaya Git
+            </Button>
+          ),
+        });
       }
 
       if (currentFormData.productType === 'SET' && setComponents.length > 0) {
         await updateProductSetItems(productId, setComponents.filter(c => c.componentProductId));
       }
 
-      const existingConfigs = productStores.filter(ps => ps && ps.productId === (editingProduct?.id || productId));
-      const existingStoreIds = new Set(existingConfigs.map(ps => ps.storeId));
-
-      for (const storeId of selectedStoreIds) {
-        const config = storeConfigs.get(storeId);
-        if (!config) continue;
-
-        const existingConfig = existingConfigs.find(ps => ps.storeId === storeId);
-        let productStoreId: string;
-
-        if (existingConfig) {
-          await updateProductStore(existingConfig.id, {
-            storeSku: config.storeSku || undefined,
-            storeSalePrice: config.storeSalePrice || undefined,
-            stockQuantity: config.stockQuantity,
-            isActive: config.isActive,
-          });
-          productStoreId = existingConfig.id;
-        } else {
-          const created = await createProductStore({
-            productId,
-            storeId,
-            storeSku: config.storeSku || undefined,
-            storeSalePrice: config.storeSalePrice || undefined,
-            stockQuantity: config.stockQuantity,
-            isActive: config.isActive,
-          });
-          productStoreId = created.data.id;
-        }
-        existingStoreIds.delete(storeId);
-
-        const storeIntegrationConfigs = integrationConfigs.get(storeId);
-        if (storeIntegrationConfigs) {
-          const existingProductIntegrations = productIntegrations.filter(
-            pi => pi.productStoreId === (existingConfig?.id || productStoreId)
-          );
-          const existingIntegrationIds = new Set(existingProductIntegrations.map(pi => pi.integrationId));
-
-          Array.from(storeIntegrationConfigs.entries()).forEach(async ([integrationId, integrationConfig]) => {
-            const existingPI = existingProductIntegrations.find(pi => pi.integrationId === integrationId);
-            if (existingPI) {
-              await updateProductIntegration(existingPI.id, {
-                integrationSalePrice: integrationConfig.integrationSalePrice || undefined,
-                isActive: integrationConfig.isActive,
-              });
-              existingIntegrationIds.delete(integrationId);
-            } else {
-              await createProductIntegration({
-                productStoreId,
-                integrationId,
-                integrationSalePrice: integrationConfig.integrationSalePrice || undefined,
-                isActive: integrationConfig.isActive,
-              });
-            }
-          });
-
-          Array.from(existingIntegrationIds).forEach(async (integrationId) => {
-            const piToRemove = existingProductIntegrations.find(pi => pi.integrationId === integrationId);
-            if (piToRemove) {
-              await deleteProductIntegration(piToRemove.id);
-            }
-          });
-        }
-      }
-
-      const storeIdsToRemove = Array.from(existingStoreIds);
-      for (const storeId of storeIdsToRemove) {
-        const configToRemove = existingConfigs.find(ps => ps.storeId === storeId);
-        if (configToRemove) {
-          await deleteProductStore(configToRemove.id);
-        }
-      }
-
       setIsModalOpen(false);
       fetchProducts();
-      fetchProductStores();
-      fetchProductIntegrations();
     } catch (err: any) {
       toast({ variant: 'destructive', title: 'Hata', description: err.message || 'İşlem başarısız' });
     }
-  }, [editingProduct, selectedStoreIds, storeConfigs, integrationConfigs, productStores, productIntegrations, fetchProducts, fetchProductStores, fetchProductIntegrations, toast, setComponents]);
+  }, [editingProduct, fetchProducts, toast, setComponents]);
 
   const updateFormField = useCallback(<K extends keyof ProductFormData>(
     field: K,
@@ -613,148 +356,14 @@ export function ProductsTable() {
     });
   }, []);
 
-  const handleStoreSelectionChange = useCallback((storeId: string, selected: boolean) => {
-    setSelectedStoreIds(prev => {
-      const newSelection = selected
-        ? [...prev, storeId]
-        : prev.filter(id => id !== storeId);
-
-      if (selected && !storeConfigs.has(storeId)) {
-        setStoreConfigs(prev => new Map(prev).set(storeId, {
-          ...DEFAULT_STORE_CONFIG,
-          storeId,
-          storeSku: '',
-          storeSalePrice: 0,
-          stockQuantity: 0,
-          sellableQuantity: 0,
-          reservableQuantity: 0,
-        }));
-      }
-
-      if (selected) {
-        const storeIntegrations = getStoreIntegrations(storeId);
-        setIntegrationConfigs(prev => {
-          const newMap = new Map(prev);
-          const integrationMap = new Map<string, IntegrationConfigData>();
-          storeIntegrations.forEach(integration => {
-            integrationMap.set(integration.id, {
-              ...DEFAULT_INTEGRATION_CONFIG,
-              integrationId: integration.id,
-            });
-          });
-          newMap.set(storeId, integrationMap);
-          return newMap;
-        });
-      } else {
-        setIntegrationConfigs(prev => {
-          const newMap = new Map(prev);
-          newMap.delete(storeId);
-          return newMap;
-        });
-      }
-
-      return newSelection;
-    });
-  }, [storeConfigs, getStoreIntegrations]);
-
-  const updateStoreConfig = useCallback(<K extends keyof Omit<StoreConfigData, 'storeId'>>(
-    storeId: string,
-    field: K,
-    value: StoreConfigData[K]
-  ) => {
-    setStoreConfigs(prev => {
-      const newMap = new Map(prev);
-      const current = newMap.get(storeId) || {
-        ...DEFAULT_STORE_CONFIG,
-        storeId,
-        storeSku: '',
-        storeSalePrice: 0,
-        stockQuantity: 0,
-        sellableQuantity: 0,
-        reservableQuantity: 0,
-      };
-      newMap.set(storeId, { ...current, [field]: value });
-      return newMap;
-    });
-  }, []);
-
-  const updateIntegrationConfig = useCallback((
-    storeId: string,
-    integrationId: string,
-    field: keyof Omit<IntegrationConfigData, 'integrationId'>,
-    value: IntegrationConfigData[keyof Omit<IntegrationConfigData, 'integrationId'>]
-  ) => {
-    setIntegrationConfigs(prev => {
-      const newMap = new Map(prev);
-      const storeMap = newMap.get(storeId) || new Map<string, IntegrationConfigData>();
-      const current = storeMap.get(integrationId) || {
-        ...DEFAULT_INTEGRATION_CONFIG,
-        integrationId,
-      };
-      storeMap.set(integrationId, { ...current, [field]: value });
-      newMap.set(storeId, storeMap);
-      return newMap;
-    });
-  }, []);
-
-  const connectedStoreIds = useMemo(() => {
-    if (!editingProduct) return [];
-    return productStores
-      .filter(ps => ps && ps.productId === editingProduct.id)
-      .map(ps => ps.storeId);
-  }, [productStores, editingProduct]);
 
   const isFormValid = useMemo(() => {
-    const productValid = formData.name.trim().length > 0;
-    const storeIdsToValidate = editingProduct
-      ? Array.from(new Set([...selectedStoreIds, ...connectedStoreIds]))
-      : selectedStoreIds;
-    const storeConfigsValid = storeIdsToValidate.every(storeId => {
-      const config = storeConfigs.get(storeId);
-      return config !== undefined;
-    });
-    return productValid && storeConfigsValid;
-  }, [formData.name, selectedStoreIds, storeConfigs, editingProduct, connectedStoreIds]);
+    return formData.name.trim().length > 0;
+  }, [formData.name]);
 
   const isFormDirty = useMemo(() => {
-    const hasProductChanges = JSON.stringify(formData) !== JSON.stringify(initialFormData);
-    const hasStoreSelectionChanges =
-      selectedStoreIds.length !== initialSelectedStoreIds.length ||
-      selectedStoreIds.some(id => !initialSelectedStoreIds.includes(id)) ||
-      initialSelectedStoreIds.some(id => !selectedStoreIds.includes(id));
-    const hasStoreConfigChanges = selectedStoreIds.some(storeId => {
-      const current = storeConfigs.get(storeId);
-      const initial = initialStoreConfigs.get(storeId);
-      if (!current && !initial) return false;
-      if (!current || !initial) return true;
-      return (
-        current.storeSku !== initial.storeSku ||
-        current.storeSalePrice !== initial.storeSalePrice ||
-        current.stockQuantity !== initial.stockQuantity ||
-        current.isActive !== initial.isActive
-      );
-    });
-    const hasIntegrationConfigChanges = selectedStoreIds.some(storeId => {
-      const currentStoreMap = integrationConfigs.get(storeId);
-      const initialStoreMap = initialIntegrationConfigs.get(storeId);
-      if (!currentStoreMap && !initialStoreMap) return false;
-      if (!currentStoreMap || !initialStoreMap) return true;
-      const currentIntegrationIds = Array.from(currentStoreMap.keys());
-      const initialIntegrationIds = Array.from(initialStoreMap.keys());
-      if (currentIntegrationIds.length !== initialIntegrationIds.length) return true;
-      if (currentIntegrationIds.some(id => !initialIntegrationIds.includes(id))) return true;
-      if (initialIntegrationIds.some(id => !currentIntegrationIds.includes(id))) return true;
-      return currentIntegrationIds.some(integrationId => {
-        const current = currentStoreMap.get(integrationId);
-        const initial = initialStoreMap.get(integrationId);
-        return (
-          current?.integrationSalePrice !== initial?.integrationSalePrice ||
-          current?.isActive !== initial?.isActive
-        );
-      });
-    });
-    return hasProductChanges || hasStoreSelectionChanges || hasStoreConfigChanges || hasIntegrationConfigChanges;
-  }, [formData, initialFormData, selectedStoreIds, initialSelectedStoreIds, storeConfigs, initialStoreConfigs, integrationConfigs, initialIntegrationConfigs]);
+    return JSON.stringify(formData) !== JSON.stringify(initialFormData);
+  }, [formData, initialFormData]);
 
   const canSubmit = useMemo(() => {
     return isFormValid && (isFormDirty || !editingProduct);
@@ -767,11 +376,10 @@ export function ProductsTable() {
       toast({ title: 'Başarılı', description: 'Ürün başarıyla silindi', variant: 'success' });
       setIsDeleteModalOpen(false);
       fetchProducts();
-      fetchProductStores();
     } catch (err: any) {
       toast({ variant: 'destructive', title: 'Hata', description: err.message || 'Silme başarısız' });
     }
-  }, [deletingProductId, fetchProducts, fetchProductStores, toast]);
+  }, [deletingProductId, fetchProducts, toast]);
 
   return (
     <div className="space-y-6">
@@ -953,7 +561,17 @@ export function ProductsTable() {
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8"
+                          onClick={() => window.location.href = `/products/${product.id}`}
+                          title="Detaya Git"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
                           onClick={() => handleEdit(product)}
+                          title="Düzenle"
                         >
                           <Pencil className="w-4 h-4" />
                         </Button>
@@ -962,6 +580,7 @@ export function ProductsTable() {
                           size="icon"
                           className="h-8 w-8 text-destructive hover:text-destructive"
                           onClick={() => handleDelete(product.id)}
+                          title="Sil"
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
@@ -1226,20 +845,16 @@ export function ProductsTable() {
               </div>
             )}
 
-            {/* Store Configuration */}
-            <div className="border-t border-border pt-4">
-              <ProductStoreList
-                stores={stores}
-                selectedStoreIds={selectedStoreIds}
-                connectedStoreIds={connectedStoreIds}
-                storeConfigs={storeConfigs}
-                integrationConfigs={integrationConfigs}
-                getStoreIntegrations={getStoreIntegrations}
-                onStoreSelectionChange={handleStoreSelectionChange}
-                onStoreConfigChange={updateStoreConfig}
-                onIntegrationConfigChange={updateIntegrationConfig}
-              />
-            </div>
+            {/* Info message about store configuration */}
+            {!editingProduct && (
+              <div className="border-t border-border pt-4">
+                <div className="rounded-lg border border-dashed p-4 text-center text-muted-foreground">
+                  <p className="text-sm">
+                    Ürünü oluşturduktan sonra, ürün detay sayfasından mağazalara ekleyebilirsiniz.
+                  </p>
+                </div>
+              </div>
+            )}
 
             <div className="flex justify-end gap-2 pt-2 border-t border-border">
               <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>

@@ -3,6 +3,8 @@ import {
     NotFoundException,
     BadRequestException,
     Logger,
+    Inject,
+    forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
@@ -13,12 +15,17 @@ import { Order } from '../orders/entities/order.entity';
 import { OrderItem } from '../orders/entities/order-item.entity';
 import { Product } from '../products/entities/product.entity';
 import { ShelfStock } from '../shelves/entities/shelf-stock.entity';
+import { Shelf } from '../shelves/entities/shelf.entity';
+import { OrderHistoryService } from '../orders/order-history.service';
+import { OrderHistoryAction } from '../orders/entities/order-history.entity';
 
 export interface PickingItem {
     barcode: string;
     productName: string;
     productColor?: string;
     productSize?: string;
+    shelfId?: string;
+    shelfBarcode?: string;
     shelfLocation?: string;
     shelfPath?: string;
     totalQuantity: number;
@@ -29,6 +36,12 @@ export interface PickingItem {
         orderNumber: string;
         quantity: number;
     }[];
+}
+
+export interface CurrentPickingState {
+    currentShelfId?: string;
+    currentShelfBarcode?: string;
+    shelfValidated: boolean;
 }
 
 export interface PickingProgress {
@@ -49,6 +62,9 @@ export class PickingService {
     // In-memory store for picking progress (could be Redis in production)
     private pickingProgress = new Map<string, Map<string, number>>();
 
+    // In-memory store for current picking state per route (validated shelf, etc.)
+    private pickingState = new Map<string, CurrentPickingState>();
+
     constructor(
         @InjectRepository(Route)
         private readonly routeRepository: Repository<Route>,
@@ -62,6 +78,10 @@ export class PickingService {
         private readonly productRepository: Repository<Product>,
         @InjectRepository(ShelfStock)
         private readonly shelfStockRepository: Repository<ShelfStock>,
+        @InjectRepository(Shelf)
+        private readonly shelfRepository: Repository<Shelf>,
+        @Inject(forwardRef(() => OrderHistoryService))
+        private readonly orderHistoryService: OrderHistoryService,
     ) { }
 
     async getPickingProgress(routeId: string): Promise<PickingProgress> {
@@ -173,12 +193,24 @@ export class PickingService {
                 }
 
                 // Update items with shelf info
+                const productShelfIdMap = new Map<string, string>();
+                const productShelfBarcodeMap = new Map<string, string>();
+
+                for (const [productId, stocks] of stocksByProduct) {
+                    if (stocks.length > 0 && stocks[0].shelf) {
+                        productShelfIdMap.set(productId, stocks[0].shelfId);
+                        productShelfBarcodeMap.set(productId, stocks[0].shelf.barcode);
+                    }
+                }
+
                 for (const [barcode, item] of itemMap) {
                     const product = productMap.get(barcode);
                     if (product) {
                         const shelfLoc = productShelfMap.get(product.id);
                         if (shelfLoc) {
                             item.shelfLocation = shelfLoc;
+                            item.shelfId = productShelfIdMap.get(product.id);
+                            item.shelfBarcode = productShelfBarcodeMap.get(product.id);
                         }
                     }
                 }
@@ -278,6 +310,9 @@ export class PickingService {
                 pickedItemCount: updatedProgress.pickedItems,
             });
             updatedProgress.status = RouteStatus.READY;
+
+            // Log picking completed for all orders in route
+            await this.logPickingCompleted(routeId);
         } else {
             // Just update picked count
             await this.routeRepository.update(routeId, {
@@ -370,8 +405,9 @@ export class PickingService {
             throw new NotFoundException('Route not found');
         }
 
-        // Clear picked items
+        // Clear picked items and state
         this.pickingProgress.delete(routeId);
+        this.pickingState.delete(routeId);
 
         // Reset route status if needed
         if (route.status === RouteStatus.READY) {
@@ -379,6 +415,255 @@ export class PickingService {
                 status: RouteStatus.COLLECTING,
                 pickedItemCount: 0,
             });
+        }
+    }
+
+    async getNextPickingItem(routeId: string): Promise<{
+        item: PickingItem | null;
+        state: CurrentPickingState;
+        isComplete: boolean;
+    }> {
+        const progress = await this.getPickingProgress(routeId);
+        const state = this.pickingState.get(routeId) || { shelfValidated: false };
+
+        // Find first incomplete item
+        const nextItem = progress.items.find(item => !item.isComplete);
+
+        return {
+            item: nextItem || null,
+            state,
+            isComplete: progress.isComplete,
+        };
+    }
+
+    async scanShelf(routeId: string, shelfBarcode: string): Promise<{
+        success: boolean;
+        message: string;
+        expectedShelf?: string;
+        scannedShelf?: string;
+        nextItem?: PickingItem;
+    }> {
+        const route = await this.routeRepository.findOne({
+            where: { id: routeId },
+        });
+
+        if (!route) {
+            throw new NotFoundException('Route not found');
+        }
+
+        if (route.status !== RouteStatus.COLLECTING) {
+            throw new BadRequestException('Route is not in collecting status');
+        }
+
+        // Find the shelf by barcode
+        const shelf = await this.shelfRepository.findOne({
+            where: { barcode: shelfBarcode },
+        });
+
+        if (!shelf) {
+            return {
+                success: false,
+                message: `Raf bulunamadı: ${shelfBarcode}`,
+            };
+        }
+
+        // Get next item to pick
+        const { item: nextItem } = await this.getNextPickingItem(routeId);
+
+        if (!nextItem) {
+            return {
+                success: false,
+                message: 'Tüm ürünler toplandı, toplanacak ürün kalmadı.',
+            };
+        }
+
+        // Check if this is the expected shelf
+        if (nextItem.shelfId && nextItem.shelfId !== shelf.id) {
+            return {
+                success: false,
+                message: `Yanlış raf! Beklenen: ${nextItem.shelfLocation || nextItem.shelfBarcode}`,
+                expectedShelf: nextItem.shelfBarcode,
+                scannedShelf: shelfBarcode,
+            };
+        }
+
+        // Update state - shelf validated
+        this.pickingState.set(routeId, {
+            currentShelfId: shelf.id,
+            currentShelfBarcode: shelf.barcode,
+            shelfValidated: true,
+        });
+
+        return {
+            success: true,
+            message: `Raf doğrulandı: ${shelf.name}. Şimdi ürünü okutun.`,
+            scannedShelf: shelfBarcode,
+            nextItem,
+        };
+    }
+
+    async scanProductWithShelfValidation(
+        routeId: string,
+        productBarcode: string,
+        quantity: number = 1
+    ): Promise<{
+        success: boolean;
+        message: string;
+        item?: PickingItem;
+        progress?: PickingProgress;
+        requiresShelfScan?: boolean;
+    }> {
+        const route = await this.routeRepository.findOne({
+            where: { id: routeId },
+        });
+
+        if (!route) {
+            throw new NotFoundException('Route not found');
+        }
+
+        if (route.status !== RouteStatus.COLLECTING) {
+            throw new BadRequestException('Route is not in collecting status');
+        }
+
+        // Get current state
+        const state = this.pickingState.get(routeId) || { shelfValidated: false };
+
+        // Get progress and find the item
+        const progress = await this.getPickingProgress(routeId);
+        const item = progress.items.find(i => i.barcode === productBarcode);
+
+        if (!item) {
+            return {
+                success: false,
+                message: `Barkod bu rotada bulunamadı: ${productBarcode}`,
+            };
+        }
+
+        if (item.isComplete) {
+            return {
+                success: false,
+                message: `Bu ürün zaten tamamlandı: ${item.productName}`,
+                item,
+            };
+        }
+
+        // Check if shelf needs to be scanned first
+        if (item.shelfId && !state.shelfValidated) {
+            return {
+                success: false,
+                message: `Önce rafı okutun: ${item.shelfLocation || item.shelfBarcode}`,
+                requiresShelfScan: true,
+                item,
+            };
+        }
+
+        // If shelf was validated, check it matches the item's shelf
+        if (state.shelfValidated && item.shelfId && state.currentShelfId !== item.shelfId) {
+            return {
+                success: false,
+                message: `Bu ürün farklı bir rafta. Önce doğru rafı okutun: ${item.shelfLocation}`,
+                requiresShelfScan: true,
+                item,
+            };
+        }
+
+        // Proceed with picking - update quantity
+        if (!this.pickingProgress.has(routeId)) {
+            this.pickingProgress.set(routeId, new Map());
+        }
+        const routePickedItems = this.pickingProgress.get(routeId)!;
+        const currentQty = routePickedItems.get(productBarcode) || 0;
+
+        const newQty = Math.min(currentQty + quantity, item.totalQuantity);
+        if (newQty === currentQty && quantity > 0) {
+            return {
+                success: false,
+                message: `Daha fazla ürün toplanamaz. (İstenen: ${currentQty + quantity}, Toplam: ${item.totalQuantity})`,
+                item,
+            };
+        }
+
+        routePickedItems.set(productBarcode, newQty);
+
+        // Deduct stock from shelf
+        if (state.currentShelfId) {
+            const product = await this.productRepository.findOne({
+                where: { barcode: productBarcode },
+            });
+
+            if (product) {
+                const shelfStock = await this.shelfStockRepository.findOne({
+                    where: { shelfId: state.currentShelfId, productId: product.id },
+                });
+
+                if (shelfStock && shelfStock.quantity >= quantity) {
+                    shelfStock.quantity -= quantity;
+                    await this.shelfStockRepository.save(shelfStock);
+                    this.logger.log(`Deducted ${quantity} of ${productBarcode} from shelf ${state.currentShelfBarcode}`);
+                } else {
+                    this.logger.warn(`Insufficient stock on shelf for ${productBarcode}. Available: ${shelfStock?.quantity || 0}`);
+                }
+            }
+        }
+
+        // Get updated progress
+        const updatedProgress = await this.getPickingProgress(routeId);
+        const updatedItem = updatedProgress.items.find(i => i.barcode === productBarcode)!;
+
+        // If this item is complete, reset shelf validation for next item
+        if (updatedItem.isComplete) {
+            this.pickingState.set(routeId, { shelfValidated: false });
+        }
+
+        // Check if all items complete - update route status
+        if (updatedProgress.isComplete) {
+            await this.routeRepository.update(routeId, {
+                status: RouteStatus.READY,
+                pickedItemCount: updatedProgress.pickedItems,
+            });
+            updatedProgress.status = RouteStatus.READY;
+        } else {
+            await this.routeRepository.update(routeId, {
+                pickedItemCount: updatedProgress.pickedItems,
+            });
+        }
+
+        return {
+            success: true,
+            message: updatedItem.isComplete
+                ? `✓ ${updatedItem.productName} tamamlandı!`
+                : `${updatedItem.productName} (${updatedItem.pickedQuantity}/${updatedItem.totalQuantity})`,
+            item: updatedItem,
+            progress: updatedProgress,
+        };
+    }
+
+    getPickingState(routeId: string): CurrentPickingState {
+        return this.pickingState.get(routeId) || { shelfValidated: false };
+    }
+
+    private async logPickingCompleted(routeId: string, userId?: string): Promise<void> {
+        try {
+            const route = await this.routeRepository.findOne({
+                where: { id: routeId },
+            });
+
+            const routeOrders = await this.routeOrderRepository.find({
+                where: { routeId },
+            });
+
+            for (const ro of routeOrders) {
+                await this.orderHistoryService.logEvent({
+                    orderId: ro.orderId,
+                    action: OrderHistoryAction.PICKING_COMPLETED,
+                    userId: userId || route?.createdById,
+                    routeId,
+                    routeName: route?.name,
+                    description: `Sipariş toplama tamamlandı - Rota: ${route?.name}`,
+                });
+            }
+        } catch (error) {
+            this.logger.error(`Failed to log picking completed: ${error.message}`);
         }
     }
 }

@@ -13,6 +13,7 @@ import * as XLSX from 'xlsx';
 import { ProductSetItem } from '../products/entities/product-set-item.entity';
 import { ProductType } from '../products/enums/product-type.enum';
 import { ProductStore } from '../product-stores/entities/product-store.entity';
+import { RouteOrder } from '../routes/entities/route-order.entity';
 import { ArasKargoService } from '../integrations/aras/aras-kargo.service';
 import axios from 'axios';
 
@@ -20,6 +21,14 @@ import { InvoicesService } from '../invoices/invoices.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { randomUUID } from 'crypto';
 import { Customer, CustomerType } from '../customers/entities/customer.entity';
+
+export interface CancelOrderResult {
+    success: boolean;
+    message: string;
+    refundInvoiceNumber?: string;
+    cargoReverted?: boolean;
+    stockReleased?: boolean;
+}
 
 @Injectable()
 export class OrdersService {
@@ -38,6 +47,8 @@ export class OrdersService {
         private readonly productSetItemRepository: Repository<ProductSetItem>,
         @InjectRepository(ProductStore)
         private readonly productStoreRepository: Repository<ProductStore>,
+        @InjectRepository(RouteOrder)
+        private readonly routeOrderRepository: Repository<RouteOrder>,
         private readonly customersService: CustomersService,
         private readonly integrationsService: IntegrationsService,
         private readonly arasKargoService: ArasKargoService,
@@ -333,7 +344,6 @@ export class OrdersService {
                 size: '200',
                 orderByField: 'PackageLastModifiedDate',
                 orderByDirection: 'DESC',
-                startDate: '1767214800000',
             });
 
             try {
@@ -444,15 +454,27 @@ export class OrdersService {
         username = username?.trim();
         password = password?.trim();
 
-        this.logger.debug(`Hepsiburada Sync via SDK - Store: ${storeName}`);
+        this.logger.log(`[Hepsiburada] Starting sync for Store: ${storeName} (MerchantID: ${merchantId})`);
 
         try {
+            // HB Auth: merchantId:password
             const auth = Buffer.from(`${merchantId}:${password}`).toString('base64');
 
-            const endpoints = [
-                { url: `https://oms-external.hepsiburada.com/orders/merchantid/${merchantId}`, type: 'Open' },
-                { url: `https://oms-external.hepsiburada.com/packages/merchantid/${merchantId}/delivered`, type: 'Delivered' }
+            // Full order data endpoint (creates/updates orders with all details)
+            const orderEndpoints = [
+                { url: `https://oms-external.hepsiburada.com/orders/merchantid/${merchantId}`, type: 'Open', status: OrderStatus.CREATED },
             ];
+
+            // Status update endpoints (only updates status of existing orders)
+            const statusEndpoints = [
+                { url: `https://oms-external.hepsiburada.com/orders/merchantid/${merchantId}/cancelled`, type: 'Cancelled', status: OrderStatus.CANCELLED, orderNumberField: 'orderNumber' },
+                { url: `https://oms-external.hepsiburada.com/packages/merchantid/${merchantId}/shipped`, type: 'Shipped', status: OrderStatus.SHIPPED, orderNumberField: 'OrderNumber' },
+                { url: `https://oms-external.hepsiburada.com/packages/merchantid/${merchantId}/delivered`, type: 'Delivered', status: OrderStatus.DELIVERED, orderNumberField: 'OrderNumber' },
+                { url: `https://oms-external.hepsiburada.com/packages/merchantid/${merchantId}/undelivered`, type: 'Undelivered', status: OrderStatus.UNDELIVERED, orderNumberField: 'OrderNumber' },
+            ];
+
+            // First, process full order endpoints
+            const endpoints = orderEndpoints;
 
             for (const endpoint of endpoints) {
                 this.logger.log(`Fetching ${endpoint.type} Hepsiburada orders from ${endpoint.url}`);
@@ -478,37 +500,64 @@ export class OrdersService {
                         });
 
                         const data = response.data;
-                        const orders = Array.isArray(data) ? data : (data.items || []);
+                        
+                        // HB can return: Array directly, or { items: [...] }, or { content: [...] }
+                        // HB returns items (line items), not orders - need to group by orderNumber
+                        let items: any[] = [];
+                        if (Array.isArray(data)) {
+                            items = data;
+                        } else if (data?.items && Array.isArray(data.items)) {
+                            items = data.items;
+                        } else if (data?.content && Array.isArray(data.content)) {
+                            items = data.content;
+                        } else {
+                            this.logger.warn(`[Hepsiburada] Unexpected response structure for ${endpoint.type}: ${JSON.stringify(data).substring(0, 500)}`);
+                        }
 
-                        if (orders.length === 0) {
+                        if (items.length === 0) {
+                            this.logger.log(`[Hepsiburada] No more ${endpoint.type} items at offset ${offset}`);
                             hasMore = false;
                             break;
                         }
 
-                        this.logger.log(`Fetched batch of ${orders.length} ${endpoint.type} orders (Offset: ${offset})`);
+                        this.logger.log(`[Hepsiburada] Fetched ${items.length} ${endpoint.type} items (Offset: ${offset})`);
+
+                        // Group items by orderNumber to create orders
+                        const orderMap = new Map<string, any[]>();
+                        for (const item of items) {
+                            const orderNumber = item.orderNumber || item.OrderNumber || item.orderId || item.OrderId;
+                            if (!orderNumber) continue;
+                            
+                            if (!orderMap.has(orderNumber)) {
+                                orderMap.set(orderNumber, []);
+                            }
+                            orderMap.get(orderNumber)!.push(item);
+                        }
+
+                        this.logger.log(`[Hepsiburada] Grouped into ${orderMap.size} orders from ${items.length} items`);
 
                         let successCount = 0;
                         let failCount = 0;
 
-                        for (const order of orders) {
+                        for (const [orderNumber, orderItems] of orderMap) {
                             try {
-                                const internalPkg = this.mapHepsiburadaOrder(order);
+                                const internalPkg = this.mapHepsiburadaItems(orderItems);
                                 if (!internalPkg) {
-                                    this.logger.warn(`Skipping empty order/package from ${endpoint.type}`);
+                                    this.logger.warn(`Skipping empty order ${orderNumber} from ${endpoint.type}`);
                                     continue;
                                 }
                                 await this.processOrderPackage(internalPkg, integrationId, storeId);
                                 successCount++;
                             } catch (err) {
                                 failCount++;
-                                this.logger.error(`Failed to process order ${order?.orderNumber || order?.id}: ${err.message}. Raw Data: ${JSON.stringify(order)}`, err);
+                                this.logger.error(`Failed to process order ${orderNumber}: ${err.message}`, err);
                             }
                         }
 
-                        totalFetched += orders.length;
-                        this.logger.log(`Processed batch: ${successCount} succeeded, ${failCount} failed. Total fetched so far: ${totalFetched}`);
+                        totalFetched += items.length;
+                        this.logger.log(`Processed batch: ${successCount} orders succeeded, ${failCount} failed. Total items fetched: ${totalFetched}`);
 
-                        if (orders.length < limit) {
+                        if (items.length < limit) {
                             hasMore = false;
                         } else {
                             offset += limit;
@@ -516,92 +565,236 @@ export class OrdersService {
 
                     } catch (error) {
                         if (axios.isAxiosError(error)) {
-                            this.logger.error(`Error fetching ${endpoint.type} orders at offset ${offset}: ${error.message}`, error.response?.data);
+                            const status = error.response?.status;
+                            const errData = error.response?.data;
+                            this.logger.error(
+                                `[Hepsiburada] API Error - ${endpoint.type} orders at offset ${offset}. ` +
+                                `Status: ${status}, Message: ${error.message}, Response: ${JSON.stringify(errData)}`
+                            );
+                            
+                            // 401/403 means auth problem - stop immediately
+                            if (status === 401 || status === 403) {
+                                this.logger.error(`[Hepsiburada] Authentication failed! Check credentials. MerchantID: ${merchantId}, Username: ${username}`);
+                                return;
+                            }
                         } else {
-                            this.logger.error(`Error fetching ${endpoint.type} orders for store ${storeId} at offset ${offset}`, error);
+                            this.logger.error(`[Hepsiburada] Error fetching ${endpoint.type} orders for store ${storeId} at offset ${offset}`, error);
                         }
-                        // If a batch fails, we probably should stop or skip? For now, let's stop this endpoint to avoid infinite loops if it's a persistent error
                         hasMore = false;
                     }
                 }
             }
 
+            // Now process status endpoints - only update status of existing orders
+            for (const statusEndpoint of statusEndpoints) {
+                this.logger.log(`[Hepsiburada] Fetching ${statusEndpoint.type} for status update`);
+                
+                let offset = 0;
+                const limit = 100;
+                let hasMore = true;
+                let totalUpdated = 0;
+                let notFound = 0;
+                
+                while (hasMore) {
+                    try {
+                        const response = await axios.get(statusEndpoint.url, {
+                            headers: {
+                                'Authorization': `Basic ${auth}`,
+                                'User-Agent': 'hamurlabs_dev',
+                                'Accept': 'application/json',
+                            },
+                            params: { limit, offset }
+                        });
+
+                        const data = response.data;
+                        let items: any[] = [];
+                        if (Array.isArray(data)) {
+                            items = data;
+                        } else if (data?.items && Array.isArray(data.items)) {
+                            items = data.items;
+                        }
+
+                        if (items.length === 0) {
+                            hasMore = false;
+                            break;
+                        }
+
+                        this.logger.log(`[Hepsiburada] Fetched ${items.length} ${statusEndpoint.type} items (offset: ${offset})`);
+
+                        // Update status for each item's order
+                        for (const item of items) {
+                            // Get order number based on endpoint type
+                            const orderNumber = item[statusEndpoint.orderNumberField] || item.orderNumber || item.OrderNumber;
+                            if (!orderNumber) continue;
+
+                            // Find existing order and update status
+                            const existingOrder = await this.orderRepository.findOne({
+                                where: { orderNumber, integrationId }
+                            });
+
+                            if (existingOrder) {
+                                if (existingOrder.status !== statusEndpoint.status) {
+                                    existingOrder.status = statusEndpoint.status;
+                                    await this.orderRepository.save(existingOrder);
+                                    totalUpdated++;
+                                }
+                            } else {
+                                notFound++;
+                            }
+                        }
+
+                        if (items.length < limit) {
+                            hasMore = false;
+                        } else {
+                            offset += limit;
+                        }
+                    } catch (error) {
+                        if (axios.isAxiosError(error)) {
+                            const status = error.response?.status;
+                            if (status === 401 || status === 403) {
+                                this.logger.error(`[Hepsiburada] Auth failed for ${statusEndpoint.type}`);
+                                break;
+                            }
+                            this.logger.warn(`[Hepsiburada] Error ${status} fetching ${statusEndpoint.type}: ${error.message}`);
+                        } else {
+                            this.logger.warn(`[Hepsiburada] Error fetching ${statusEndpoint.type}: ${error.message}`);
+                        }
+                        hasMore = false;
+                    }
+                }
+
+                if (totalUpdated > 0 || notFound > 0) {
+                    this.logger.log(`[Hepsiburada] ${statusEndpoint.type}: Updated ${totalUpdated} orders, ${notFound} not found in DB`);
+                }
+            }
+
+            this.logger.log(`[Hepsiburada] Sync completed for Store: ${storeName}`);
+
         } catch (error) {
-            this.logger.error(`Critical error in Hepsiburada sync for store ${storeId}`, error);
+            this.logger.error(`[Hepsiburada] Critical error in sync for store ${storeId}`, error);
         }
     }
 
-    private mapHepsiburadaOrder(hbOrder: any): any {
-        if (!hbOrder) return null;
+    /**
+     * Map Hepsiburada items (grouped by orderNumber) to internal order format
+     * HB returns line items, not orders - so we receive an array of items for the same order
+     */
+    private mapHepsiburadaItems(hbItems: any[]): any {
+        if (!hbItems || hbItems.length === 0) return null;
 
-        const customer = hbOrder.Customer || hbOrder.customer;
-        const billingAddress = hbOrder.BillingAddress || hbOrder.billingAddress;
-        const shippingAddress = hbOrder.ShippingAddress || hbOrder.shippingAddress;
-        const items = hbOrder.Items || hbOrder.items || [];
+        // Use first item for order-level data
+        const firstItem = hbItems[0];
+        
+        // Extract order info from first item
+        const orderNumber = firstItem.orderNumber || firstItem.OrderNumber;
+        const orderId = firstItem.orderId || firstItem.OrderId;
+        const orderDate = firstItem.orderDate || firstItem.OrderDate;
+        const customerId = firstItem.customerId || firstItem.CustomerId;
+        const customerName = firstItem.customerName || firstItem.CustomerName || '';
+        const shippingAddress = firstItem.shippingAddress || firstItem.ShippingAddress || {};
+        const invoice = firstItem.invoice || firstItem.Invoice || {};
+        const status = firstItem.status || firstItem.Status || 'UNKNOWN';
+        const dueDate = firstItem.dueDate || firstItem.DueDate;
+        const isMicroExport = firstItem.isMicroExport || firstItem.IsMicroExport || false;
+        
 
-        const totalPrice = hbOrder.TotalPrice?.Amount || hbOrder.totalPrice?.amount || hbOrder.TotalPrice || hbOrder.totalPrice || 0;
+        // Calculate total price from all items
+        let totalPrice = 0;
+        for (const item of hbItems) {
+            const itemTotal = item.totalPrice?.amount || item.totalPrice?.Amount || 
+                             item.TotalPrice?.amount || item.TotalPrice?.Amount ||
+                             item.totalPrice || item.TotalPrice || 0;
+            totalPrice += parseFloat(itemTotal) || 0;
+        }
 
-        // LOG: Verification Log
-        // Logic to extract best identifier
-        // Hepsiburada provides both turkishIdentityNumber (TCKN) and taxNumber (VKN)
-        // If one is dummy (11111111111) and the other is valid, prefer the valid one.
-        const hbId = items?.[0]?.invoice?.turkishIdentityNumber;
-        const hbTax = items?.[0]?.invoice?.taxNumber;
-
-        let validId = null;
+        // Extract identity (TCKN/VKN) from invoice
+        const hbId = invoice?.turkishIdentityNumber || invoice?.TurkishIdentityNumber;
+        const hbTax = invoice?.taxNumber || invoice?.TaxNumber;
+        
         const isDummy = (id: string) => !id || id === '11111111111' || id === '2222222222' || id.length < 10;
-
+        let validId = null;
         if (!isDummy(hbId)) {
             validId = hbId;
         } else if (!isDummy(hbTax)) {
             validId = hbTax;
-        } else {
-            validId = hbId || hbTax || null;
         }
 
-        // LOG: Verification Log
-        const logId = validId;
-        const logOffice = items?.[0]?.invoice?.taxOffice;
-        const logCompany = items?.[0]?.invoice?.address?.name;
-        this.logger.debug(`Hepsiburada Mapping - Order ${hbOrder.OrderNumber || hbOrder.orderNumber}: Identity=${logId} (Raw ID=${hbId}, Tax=${hbTax}), TaxOffice=${logOffice}, Company=${logCompany}`);
+        // Parse customer name
+        const nameParts = (customerName || '').toString().trim().split(/\s+/).filter((p: string) => p.length > 0);
+        const customerFirstName = nameParts[0] || 'Müşteri';
+        const customerLastName = nameParts.slice(1).join(' ') || '';
+
+        // Extract address info
+        const addressName = shippingAddress?.addressName || shippingAddress?.AddressName || '';
+        const addressLine = shippingAddress?.address || shippingAddress?.Address || 
+                           shippingAddress?.addressLine || shippingAddress?.AddressLine || '';
+        const city = shippingAddress?.city || shippingAddress?.City || '';
+        const district = shippingAddress?.district || shippingAddress?.District || 
+                        shippingAddress?.county || shippingAddress?.County || '';
+        const phone = shippingAddress?.phoneNumber || shippingAddress?.PhoneNumber || '';
+        const zipCode = shippingAddress?.zipCode || shippingAddress?.ZipCode || '';
+
+        // Invoice address info
+        const invoiceAddress = invoice?.address || invoice?.Address || {};
+        const taxOffice = invoice?.taxOffice || invoice?.TaxOffice || '';
+        const companyName = invoiceAddress?.name || invoiceAddress?.Name || '';
+
+        this.logger.debug(`[Hepsiburada] Mapping Order ${orderNumber}: Customer=${customerName}, Items=${hbItems.length}, Total=${totalPrice}, Status=${status}`);
 
         return {
-            orderNumber: hbOrder.OrderNumber || hbOrder.orderNumber || hbOrder.Id || hbOrder.id,
-            orderDate: hbOrder.OrderDate || hbOrder.orderDate || hbOrder.DeliveredDate || new Date().toISOString(),
+            packageId: orderId || orderNumber,
+            orderNumber: orderNumber,
+            orderDate: orderDate || new Date().toISOString(),
+            agreedDeliveryDate: dueDate || null,
             totalPrice,
-            grossAmount: totalPrice, // Hepsiburada returns net price, no separate gross
+            grossAmount: totalPrice,
             totalDiscount: 0,
             sellerDiscount: 0,
             tyDiscount: 0,
-            status: hbOrder.Status || hbOrder.status || items?.[0]?.Status || items?.[0]?.status || 'UNKNOWN',
-            customerFirstName: customer?.Name?.split(' ')[0] || customer?.name?.split(' ')[0] || 'Hb',
-            customerLastName: customer?.Name?.split(' ').slice(1).join(' ') || customer?.name?.split(' ').slice(1).join(' ') || 'Customer',
-            customerEmail: customer?.Email || customer?.email,
-            customerId: customer?.Id || customer?.id,
+            status: status,
+            customerFirstName,
+            customerLastName,
+            customerEmail: null,
+            customerId: customerId,
             tcIdentityNumber: validId,
-            taxOffice: items?.[0]?.invoice?.taxOffice || null,
-            company: items?.[0]?.invoice?.address?.name || null,
-            billingAddress: {
-                phone: billingAddress?.PhoneNumber || billingAddress?.phoneNumber || customer?.PhoneNumber || customer?.phoneNumber
+            taxOffice: taxOffice || null,
+            company: companyName || null,
+            isMicroExport: isMicroExport,
+            invoiceAddress: {
+                firstName: customerFirstName,
+                lastName: customerLastName,
+                phone: phone,
+                city: city,
+                district: district,
+                fullAddress: addressLine,
             },
             shipmentAddress: {
-                city: shippingAddress?.City || shippingAddress?.city,
-                district: shippingAddress?.District || shippingAddress?.district,
-                fullAddress: shippingAddress?.Address || shippingAddress?.address,
-                phone: shippingAddress?.PhoneNumber || shippingAddress?.phoneNumber
+                firstName: addressName || customerFirstName,
+                lastName: '',
+                city: city,
+                district: district,
+                fullAddress: addressLine,
+                phone: phone,
+                zipCode: zipCode,
             },
-            lines: items.map((item: any) => {
-                const itemPrice = item.Price?.Amount || item.price?.amount || item.Price || item.price || 0;
+            lines: hbItems.map((item: any) => {
+                const unitPrice = item.unitPrice?.amount || item.unitPrice?.Amount || 
+                                 item.UnitPrice?.amount || item.UnitPrice?.Amount ||
+                                 item.unitPrice || item.UnitPrice || 0;
+                const itemTotal = item.totalPrice?.amount || item.totalPrice?.Amount || 
+                                 item.TotalPrice?.amount || item.TotalPrice?.Amount ||
+                                 item.totalPrice || item.TotalPrice || 0;
                 return {
-                    productName: item.ProductName || item.productName || item.Name || item.name,
-                    sku: item.MerchantSku || item.merchantSku || item.Sku || item.sku,
-                    barcode: item.Barcode || item.barcode,
-                    quantity: item.Quantity || item.quantity,
-                    price: itemPrice,
-                    lineGrossAmount: itemPrice, // Hepsiburada returns net price
+                    productName: item.name || item.Name || item.productName || item.ProductName,
+                    sku: item.merchantSKU || item.MerchantSKU || item.sku || item.Sku,
+                    barcode: item.productBarcode || item.ProductBarcode || item.barcode || item.Barcode,
+                    quantity: item.quantity || item.Quantity || 1,
+                    price: parseFloat(unitPrice) || 0,
+                    lineGrossAmount: parseFloat(itemTotal) || 0,
                     discount: 0,
                     lineSellerDiscount: 0,
                     lineTyDiscount: 0,
+                    vatRate: item.vatRate || item.VatRate || 0,
                 };
             })
         };
@@ -610,29 +803,25 @@ export class OrdersService {
     private async processOrderPackage(pkg: any, integrationId: string, storeId: string) {
         const packageId = pkg.packageId || pkg.shipmentPackageId?.toString() || pkg.orderNumber;
         const orderNumber = pkg.orderNumber;
-        const lines = pkg.lines || []; // Redeclared here as it's used later
+        const lines = pkg.lines || [];
 
-
-        /*
         // 0. Check if this is already in faulty orders and products now exist
         const existingFaulty = await this.faultyOrderRepository.findOne({ where: { packageId } });
-    
+
         // 1. Validate all products exist
-        const lines = pkg.lines || [];
         const { valid, missing } = await this.checkProductsExist(lines);
-    
+
         if (!valid) {
             // Products missing - save to faulty orders
             await this.saveAsFaultyOrder(pkg, integrationId, storeId, missing);
             return; // Don't process as regular order
         }
-    
+
         // Products exist - if was faulty, remove from faulty orders
         if (existingFaulty) {
             await this.faultyOrderRepository.delete({ id: existingFaulty.id });
             this.logger.log(`Resolved faulty order ${packageId} - all products now exist`);
         }
-        */
 
         // 2. Create/Update Customer
         const customerData = {
@@ -1216,6 +1405,17 @@ export class OrdersService {
         };
     }
 
+    async findOne(id: string): Promise<Order> {
+        const order = await this.orderRepository.findOne({
+            where: { id },
+            relations: ['customer', 'items', 'store', 'integration'],
+        });
+        if (!order) {
+            throw new Error('Sipariş bulunamadı');
+        }
+        return order;
+    }
+
     async findAll(page = 1, limit = 10, filters?: {
         orderNumber?: string;
         packageId?: string;
@@ -1228,6 +1428,8 @@ export class OrdersService {
         micro?: boolean;
         startDeliveryDate?: string;
         endDeliveryDate?: string;
+        sortBy?: string;
+        sortOrder?: 'ASC' | 'DESC';
     }): Promise<{ data: Order[], total: number }> {
         const queryBuilder = this.orderRepository.createQueryBuilder('order')
             .leftJoinAndSelect('order.customer', 'customer')
@@ -1272,7 +1474,19 @@ export class OrdersService {
             queryBuilder.andWhere('order.agreedDeliveryDate <= :endDeliveryDate', { endDeliveryDate: new Date(filters.endDeliveryDate) });
         }
 
-        queryBuilder.orderBy('order.orderDate', 'DESC')
+        // Sorting - default to createdAt DESC
+        const allowedSortFields: Record<string, string> = {
+            orderNumber: 'order.orderNumber',
+            orderDate: 'order.orderDate',
+            agreedDeliveryDate: 'order.agreedDeliveryDate',
+            totalPrice: 'order.totalPrice',
+            status: 'order.status',
+            createdAt: 'order.createdAt',
+        };
+        const sortField = allowedSortFields[filters?.sortBy || 'createdAt'] || 'order.createdAt';
+        const sortOrder = filters?.sortOrder === 'ASC' ? 'ASC' : 'DESC';
+
+        queryBuilder.orderBy(sortField, sortOrder)
             .skip((page - 1) * limit)
             .take(limit);
 
@@ -1551,6 +1765,136 @@ export class OrdersService {
 
         const allSuccess = results.every((r) => r.success);
         return { success: allSuccess, results };
+    }
+    async createShipmentForOrder(orderId: string, shipmentDetails?: any): Promise<{ success: boolean; message: string; data?: any }> {
+        try {
+            const order = await this.orderRepository.findOne({
+                where: { id: orderId },
+                relations: ['items'],
+            });
+
+            if (!order) {
+                return { success: false, message: 'Sipariş bulunamadı.' };
+            }
+
+            const arasResult = await this.arasKargoService.createShipment(order, shipmentDetails);
+
+            if (arasResult.ResultCode === '0') {
+                // Aras Kargo integration successful
+                // If a tracking number is returned in the future, we should map it here.
+                // For now, we update the order to reflect that shipment is created.
+                // order.cargoTrackingNumber = arasResult.OrgReceiverCustId; // Example if available
+                // await this.orderRepository.save(order);
+
+                return {
+                    success: true,
+                    message: `Aras Kargo kaydı başarılı. Mesaj: ${arasResult.ResultMsg}`,
+                    data: arasResult,
+                };
+            } else {
+                return {
+                    success: false,
+                    message: `Aras Kargo hatası: ${arasResult.ResultMsg} (Kodu: ${arasResult.ResultCode})`,
+                };
+            }
+        } catch (error) {
+            this.logger.error(`Aras Kargo createShipment failed: ${error.message}`, error);
+            return {
+                success: false,
+                message: `Entegrasyon hatası: ${error.message}`,
+            };
+        }
+    }
+
+    async cancelOrder(orderId: string): Promise<CancelOrderResult> {
+        const order = await this.orderRepository.findOne({
+            where: { id: orderId },
+            relations: ['items', 'integration'],
+        });
+
+        if (!order) {
+            return { success: false, message: 'Sipariş bulunamadı.' };
+        }
+
+        if (order.status === OrderStatus.CANCELLED) {
+            return { success: false, message: 'Sipariş zaten iptal edilmiş.' };
+        }
+
+        if (order.status === OrderStatus.DELIVERED) {
+            return { success: false, message: 'Teslim edilmiş sipariş iptal edilemez.' };
+        }
+
+        const result: CancelOrderResult = {
+            success: true,
+            message: '',
+            stockReleased: false,
+            cargoReverted: false,
+        };
+
+        const previousStatus = order.status;
+        this.logger.log(`Cancelling order ${order.orderNumber} (status: ${previousStatus})`);
+
+        try {
+            // Handle status-specific actions based on order status
+            const statusesToHandleCargo = [OrderStatus.SHIPPED];
+            const statusesToHandleInvoice = [OrderStatus.SHIPPED, OrderStatus.INVOICED];
+            const statusesToRemoveFromRoute = [OrderStatus.SHIPPED, OrderStatus.INVOICED, OrderStatus.PICKING];
+            const statusesToReleaseStock = [OrderStatus.SHIPPED, OrderStatus.INVOICED, OrderStatus.PICKING, OrderStatus.CREATED, OrderStatus.UNSUPPLIED];
+
+            // 1. Cancel cargo dispatch (only for SHIPPED)
+            if (statusesToHandleCargo.includes(previousStatus) && order.cargoTrackingNumber) {
+                try {
+                    await this.arasKargoService.cancelDispatch(order.cargoTrackingNumber);
+                    result.cargoReverted = true;
+                    this.logger.log(`Cargo cancelled for ${order.orderNumber}`);
+                } catch (error) {
+                    this.logger.warn(`Failed to cancel cargo: ${error.message}`);
+                }
+            }
+
+            // 2. Handle refund invoice if needed (for SHIPPED or INVOICED)
+            if (statusesToHandleInvoice.includes(previousStatus)) {
+                this.logger.log(`Order ${order.orderNumber} was invoiced - refund may be required`);
+
+                // 3. Notify integration about cancellation
+                if (order.integration?.type === IntegrationType.TRENDYOL && order.integrationId) {
+                    this.logger.log(`Trendyol order ${order.orderNumber} - manual cancellation required in seller panel`);
+                }
+            }
+
+            // 4. Remove from route (for SHIPPED, INVOICED, or PICKING)
+            if (statusesToRemoveFromRoute.includes(previousStatus)) {
+                const routeOrders = await this.routeOrderRepository.find({
+                    where: { orderId },
+                });
+
+                if (routeOrders.length > 0) {
+                    await this.routeOrderRepository.remove(routeOrders);
+                    this.logger.log(`Removed order ${order.orderNumber} from route`);
+                }
+            }
+
+            // 5. Release stock commitment (for most statuses)
+            if (statusesToReleaseStock.includes(previousStatus)) {
+                await this.updateStockCommitment(order, 'release');
+                result.stockReleased = true;
+            }
+
+            // Update order status
+            order.status = OrderStatus.CANCELLED;
+            order.lastModifiedDate = new Date();
+            await this.orderRepository.save(order);
+
+            result.message = `Sipariş başarıyla iptal edildi. (Önceki durum: ${previousStatus})`;
+            this.logger.log(`Order ${order.orderNumber} cancelled successfully`);
+
+        } catch (error) {
+            result.success = false;
+            result.message = `İptal işlemi sırasında hata: ${error.message}`;
+            this.logger.error(`Failed to cancel order ${order.orderNumber}`, error);
+        }
+
+        return result;
     }
 }
 

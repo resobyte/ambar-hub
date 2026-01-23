@@ -137,6 +137,7 @@ export interface IntegrationStore {
   coCode?: string;
 
   // Fatura Ayarları
+  invoiceEnabled?: boolean;
   invoiceTransactionCode?: string;
   hasMicroExport?: boolean;
   eArchiveBulkCustomer?: boolean;
@@ -211,6 +212,20 @@ export interface ProductStore {
   updatedAt: string;
 }
 
+export interface ProductIntegrationProduct {
+  id: string;
+  name: string;
+  sku: string;
+  barcode: string | null;
+  salePrice: number;
+}
+
+export interface ProductIntegrationStore {
+  id: string;
+  name: string;
+  storeSalePrice: number | null;
+}
+
 export interface ProductIntegration {
   id: string;
   productStoreId: string;
@@ -221,6 +236,8 @@ export interface ProductIntegration {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  product?: ProductIntegrationProduct;
+  store?: ProductIntegrationStore;
 }
 
 export interface ShippingProvider {
@@ -1025,10 +1042,13 @@ export async function deleteIntegrationStore(id: string): Promise<{ message: str
 }
 
 // ProductIntegration API
-export async function getProductIntegrations(productStoreId?: string): Promise<ProductIntegration[]> {
+export async function getProductIntegrations(params?: { productStoreId?: string; integrationId?: string }): Promise<ProductIntegration[]> {
   const url = new URL(`${API_URL}/product-integrations`, BASE_URL);
-  if (productStoreId) {
-    url.searchParams.append('productStoreId', productStoreId);
+  if (params?.productStoreId) {
+    url.searchParams.append('productStoreId', params.productStoreId);
+  }
+  if (params?.integrationId) {
+    url.searchParams.append('integrationId', params.integrationId);
   }
   const res = await fetch(url.toString(), {
     cache: 'no-store',
@@ -1260,6 +1280,46 @@ export async function getOrders(page = 1, limit = 10): Promise<PaginationRespons
   return res.json();
 }
 
+export async function getOrder(id: string): Promise<ApiResponse<Order>> {
+  const res = await fetch(`${API_URL}/orders/${id}`, {
+    cache: 'no-store',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Order not found');
+  }
+  return res.json();
+}
+
+export interface OrderHistoryEvent {
+  id: string;
+  orderId: string;
+  action: string;
+  previousStatus: string | null;
+  newStatus: string | null;
+  userId: string | null;
+  userName: string | null;
+  routeId: string | null;
+  routeName: string | null;
+  sessionId: string | null;
+  description: string | null;
+  metadata: Record<string, any> | null;
+  createdAt: string;
+}
+
+export async function getOrderTimeline(orderId: string): Promise<ApiResponse<OrderHistoryEvent[]>> {
+  const res = await fetch(`${API_URL}/orders/${orderId}/timeline`, {
+    cache: 'no-store',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Timeline not found');
+  }
+  return res.json();
+}
+
 export async function syncOrders(integrationId: string): Promise<{ success: boolean; message: string }> {
   const res = await fetch(`${API_URL}/orders/sync/${integrationId}`, {
     method: 'POST',
@@ -1465,7 +1525,17 @@ export async function getRoute(id: string): Promise<ApiResponse<Route>> {
   return res.json();
 }
 
-export async function createRoute(data: { name?: string; description?: string; orderIds: string[] }): Promise<ApiResponse<Route>> {
+export interface RouteConsumableInput {
+  consumableId: string;
+  quantity: number;
+}
+
+export async function createRoute(data: { 
+  name?: string; 
+  description?: string; 
+  orderIds: string[];
+  consumables?: RouteConsumableInput[];
+}): Promise<ApiResponse<Route>> {
   const res = await fetch(`${API_URL}/routes`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1627,7 +1697,16 @@ export async function scanPackingBarcode(sessionId: string, barcode: string): Pr
   return res.json();
 }
 
-export async function completePackingOrder(sessionId: string, orderId: string): Promise<{
+export interface OrderConsumableInput {
+  consumableId: string;
+  quantity: number;
+}
+
+export async function completePackingOrder(
+  sessionId: string, 
+  orderId: string,
+  consumables?: OrderConsumableInput[]
+): Promise<{
   success: boolean;
   message: string;
   data: { sessionComplete?: boolean; nextOrderId?: string };
@@ -1636,7 +1715,7 @@ export async function completePackingOrder(sessionId: string, orderId: string): 
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ sessionId, orderId }),
+    body: JSON.stringify({ sessionId, orderId, consumables }),
   });
   return res.json();
 }
@@ -1866,23 +1945,32 @@ export async function deletePackingMaterial(id: string): Promise<ApiResponse<voi
 export enum ConsumableType {
   BOX = 'BOX',
   BAG = 'BAG',
+  TAPE = 'TAPE',
+  LABEL = 'LABEL',
+  OTHER = 'OTHER',
 }
 
 export enum ConsumableUnit {
   COUNT = 'COUNT',
   METER = 'METER',
+  KILOGRAM = 'KILOGRAM',
 }
 
 export interface Consumable {
   id: string;
   name: string;
-  sku: string;
+  sku: string | null;
+  barcode: string | null;
   type: ConsumableType;
   unit: ConsumableUnit;
   stockQuantity: number;
   averageCost: number;
   minStockLevel: number;
   isActive: boolean;
+  parentId: string | null;
+  parent?: Consumable | null;
+  variants?: Consumable[];
+  conversionQuantity: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -1894,10 +1982,13 @@ export async function getConsumables(): Promise<ApiResponse<Consumable[]>> {
 
 export async function createConsumable(data: {
   name: string;
-  sku: string;
+  sku?: string;
+  barcode?: string;
   type: ConsumableType;
   unit: ConsumableUnit;
   minStockLevel?: number;
+  parentId?: string;
+  conversionQuantity?: number;
 }): Promise<ApiResponse<Consumable>> {
   const res = await fetch(`${API_URL}/consumables`, {
     method: 'POST',
@@ -1915,10 +2006,13 @@ export async function createConsumable(data: {
 export async function updateConsumable(id: string, data: {
   name?: string;
   sku?: string;
+  barcode?: string;
   type?: ConsumableType;
   unit?: ConsumableUnit;
   minStockLevel?: number;
   isActive?: boolean;
+  parentId?: string | null;
+  conversionQuantity?: number;
 }): Promise<ApiResponse<Consumable>> {
   const res = await fetch(`${API_URL}/consumables/${id}`, {
     method: 'PATCH',
@@ -1942,6 +2036,20 @@ export async function deleteConsumable(id: string): Promise<void> {
     const error = await res.json();
     throw new Error(error.message || 'Request failed');
   }
+}
+
+export async function consumeFromParent(variantId: string, quantity: number): Promise<ApiResponse<Consumable>> {
+  const res = await fetch(`${API_URL}/consumables/${variantId}/consume-from-parent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ quantity }),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Request failed');
+  }
+  return res.json();
 }
 
 // Dashboard API

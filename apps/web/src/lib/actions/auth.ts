@@ -3,6 +3,7 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { AuthUser } from '@/types';
+import { AUTH_CONSTANTS } from '@repo/auth-config';
 
 const API_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
@@ -50,7 +51,7 @@ export async function login(
           secure: process.env.NODE_ENV === 'production',
           sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Allow cross-site cookies in production
           path: '/',
-          maxAge: isRefresh ? 7 * 24 * 60 * 60 : 15 * 60,
+          maxAge: isRefresh ? AUTH_CONSTANTS.TOKEN_TTL.REFRESH_TOKEN_SECONDS : AUTH_CONSTANTS.TOKEN_TTL.ACCESS_TOKEN_SECONDS,
         });
       }
     }
@@ -127,7 +128,7 @@ export async function refreshAccessToken(): Promise<boolean> {
           secure: process.env.NODE_ENV === 'production',
           sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Allow cross-site cookies in production
           path: '/',
-          maxAge: isRefresh ? 7 * 24 * 60 * 60 : 15 * 60,
+          maxAge: isRefresh ? AUTH_CONSTANTS.TOKEN_TTL.REFRESH_TOKEN_SECONDS : AUTH_CONSTANTS.TOKEN_TTL.ACCESS_TOKEN_SECONDS,
         });
       }
     }

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import {
     getRoutes,
     startPackingSession,
@@ -9,10 +10,67 @@ import {
     scanPackingBarcode,
     completePackingOrder,
     cancelPackingSession,
+    getConsumables,
     Route,
     RouteStatus,
     PackingSession,
+    Consumable,
+    OrderConsumableInput,
 } from '@/lib/api';
+
+import {
+    Breadcrumb,
+    BreadcrumbItem,
+    BreadcrumbLink,
+    BreadcrumbList,
+    BreadcrumbPage,
+    BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from '@/components/ui/table';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import {
+    Loader2,
+    ArrowLeft,
+    Package,
+    CheckCircle2,
+    AlertCircle,
+    ScanBarcode,
+    XCircle,
+    LogOut,
+    Plus,
+    Trash2,
+    Box,
+} from 'lucide-react';
 
 export function PackingClient() {
     const router = useRouter();
@@ -24,10 +82,13 @@ export function PackingClient() {
     const [barcode, setBarcode] = useState('');
     const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
     const [processing, setProcessing] = useState(false);
-    const [selectedCarrier, setSelectedCarrier] = useState<string>('aras');
-    const [showPackageModal, setShowPackageModal] = useState(false);
-    const [packageBarcode, setPackageBarcode] = useState('');
     const [logs, setLogs] = useState<string[]>([]);
+    const [searchTerm, setSearchTerm] = useState('');
+    
+    // Consumables
+    const [consumables, setConsumables] = useState<Consumable[]>([]);
+    const [isConsumablesModalOpen, setIsConsumablesModalOpen] = useState(false);
+    const [orderConsumables, setOrderConsumables] = useState<OrderConsumableInput[]>([]);
 
     const addLog = (msg: string) => {
         const now = new Date().toLocaleTimeString('tr-TR');
@@ -46,7 +107,20 @@ export function PackingClient() {
         }
     }, []);
 
+    const fetchConsumables = useCallback(async () => {
+        try {
+            const response = await getConsumables();
+            if (response.success) {
+                // Only show parent consumables
+                setConsumables(response.data?.filter(c => !c.parentId) || []);
+            }
+        } catch (err) {
+            console.error('Failed to fetch consumables:', err);
+        }
+    }, []);
+
     useEffect(() => { fetchRoutes(); }, [fetchRoutes]);
+    useEffect(() => { fetchConsumables(); }, [fetchConsumables]);
     useEffect(() => {
         if (session && barcodeInputRef.current) barcodeInputRef.current.focus();
     }, [session]);
@@ -73,7 +147,6 @@ export function PackingClient() {
             if (result.success) {
                 setMessage({ type: 'success', text: result.message });
                 addLog(result.message);
-                // Refresh session
                 const updated = await getPackingSession(session.id);
                 setSession(updated.data);
             } else {
@@ -90,18 +163,32 @@ export function PackingClient() {
         }
     };
 
-    const handleCompleteOrder = async () => {
+    const handleOpenConsumablesModal = () => {
+        // Reset and open modal
+        setOrderConsumables([{ consumableId: '', quantity: 1 }]);
+        setIsConsumablesModalOpen(true);
+    };
+
+    const handleCompleteWithConsumables = async () => {
         if (!session || !session.currentOrderId) return;
         setProcessing(true);
         try {
-            const result = await completePackingOrder(session.id, session.currentOrderId);
+            const validConsumables = orderConsumables.filter(c => c.consumableId && c.quantity > 0);
+            const result = await completePackingOrder(
+                session.id, 
+                session.currentOrderId,
+                validConsumables.length > 0 ? validConsumables : undefined
+            );
             setMessage({ type: 'success', text: result.message });
             addLog(result.message);
+            setIsConsumablesModalOpen(false);
+            setOrderConsumables([]);
 
             if (result.data.sessionComplete) {
                 addLog('Tüm siparişler paketlendi!');
                 setSession(null);
                 fetchRoutes();
+                fetchConsumables();
             } else {
                 const updated = await getPackingSession(session.id);
                 setSession(updated.data);
@@ -111,6 +198,11 @@ export function PackingClient() {
         } finally {
             setProcessing(false);
         }
+    };
+
+    const handleCompleteOrder = async () => {
+        // Open consumables modal first
+        handleOpenConsumablesModal();
     };
 
     const handleCancelSession = async () => {
@@ -134,6 +226,10 @@ export function PackingClient() {
         const currentItems = session.items?.filter(i => i.orderId === session.currentOrderId) || [];
         const scannedCount = currentItems.filter(i => i.isComplete).length;
         const totalCount = currentItems.length;
+        const progressPercent = totalCount > 0 ? Math.round((scannedCount / totalCount) * 100) : 0;
+
+        // Get current order info
+        const currentOrder = session.items?.find(i => i.orderId === session.currentOrderId)?.order;
 
         // Route orders logic
         const ordersMap = new Map<string, {
@@ -157,7 +253,7 @@ export function PackingClient() {
                 });
             }
             const order = ordersMap.get(item.orderId)!;
-            order.totalItems += 1; // Count lines for simplicity or use item quantities
+            order.totalItems += 1;
             if (item.isComplete) order.packedItems++;
             if (!item.isComplete) order.isComplete = false;
         });
@@ -166,264 +262,434 @@ export function PackingClient() {
 
         return (
             <div className="h-[calc(100vh-120px)] flex flex-col gap-4">
-                <div className="flex-1 flex gap-4 min-h-0">
-                    {/* Left Sidebar - Log Only */}
-                    <div className="w-56 flex flex-col gap-4">
-                        <div className="bg-white rounded-lg border border-gray-200 p-3 h-full overflow-hidden flex flex-col">
-                            <div className="text-xs font-semibold text-gray-500 uppercase mb-2">İşlem Logu</div>
-                            <div className="space-y-1 text-xs overflow-y-auto flex-1">
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                    <Breadcrumb>
+                        <BreadcrumbList>
+                            <BreadcrumbItem>
+                                <BreadcrumbLink asChild>
+                                    <Link href="/dashboard">Ana Sayfa</Link>
+                                </BreadcrumbLink>
+                            </BreadcrumbItem>
+                            <BreadcrumbSeparator />
+                            <BreadcrumbItem>
+                                <BreadcrumbLink asChild>
+                                    <Link href="/packing">Paketleme</Link>
+                                </BreadcrumbLink>
+                            </BreadcrumbItem>
+                            <BreadcrumbSeparator />
+                            <BreadcrumbItem>
+                                <BreadcrumbPage>{session.route?.name}</BreadcrumbPage>
+                            </BreadcrumbItem>
+                        </BreadcrumbList>
+                    </Breadcrumb>
+                    <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={handleCancelSession}
+                    >
+                        <LogOut className="w-4 h-4 mr-2" />
+                        Oturumu Kapat
+                    </Button>
+                </div>
+
+                {/* Main Content */}
+                <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 min-h-0">
+                    {/* Left Sidebar - Log */}
+                    <Card className="hidden lg:flex flex-col min-h-0">
+                        <CardHeader className="py-3">
+                            <CardTitle className="text-sm">İşlem Logu</CardTitle>
+                        </CardHeader>
+                        <ScrollArea className="flex-1 px-4 pb-4">
+                            <div className="space-y-1 text-xs">
                                 {logs.map((log, i) => (
-                                    <div key={i} className="text-gray-600">{log}</div>
+                                    <p key={i} className="text-muted-foreground">{log}</p>
                                 ))}
                             </div>
-                        </div>
-                    </div>
+                        </ScrollArea>
+                    </Card>
 
-                    {/* Main Content */}
-                    <div className="flex-1 flex flex-col gap-4">
-                        {/* Header */}
-                        <div className="bg-gradient-to-r from-teal-600 to-teal-700 rounded-xl p-4 text-white">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h1 className="text-xl font-bold">B2C Paketleme</h1>
-                                    <p className="text-teal-100 text-sm">
-                                        {session.route?.name} • Sipariş {session.packedOrders + 1}/{session.totalOrders}
-                                    </p>
+                    {/* Center - Main Packing Area */}
+                    <div className="lg:col-span-2 flex flex-col gap-4">
+                        {/* Progress Card */}
+                        <Card className="bg-gradient-to-r from-teal-600 to-teal-700 text-white border-0">
+                            <CardContent className="py-4">
+                                <div className="flex items-center justify-between mb-2">
+                                    <div>
+                                        <p className="text-teal-100 text-sm">
+                                            Sipariş {session.packedOrders + 1}/{session.totalOrders}
+                                        </p>
+                                        {currentOrder && (
+                                            <p className="font-semibold">
+                                                {currentOrder.orderNumber}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-4xl font-bold">{scannedCount}/{totalCount}</p>
+                                        <p className="text-teal-100 text-xs">ürün okutuldu</p>
+                                    </div>
                                 </div>
-                                <div className="flex items-center gap-3">
-                                    <button
-                                        onClick={() => setShowPackageModal(true)}
-                                        className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm"
-                                    >
-                                        Yeni Paket Okut
-                                    </button>
-                                    <button
-                                        onClick={handleCancelSession}
-                                        className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-sm"
-                                    >
-                                        Koli Çıkış
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Progress */}
-                        <div className="flex items-center gap-4">
-                            <div className="text-5xl font-bold text-teal-600">{scannedCount}/{totalCount}</div>
-                            <div className="flex-1 h-3 bg-gray-200 rounded-full overflow-hidden">
-                                <div
-                                    className="h-full bg-teal-500 transition-all"
-                                    style={{ width: `${totalCount > 0 ? (scannedCount / totalCount) * 100 : 0}%` }}
-                                />
-                            </div>
-                        </div>
+                                <Progress value={progressPercent} className="h-2 bg-white/20" />
+                            </CardContent>
+                        </Card>
 
                         {/* Message */}
                         {message && (
-                            <div className={`p-3 rounded-lg text-sm ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' :
-                                message.type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' :
-                                    'bg-blue-50 text-blue-700 border border-blue-200'
-                                }`}>{message.text}</div>
+                            <Alert variant={message.type === 'error' ? 'destructive' : 'default'}>
+                                {message.type === 'success' && <CheckCircle2 className="h-4 w-4" />}
+                                {message.type === 'error' && <AlertCircle className="h-4 w-4" />}
+                                {message.type === 'info' && <Package className="h-4 w-4" />}
+                                <AlertDescription>{message.text}</AlertDescription>
+                            </Alert>
                         )}
 
                         {/* Barcode Input */}
-                        <div className="flex gap-2">
-                            <input
-                                ref={barcodeInputRef}
-                                type="text"
-                                value={barcode}
-                                onChange={(e) => setBarcode(e.target.value)}
-                                onKeyPress={handleKeyPress}
-                                className="flex-1 text-xl p-3 rounded-lg border-2 border-gray-300 focus:border-teal-500 focus:ring-0"
-                                placeholder="Ürün barkodu okutun..."
-                                autoFocus
-                                disabled={processing}
-                            />
-                            <button
-                                onClick={handleScanBarcode}
-                                disabled={!barcode.trim() || processing}
-                                className="px-6 py-3 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 font-medium"
-                            >
-                                OK
-                            </button>
-                        </div>
+                        <Card>
+                            <CardContent className="py-4">
+                                <div className="flex gap-2">
+                                    <Input
+                                        ref={barcodeInputRef}
+                                        type="text"
+                                        value={barcode}
+                                        onChange={(e) => setBarcode(e.target.value)}
+                                        onKeyPress={handleKeyPress}
+                                        className="flex-1 text-lg"
+                                        placeholder="Ürün barkodu okutun..."
+                                        autoFocus
+                                        disabled={processing}
+                                    />
+                                    <Button
+                                        onClick={handleScanBarcode}
+                                        disabled={!barcode.trim() || processing}
+                                        size="lg"
+                                    >
+                                        {processing ? (
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                        ) : (
+                                            <ScanBarcode className="w-4 h-4" />
+                                        )}
+                                    </Button>
+                                </div>
+                            </CardContent>
+                        </Card>
 
                         {/* Current Order Items */}
-                        <div className="flex-1 bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col min-h-0">
-                            <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
-                                <h3 className="font-semibold text-gray-800">Sipariş Ürünleri</h3>
-                            </div>
-                            <div className="flex-1 overflow-y-auto">
-                                {currentItems.map((item, idx) => (
-                                    <div key={item.id} className={`px-4 py-3 border-b border-gray-100 flex items-center justify-between ${item.isComplete ? 'bg-green-50' : ''}`}>
-                                        <div className="flex items-center gap-3">
-                                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-sm ${item.isComplete ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-600'}`}>
-                                                {item.isComplete ? '✓' : idx + 1}
+                        <Card className="flex-1 flex flex-col min-h-0">
+                            <CardHeader className="py-3 border-b">
+                                <CardTitle className="text-sm flex items-center justify-between">
+                                    <span>Sipariş Ürünleri</span>
+                                    {currentOrder?.customer && (
+                                        <Badge variant="outline">
+                                            {currentOrder.customer.firstName} {currentOrder.customer.lastName}
+                                        </Badge>
+                                    )}
+                                </CardTitle>
+                            </CardHeader>
+                            <ScrollArea className="flex-1">
+                                <div className="divide-y">
+                                    {currentItems.map((item, idx) => (
+                                        <div
+                                            key={item.id}
+                                            className={`p-4 flex items-center justify-between ${item.isComplete ? 'bg-green-50' : ''}`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${item.isComplete ? 'bg-green-500 text-white' : 'bg-muted text-muted-foreground'}`}>
+                                                    {item.isComplete ? <CheckCircle2 className="w-4 h-4" /> : idx + 1}
+                                                </div>
+                                                <div>
+                                                    <p className="font-mono text-sm">{item.barcode}</p>
+                                                    <p className="text-xs text-muted-foreground">
+                                                        Adet: {item.requiredQuantity}
+                                                    </p>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <div className="font-mono text-sm text-gray-900">{item.barcode}</div>
-                                                <div className="text-xs text-gray-500">Adet: {item.requiredQuantity}</div>
-                                            </div>
-                                        </div>
-                                        <div className="text-sm">
-                                            <span className={`px-2 py-1 rounded ${item.isComplete ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                                            <Badge variant={item.isComplete ? 'default' : 'secondary'}>
                                                 {item.scannedQuantity}/{item.requiredQuantity}
-                                            </span>
+                                            </Badge>
                                         </div>
-                                    </div>
-                                ))}
-                                {currentItems.length === 0 && (
-                                    <div className="p-8 text-center text-gray-400">Sipariş yükleniyor...</div>
-                                )}
-                            </div>
-                        </div>
+                                    ))}
+                                    {currentItems.length === 0 && (
+                                        <div className="p-8 text-center text-muted-foreground">
+                                            Sipariş yükleniyor...
+                                        </div>
+                                    )}
+                                </div>
+                            </ScrollArea>
+                        </Card>
 
                         {/* Complete Button */}
                         {scannedCount === totalCount && totalCount > 0 && (
-                            <button
+                            <Button
+                                size="lg"
+                                className="w-full bg-green-600 hover:bg-green-700"
                                 onClick={handleCompleteOrder}
                                 disabled={processing}
-                                className="w-full py-4 bg-green-600 text-white rounded-xl hover:bg-green-700 font-semibold text-lg disabled:opacity-50"
                             >
-                                Siparişi Tamamla ✓
-                            </button>
+                                {processing && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                                <CheckCircle2 className="w-4 h-4 mr-2" />
+                                Siparişi Tamamla
+                            </Button>
                         )}
                     </div>
+
+                    {/* Right Sidebar - Route Orders */}
+                    <Card className="flex flex-col min-h-0">
+                        <CardHeader className="py-3 border-b">
+                            <CardTitle className="text-sm">Rotadaki Siparişler</CardTitle>
+                        </CardHeader>
+                        <ScrollArea className="flex-1">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead className="text-xs">Sipariş</TableHead>
+                                        <TableHead className="text-xs text-right">Durum</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {routeOrders.map(order => (
+                                        <TableRow
+                                            key={order.id}
+                                            className={order.isComplete ? 'bg-green-50/50' : order.id === session.currentOrderId ? 'bg-blue-50' : ''}
+                                        >
+                                            <TableCell className="py-2">
+                                                <p className="font-medium text-xs">{order.number}</p>
+                                                <p className="text-xs text-muted-foreground">{order.customer}</p>
+                                            </TableCell>
+                                            <TableCell className="py-2 text-right">
+                                                {order.isComplete ? (
+                                                    <CheckCircle2 className="w-4 h-4 text-green-500 ml-auto" />
+                                                ) : (
+                                                    <Badge variant="outline" className="text-xs">
+                                                        {order.packedItems}/{order.totalItems}
+                                                    </Badge>
+                                                )}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </ScrollArea>
+                    </Card>
                 </div>
 
-                {/* Route Orders List */}
-                <div className="h-64 flex flex-col">
-                    <h2 className="text-lg font-bold text-gray-900 mb-2">Rotadaki Siparişler</h2>
-                    <div className="flex-1 bg-white rounded-xl border border-gray-200 overflow-hidden">
-                        <div className="h-full overflow-x-auto overflow-y-auto">
-                            <table className="w-full text-sm text-left relative">
-                                <thead className="bg-gray-50 text-gray-500 font-medium sticky top-0 z-10">
-                                    <tr>
-                                        <th className="px-4 py-3">Sipariş No</th>
-                                        <th className="px-4 py-3">Müşteri</th>
-                                        <th className="px-4 py-3 text-center">Durum</th>
-                                        <th className="px-4 py-3 text-right">Ürünler</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                    {routeOrders.map(order => (
-                                        <tr key={order.id} className={`hover:bg-gray-50 ${order.isComplete ? 'bg-green-50/50' : ''}`}>
-                                            <td className="px-4 py-3 font-medium text-gray-900">{order.number}</td>
-                                            <td className="px-4 py-3 text-gray-600">{order.customer}</td>
-                                            <td className="px-4 py-3 text-center">
-                                                {order.isComplete ? (
-                                                    <span className="inline-flex items-center px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-medium">
-                                                        Tamamlandı
-                                                    </span>
-                                                ) : (
-                                                    <span className="inline-flex items-center px-2 py-1 rounded bg-amber-100 text-amber-700 text-xs font-medium">
-                                                        Hazırlanıyor
+                {/* Consumables Modal */}
+                <Dialog open={isConsumablesModalOpen} onOpenChange={setIsConsumablesModalOpen}>
+                    <DialogContent className="sm:max-w-[500px]">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                                <Box className="h-5 w-5 text-orange-600" />
+                                Sarf Malzeme Girişi
+                            </DialogTitle>
+                            <DialogDescription>
+                                Sipariş {currentOrder?.orderNumber} için kullanılan sarf malzemeleri girin
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 py-4">
+                            <div className="flex justify-between items-center">
+                                <Label>Kullanılan Malzemeler</Label>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setOrderConsumables([...orderConsumables, { consumableId: '', quantity: 1 }])}
+                                >
+                                    <Plus className="h-3 w-3 mr-1" /> Ekle
+                                </Button>
+                            </div>
+                            {orderConsumables.length === 0 ? (
+                                <p className="text-sm text-muted-foreground text-center py-4">
+                                    Sarf malzeme eklenmedi. İsterseniz ekleyebilir veya devam edebilirsiniz.
+                                </p>
+                            ) : (
+                                <div className="space-y-2">
+                                    {orderConsumables.map((item, index) => {
+                                        const consumable = consumables.find(c => c.id === item.consumableId);
+                                        return (
+                                            <div key={index} className="flex items-center gap-2">
+                                                <Select
+                                                    value={item.consumableId}
+                                                    onValueChange={(v) => {
+                                                        const updated = [...orderConsumables];
+                                                        updated[index].consumableId = v;
+                                                        setOrderConsumables(updated);
+                                                    }}
+                                                >
+                                                    <SelectTrigger className="flex-1 h-9">
+                                                        <SelectValue placeholder="Malzeme seç" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {consumables.map(c => (
+                                                            <SelectItem key={c.id} value={c.id}>
+                                                                {c.name} (Stok: {c.stockQuantity})
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                <Input
+                                                    type="number"
+                                                    className="w-20 h-9"
+                                                    min={0.01}
+                                                    step={0.01}
+                                                    value={item.quantity}
+                                                    onChange={(e) => {
+                                                        const updated = [...orderConsumables];
+                                                        updated[index].quantity = parseFloat(e.target.value) || 0;
+                                                        setOrderConsumables(updated);
+                                                    }}
+                                                />
+                                                {consumable && (
+                                                    <span className="text-xs text-muted-foreground w-12">
+                                                        {consumable.unit === 'METER' ? 'm' : consumable.unit === 'KILOGRAM' ? 'kg' : 'adet'}
                                                     </span>
                                                 )}
-                                            </td>
-                                            <td className="px-4 py-3 text-right text-gray-600 font-mono">
-                                                {order.packedItems}/{order.totalItems}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-9 w-9 text-destructive hover:bg-destructive/10"
+                                                    onClick={() => {
+                                                        setOrderConsumables(orderConsumables.filter((_, i) => i !== index));
+                                                    }}
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
-                    </div>
-                </div>
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => setIsConsumablesModalOpen(false)}>
+                                İptal
+                            </Button>
+                            <Button 
+                                onClick={handleCompleteWithConsumables}
+                                disabled={processing}
+                                className="bg-green-600 hover:bg-green-700"
+                            >
+                                {processing && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                                <CheckCircle2 className="w-4 h-4 mr-2" />
+                                Tamamla
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
             </div>
         );
     }
 
+    const filteredRoutes = routes.filter(route =>
+        route.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (route.description || '').toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
     // Route selection
     return (
-        <div className="space-y-6">
+        <div className="space-y-4">
+            {/* Header */}
             <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Paketleme</h1>
-                    <p className="text-gray-500 mt-1">Paketlenecek rotayı seçin</p>
-                </div>
-                <button
-                    onClick={() => router.push('/routes')}
-                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                >
-                    ← Rotalar
-                </button>
+                <Breadcrumb>
+                    <BreadcrumbList>
+                        <BreadcrumbItem>
+                            <BreadcrumbLink asChild>
+                                <Link href="/dashboard">Ana Sayfa</Link>
+                            </BreadcrumbLink>
+                        </BreadcrumbItem>
+                        <BreadcrumbSeparator />
+                        <BreadcrumbItem>
+                            <BreadcrumbPage>Paketleme</BreadcrumbPage>
+                        </BreadcrumbItem>
+                    </BreadcrumbList>
+                </Breadcrumb>
+                <Button variant="outline" size="sm" onClick={() => router.push('/routes')}>
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    Rotalar
+                </Button>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {loading ? (
-                    <div className="col-span-full flex justify-center py-12">
-                        <div className="animate-spin w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full"></div>
-                    </div>
-                ) : routes.length === 0 ? (
-                    <div className="col-span-full text-center py-12">
-                        <div className="text-gray-400 text-4xl mb-3">📦</div>
-                        <div className="text-gray-500">Paketlenecek rota bulunmuyor</div>
-                        <p className="text-sm text-gray-400 mt-1">Önce toplama işlemini tamamlayın</p>
-                        <button
-                            onClick={() => router.push('/picking')}
-                            className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-                        >
-                            Toplamaya Git
-                        </button>
-                    </div>
-                ) : (
-                    routes.map((route) => (
-                        <div
-                            key={route.id}
-                            className="bg-white rounded-xl border border-gray-200 p-5 hover:border-teal-300 hover:shadow-lg transition-all cursor-pointer group"
-                            onClick={() => handleStartSession(route.id)}
-                        >
-                            <div className="flex items-start justify-between mb-3">
-                                <h3 className="text-lg font-semibold text-gray-900 group-hover:text-teal-600">{route.name}</h3>
-                                <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-xs font-medium rounded">Rotada Toplanmış</span>
-                            </div>
-                            {route.description && <p className="text-gray-500 text-sm mb-4">{route.description}</p>}
-                            <div className="flex items-center justify-between text-sm">
-                                <div className="text-gray-600">
-                                    <span className="font-semibold text-gray-900">{route.totalOrderCount}</span> sipariş
-                                </div>
-                                <div className="text-gray-600">
-                                    <span className="font-semibold text-teal-600">{route.packedOrderCount || 0}</span>/{route.totalOrderCount} paketlendi
-                                </div>
-                            </div>
-                        </div>
-                    ))
-                )}
+            {/* Filter */}
+            <div className="flex items-center gap-2">
+                <Input
+                    placeholder="Rota ara..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="max-w-xs"
+                />
+                <Badge variant="secondary">{filteredRoutes.length} rota</Badge>
             </div>
 
-            {/* Package Select Modal */}
-            {showPackageModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
-                        <h2 className="text-lg font-semibold text-gray-900 mb-4">Paket Seçimi</h2>
-                        <p className="text-sm text-gray-600 mb-4">Paket barkodunu okutun</p>
-                        <input
-                            type="text"
-                            value={packageBarcode}
-                            onChange={(e) => setPackageBarcode(e.target.value)}
-                            className="w-full p-3 rounded-lg border-2 border-gray-300 focus:border-teal-500 focus:ring-0"
-                            placeholder="paket barkodunu giriniz"
-                            autoFocus
-                        />
-                        <div className="flex gap-3 mt-6">
-                            <button
-                                onClick={() => { setShowPackageModal(false); setPackageBarcode(''); }}
-                                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                            >
-                                İptal
-                            </button>
-                            <button
-                                onClick={() => { setShowPackageModal(false); addLog(`Paket: ${packageBarcode}`); setPackageBarcode(''); }}
-                                className="flex-1 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
-                            >
-                                OK
-                            </button>
+            {/* Route Table */}
+            <Card>
+                <CardContent className="p-0">
+                    {loading ? (
+                        <div className="flex justify-center py-12">
+                            <Loader2 className="w-8 h-8 animate-spin text-primary" />
                         </div>
-                    </div>
-                </div>
-            )}
+                    ) : filteredRoutes.length === 0 ? (
+                        <div className="py-12 text-center">
+                            <Package className="w-12 h-12 mx-auto mb-4 text-muted-foreground/30" />
+                            <p className="text-muted-foreground">
+                                {routes.length === 0 ? 'Paketlenecek rota bulunmuyor' : 'Aramayla eşleşen rota yok'}
+                            </p>
+                            {routes.length === 0 && (
+                                <>
+                                    <p className="text-sm text-muted-foreground mt-1">
+                                        Önce toplama işlemini tamamlayın
+                                    </p>
+                                    <Button className="mt-4" onClick={() => router.push('/picking')}>
+                                        Toplamaya Git
+                                    </Button>
+                                </>
+                            )}
+                        </div>
+                    ) : (
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Rota</TableHead>
+                                    <TableHead className="text-center w-24">Sipariş</TableHead>
+                                    <TableHead className="text-center w-32">Paketlenen</TableHead>
+                                    <TableHead className="w-28"></TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {filteredRoutes.map((route) => (
+                                    <TableRow
+                                        key={route.id}
+                                        className="cursor-pointer hover:bg-muted/50"
+                                        onClick={() => handleStartSession(route.id)}
+                                    >
+                                        <TableCell>
+                                            <div>
+                                                <p className="font-medium">{route.name}</p>
+                                                {route.description && (
+                                                    <p className="text-xs text-muted-foreground">{route.description}</p>
+                                                )}
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="text-center">
+                                            <Badge variant="outline">{route.totalOrderCount}</Badge>
+                                        </TableCell>
+                                        <TableCell className="text-center">
+                                            <span className="text-sm">
+                                                {route.packedOrderCount || 0}/{route.totalOrderCount}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Button size="sm" variant="ghost">
+                                                <Package className="w-4 h-4 mr-1" />
+                                                Paketle
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    )}
+                </CardContent>
+            </Card>
         </div>
     );
 }

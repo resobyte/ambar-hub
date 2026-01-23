@@ -1,11 +1,15 @@
 import { Controller, Post, Param, Get, Query, Delete, Res, Put, Body } from '@nestjs/common';
 import { Response } from 'express';
 import { OrdersService } from './orders.service';
+import { OrderHistoryService } from './order-history.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 
 @Controller('orders')
 export class OrdersController {
-    constructor(private readonly ordersService: OrdersService) { }
+    constructor(
+        private readonly ordersService: OrdersService,
+        private readonly orderHistoryService: OrderHistoryService,
+    ) { }
 
     @Post()
     async create(@Body() createOrderDto: CreateOrderDto) {
@@ -80,6 +84,8 @@ export class OrdersController {
         @Query('micro') micro?: string,
         @Query('startDeliveryDate') startDeliveryDate?: string,
         @Query('endDeliveryDate') endDeliveryDate?: string,
+        @Query('sortBy') sortBy?: string,
+        @Query('sortOrder') sortOrder?: 'ASC' | 'DESC',
     ) {
         const filters = {
             orderNumber,
@@ -92,7 +98,9 @@ export class OrdersController {
             customerName,
             micro: micro === 'true' ? true : micro === 'false' ? false : undefined,
             startDeliveryDate,
-            endDeliveryDate
+            endDeliveryDate,
+            sortBy,
+            sortOrder,
         };
         const { data, total } = await this.ordersService.findAll(Number(page), Number(limit), filters);
         return {
@@ -168,6 +176,51 @@ export class OrdersController {
         });
 
         res.end(buffer);
+    }
+    @Post(':id/create-shipment')
+    async createShipment(@Param('id') id: string, @Body() shipmentDetails: any) {
+        return this.ordersService.createShipmentForOrder(id, shipmentDetails);
+    }
+
+    @Post(':id/cancel')
+    async cancelOrder(@Param('id') id: string) {
+        const result = await this.ordersService.cancelOrder(id);
+        return {
+            success: result.success,
+            message: result.message,
+            data: {
+                refundInvoiceNumber: result.refundInvoiceNumber,
+                cargoReverted: result.cargoReverted,
+                stockReleased: result.stockReleased,
+            },
+        };
+    }
+
+    @Get(':id')
+    async findOne(@Param('id') id: string) {
+        const order = await this.ordersService.findOne(id);
+        return {
+            success: true,
+            data: order,
+        };
+    }
+
+    @Get(':id/history')
+    async getOrderHistory(@Param('id') id: string) {
+        const history = await this.orderHistoryService.getOrderHistory(id);
+        return {
+            success: true,
+            data: history,
+        };
+    }
+
+    @Get(':id/timeline')
+    async getOrderTimeline(@Param('id') id: string) {
+        const history = await this.orderHistoryService.getOrderHistory(id);
+        return {
+            success: true,
+            data: history,
+        };
     }
 }
 

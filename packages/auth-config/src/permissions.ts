@@ -44,7 +44,7 @@ export const ROUTE_PERMISSIONS: RouteConfig[] = [
   },
   {
     path: '/invoices',
-    label: 'Faturalar',
+    label: 'Fatura & İrsaliye',
     icon: 'invoice',
     roles: [Role.PLATFORM_OWNER],
     showInSidebar: true,

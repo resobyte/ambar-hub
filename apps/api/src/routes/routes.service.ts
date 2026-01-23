@@ -3,20 +3,27 @@ import {
     NotFoundException,
     BadRequestException,
     Logger,
+    Inject,
+    forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, Not } from 'typeorm';
 import { Route } from './entities/route.entity';
 import { RouteOrder } from './entities/route-order.entity';
+import { RouteConsumable } from './entities/route-consumable.entity';
 import { Order } from '../orders/entities/order.entity';
 import { OrderItem } from '../orders/entities/order-item.entity';
 import { Product } from '../products/entities/product.entity';
 import { ShelfStock } from '../shelves/entities/shelf-stock.entity';
+import { Consumable } from '../consumables/entities/consumable.entity';
 import { RouteStatus } from './enums/route-status.enum';
 import { OrderStatus } from '../orders/enums/order-status.enum';
 import { CreateRouteDto } from './dto/create-route.dto';
 import { RouteFilterDto } from './dto/route-filter.dto';
 import { RouteResponseDto } from './dto/route-response.dto';
+import { ConsumablesService } from '../consumables/consumables.service';
+import { OrderHistoryService } from '../orders/order-history.service';
+import { OrderHistoryAction } from '../orders/entities/order-history.entity';
 
 interface ProductInfo {
     barcode: string;
@@ -65,6 +72,8 @@ export class RoutesService {
         private readonly routeRepository: Repository<Route>,
         @InjectRepository(RouteOrder)
         private readonly routeOrderRepository: Repository<RouteOrder>,
+        @InjectRepository(RouteConsumable)
+        private readonly routeConsumableRepository: Repository<RouteConsumable>,
         @InjectRepository(Order)
         private readonly orderRepository: Repository<Order>,
         @InjectRepository(OrderItem)
@@ -73,6 +82,11 @@ export class RoutesService {
         private readonly productRepository: Repository<Product>,
         @InjectRepository(ShelfStock)
         private readonly shelfStockRepository: Repository<ShelfStock>,
+        @InjectRepository(Consumable)
+        private readonly consumableRepository: Repository<Consumable>,
+        private readonly consumablesService: ConsumablesService,
+        @Inject(forwardRef(() => OrderHistoryService))
+        private readonly orderHistoryService: OrderHistoryService,
     ) { }
 
     async create(dto: CreateRouteDto, userId?: string): Promise<RouteResponseDto> {
@@ -219,11 +233,56 @@ export class RoutesService {
 
         await this.routeOrderRepository.save(routeOrders);
 
+        // Handle consumables if provided
+        if (dto.consumables && dto.consumables.length > 0) {
+            for (const consumableDto of dto.consumables) {
+                const consumable = await this.consumableRepository.findOne({
+                    where: { id: consumableDto.consumableId }
+                });
+
+                if (!consumable) {
+                    this.logger.warn(`Consumable ${consumableDto.consumableId} not found, skipping`);
+                    continue;
+                }
+
+                // Create route consumable record
+                const routeConsumable = this.routeConsumableRepository.create({
+                    routeId: savedRoute.id,
+                    consumableId: consumableDto.consumableId,
+                    quantity: consumableDto.quantity,
+                    unitCost: Number(consumable.averageCost) || 0,
+                });
+                await this.routeConsumableRepository.save(routeConsumable);
+
+                // Deduct from consumable stock (don't go below 0)
+                const currentStock = Number(consumable.stockQuantity) || 0;
+                const deductAmount = Math.min(consumableDto.quantity, currentStock);
+                if (deductAmount > 0) {
+                    consumable.stockQuantity = currentStock - deductAmount;
+                    await this.consumableRepository.save(consumable);
+                }
+            }
+        }
+
         // Update order statuses to PICKING
         await this.orderRepository.update(
             { id: In(dto.orderIds) },
             { status: OrderStatus.PICKING }
         );
+
+        // Log order history for each order
+        for (const order of orders) {
+            await this.orderHistoryService.logEvent({
+                orderId: order.id,
+                action: OrderHistoryAction.ROUTE_ASSIGNED,
+                userId,
+                previousStatus: order.status,
+                newStatus: OrderStatus.PICKING,
+                routeId: savedRoute.id,
+                routeName: routeCode,
+                description: `Sipariş ${routeCode} rotasına eklendi`,
+            });
+        }
 
         return this.findOne(savedRoute.id);
     }

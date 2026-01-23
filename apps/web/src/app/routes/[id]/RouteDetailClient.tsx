@@ -11,6 +11,37 @@ import {
     RouteStatus,
 } from '@/lib/api';
 
+import {
+    Breadcrumb,
+    BreadcrumbItem,
+    BreadcrumbLink,
+    BreadcrumbList,
+    BreadcrumbPage,
+    BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from '@/components/ui/table';
+import { Separator } from '@/components/ui/separator';
+import {
+    Loader2,
+    ArrowLeft,
+    Printer,
+    Tag,
+    Package,
+    Trash2,
+    FileText,
+    AlertCircle,
+} from 'lucide-react';
+
 interface Props {
     routeId: string;
 }
@@ -35,7 +66,7 @@ export function RouteDetailClient({ routeId }: Props) {
 
     useEffect(() => { fetchRoute(); }, [fetchRoute]);
 
-    const handlePrintLabel = async () => {
+    const handlePrintRoute = async () => {
         try {
             const labelHtml = await printRouteLabel(routeId);
             const blob = new Blob([labelHtml], { type: 'text/html;charset=utf-8' });
@@ -43,6 +74,17 @@ export function RouteDetailClient({ routeId }: Props) {
             window.open(url, '_blank');
         } catch (err) {
             console.error('Print failed:', err);
+        }
+    };
+
+    const handlePrintLabel = async () => {
+        try {
+            const labelHtml = await printRouteLabel(routeId);
+            const blob = new Blob([labelHtml], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            window.open(url, '_blank');
+        } catch (err) {
+            console.error('Print label failed:', err);
         }
     };
 
@@ -57,162 +99,250 @@ export function RouteDetailClient({ routeId }: Props) {
     };
 
     const getStatusBadge = (status: RouteStatus) => {
-        const config: Record<RouteStatus, { bg: string; text: string; label: string }> = {
-            [RouteStatus.COLLECTING]: { bg: 'bg-amber-500', text: 'text-white', label: 'Toplanıyor' },
-            [RouteStatus.READY]: { bg: 'bg-emerald-500', text: 'text-white', label: 'Hazır' },
-            [RouteStatus.COMPLETED]: { bg: 'bg-blue-500', text: 'text-white', label: 'Tamamlandı' },
-            [RouteStatus.CANCELLED]: { bg: 'bg-red-500', text: 'text-white', label: 'İptal' },
+        const config: Record<RouteStatus, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string }> = {
+            [RouteStatus.COLLECTING]: { variant: 'default', label: 'Toplanıyor' },
+            [RouteStatus.READY]: { variant: 'secondary', label: 'Hazır' },
+            [RouteStatus.COMPLETED]: { variant: 'outline', label: 'Tamamlandı' },
+            [RouteStatus.CANCELLED]: { variant: 'destructive', label: 'İptal' },
         };
-        const { bg, text, label } = config[status];
-        return <span className={`px-4 py-2 rounded-lg text-sm font-semibold ${bg} ${text}`}>{label}</span>;
+        const { variant, label } = config[status];
+        return <Badge variant={variant} className="text-sm px-3 py-1">{label}</Badge>;
     };
 
     if (loading) {
         return (
             <div className="flex items-center justify-center h-64">
-                <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full"></div>
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
             </div>
         );
     }
 
     if (error || !route) {
         return (
-            <div className="text-center py-12">
-                <div className="text-red-500 text-lg">{error || 'Rota bulunamadı'}</div>
-                <Link href="/routes" className="mt-4 inline-block text-primary hover:underline">Rotalara Dön</Link>
+            <div className="flex flex-col items-center justify-center h-64 gap-4">
+                <AlertCircle className="w-12 h-12 text-destructive" />
+                <p className="text-muted-foreground">{error || 'Rota bulunamadı'}</p>
+                <Button variant="outline" onClick={() => router.push('/routes')}>
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    Rotalara Dön
+                </Button>
             </div>
         );
     }
 
-    const infoItems = [
-        { label: 'Rota Takip Kodu', value: route.id.slice(0, 8).toUpperCase() },
-        { label: 'Rota Adı', value: route.name },
-        { label: 'Açıklama', value: route.description || '-' },
-        { label: 'Toplam Sipariş', value: route.totalOrderCount },
-        { label: 'Toplam Ürün', value: route.totalItemCount },
-        { label: 'Toplanan Ürün', value: route.pickedItemCount || 0 },
-        { label: 'Paketlenen Sipariş', value: route.packedOrderCount || 0 },
-        { label: 'Oluşturma Zamanı', value: new Date(route.createdAt).toLocaleString('tr-TR') },
-    ];
-
-    const actionButtons = [
-        { label: 'Siparişler', color: 'bg-rose-600 hover:bg-rose-700', onClick: () => { } },
-        { label: 'Ürünler', color: 'bg-rose-600 hover:bg-rose-700', onClick: () => { } },
-        { label: 'Rotayı Yazdır', color: 'bg-teal-600 hover:bg-teal-700', onClick: handlePrintLabel },
-        { label: 'Rota Etiketini Yazdır', color: 'bg-teal-600 hover:bg-teal-700', onClick: handlePrintLabel },
-        { label: 'Toplamaya Git', color: 'bg-blue-600 hover:bg-blue-700', onClick: () => router.push(`/picking?route=${routeId}`) },
-        { label: 'Paketlemeye Git', color: 'bg-green-600 hover:bg-green-700', onClick: () => router.push('/packing'), disabled: route.status !== RouteStatus.READY },
-    ];
+    const calculateOrderItemCount = (order: any): number => {
+        if (order.items && Array.isArray(order.items)) {
+            return order.items.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0);
+        }
+        if (order.totalQuantity) {
+            return order.totalQuantity;
+        }
+        return 0;
+    };
 
     return (
         <div className="space-y-6">
             {/* Header */}
             <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                    <Link href="/routes" className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                        </svg>
-                    </Link>
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900">Rota Detay ({route.id.slice(0, 8).toUpperCase()})</h1>
-                    </div>
-                </div>
+                <Breadcrumb>
+                    <BreadcrumbList>
+                        <BreadcrumbItem>
+                            <BreadcrumbLink asChild>
+                                <Link href="/dashboard">Ana Sayfa</Link>
+                            </BreadcrumbLink>
+                        </BreadcrumbItem>
+                        <BreadcrumbSeparator />
+                        <BreadcrumbItem>
+                            <BreadcrumbLink asChild>
+                                <Link href="/routes">Rotalar</Link>
+                            </BreadcrumbLink>
+                        </BreadcrumbItem>
+                        <BreadcrumbSeparator />
+                        <BreadcrumbItem>
+                            <BreadcrumbPage>{route.name}</BreadcrumbPage>
+                        </BreadcrumbItem>
+                    </BreadcrumbList>
+                </Breadcrumb>
                 {getStatusBadge(route.status)}
             </div>
 
-            {/* Main Content Grid */}
+            {/* Main Content */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Info Panel - Left */}
-                <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm">
-                    <div className="divide-y divide-gray-100">
-                        {infoItems.map((item, idx) => (
-                            <div key={idx} className="flex px-6 py-3">
-                                <div className="w-48 font-medium text-gray-600">{item.label}</div>
-                                <div className="flex-1 text-gray-900">{item.value}</div>
+                {/* Info Card */}
+                <Card className="lg:col-span-2">
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <Package className="w-5 h-5" />
+                            Rota Bilgileri
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <p className="text-sm text-muted-foreground">Rota Takip Kodu</p>
+                                <p className="font-mono font-semibold">{route.id.slice(0, 8).toUpperCase()}</p>
                             </div>
-                        ))}
-                    </div>
-                </div>
+                            <div>
+                                <p className="text-sm text-muted-foreground">Rota Adı</p>
+                                <p className="font-semibold">{route.name}</p>
+                            </div>
+                            <div>
+                                <p className="text-sm text-muted-foreground">Açıklama</p>
+                                <p className="font-medium">{route.description || '-'}</p>
+                            </div>
+                            <div>
+                                <p className="text-sm text-muted-foreground">Oluşturma Zamanı</p>
+                                <p className="font-medium">{new Date(route.createdAt).toLocaleString('tr-TR')}</p>
+                            </div>
+                        </div>
 
-                {/* Actions Panel - Right */}
-                <div className="space-y-3">
-                    {actionButtons.map((btn, idx) => (
-                        <button
-                            key={idx}
-                            onClick={btn.onClick}
-                            disabled={btn.disabled}
-                            className={`w-full py-3 px-4 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${btn.color}`}
-                        >
-                            {btn.label}
-                        </button>
-                    ))}
+                        <Separator />
 
-                    {route.status !== RouteStatus.COMPLETED && route.status !== RouteStatus.CANCELLED && (
-                        <button
-                            onClick={handleCancel}
-                            className="w-full py-3 px-4 bg-red-100 text-red-700 font-medium rounded-lg hover:bg-red-200 transition-colors"
+                        <div className="grid grid-cols-4 gap-4 text-center">
+                            <div className="p-3 rounded-lg bg-muted/50">
+                                <p className="text-2xl font-bold text-primary">{route.totalOrderCount}</p>
+                                <p className="text-xs text-muted-foreground">Toplam Sipariş</p>
+                            </div>
+                            <div className="p-3 rounded-lg bg-muted/50">
+                                <p className="text-2xl font-bold text-blue-600">{route.totalItemCount}</p>
+                                <p className="text-xs text-muted-foreground">Toplam Ürün</p>
+                            </div>
+                            <div className="p-3 rounded-lg bg-muted/50">
+                                <p className="text-2xl font-bold text-green-600">{route.pickedItemCount || 0}</p>
+                                <p className="text-xs text-muted-foreground">Toplanan Ürün</p>
+                            </div>
+                            <div className="p-3 rounded-lg bg-muted/50">
+                                <p className="text-2xl font-bold text-orange-600">{route.packedOrderCount || 0}</p>
+                                <p className="text-xs text-muted-foreground">Paketlenen</p>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* Actions Card */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="text-base">İşlemler</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                        <Button
+                            variant="outline"
+                            className="w-full justify-start"
+                            onClick={handlePrintRoute}
                         >
-                            Rotayı İptal Et
-                        </button>
-                    )}
-                </div>
+                            <Printer className="w-4 h-4 mr-2" />
+                            Rotayı Yazdır
+                        </Button>
+
+                        <Button
+                            variant="outline"
+                            className="w-full justify-start"
+                            onClick={handlePrintLabel}
+                        >
+                            <Tag className="w-4 h-4 mr-2" />
+                            Rota Etiketini Yazdır
+                        </Button>
+
+                        <Separator />
+
+                        {route.status === RouteStatus.COLLECTING && (
+                            <Button
+                                className="w-full justify-start"
+                                onClick={() => router.push(`/picking?route=${routeId}`)}
+                            >
+                                <Package className="w-4 h-4 mr-2" />
+                                Toplamaya Git
+                            </Button>
+                        )}
+
+                        {route.status === RouteStatus.READY && (
+                            <Button
+                                className="w-full justify-start bg-green-600 hover:bg-green-700"
+                                onClick={() => router.push('/packing')}
+                            >
+                                <Package className="w-4 h-4 mr-2" />
+                                Paketlemeye Git
+                            </Button>
+                        )}
+
+                        <Button
+                            variant="secondary"
+                            className="w-full justify-start"
+                            disabled
+                        >
+                            <FileText className="w-4 h-4 mr-2" />
+                            Toplu Faturalama ve Paketleme
+                        </Button>
+
+                        {route.status !== RouteStatus.COMPLETED && route.status !== RouteStatus.CANCELLED && (
+                            <>
+                                <Separator />
+                                <Button
+                                    variant="destructive"
+                                    className="w-full justify-start"
+                                    onClick={handleCancel}
+                                >
+                                    <Trash2 className="w-4 h-4 mr-2" />
+                                    Rotayı İptal Et
+                                </Button>
+                            </>
+                        )}
+                    </CardContent>
+                </Card>
             </div>
 
             {/* Orders Table */}
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                    <h2 className="text-lg font-semibold text-gray-900">Rota Siparişleri</h2>
-                </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full">
-                        <thead className="bg-gray-50 border-b border-gray-200">
-                            <tr>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">#</th>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Sipariş No</th>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Müşteri</th>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Ürün Adedi</th>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Durum</th>
-                                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">İşlemler</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Rota Siparişleri</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead className="w-12">#</TableHead>
+                                <TableHead>Sipariş No</TableHead>
+                                <TableHead>Müşteri</TableHead>
+                                <TableHead className="text-center">Ürün Adedi</TableHead>
+                                <TableHead>Durum</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
                             {route.orders && route.orders.length > 0 ? (
                                 route.orders.map((order: any, idx: number) => (
-                                    <tr key={order.id} className="hover:bg-gray-50 transition-colors">
-                                        <td className="px-4 py-3 text-gray-500">{idx + 1}</td>
-                                        <td className="px-4 py-3 font-medium text-gray-900">{order.orderNumber || order.id.slice(0, 8)}</td>
-                                        <td className="px-4 py-3 text-gray-700">
-                                            {order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : '-'}
-                                        </td>
-                                        <td className="px-4 py-3 text-gray-700">
-                                            {order.items?.reduce((sum: number, i: any) => sum + (i.quantity || 1), 0) || 0}
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <span className="px-2 py-1 bg-amber-100 text-amber-800 text-xs font-medium rounded">
+                                    <TableRow key={order.id}>
+                                        <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
+                                        <TableCell className="font-medium">
+                                            {order.orderNumber || order.id.slice(0, 8).toUpperCase()}
+                                        </TableCell>
+                                        <TableCell>
+                                            {order.customer
+                                                ? `${order.customer.firstName || ''} ${order.customer.lastName || ''}`.trim() || '-'
+                                                : '-'}
+                                        </TableCell>
+                                        <TableCell className="text-center">
+                                            <Badge variant="secondary">
+                                                {calculateOrderItemCount(order)}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Badge variant="outline">
                                                 {order.status || 'Rotada'}
-                                            </span>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <div className="flex gap-2">
-                                                <button className="px-3 py-1 bg-rose-600 text-white text-xs rounded hover:bg-rose-700">
-                                                    Rotadan Kaldır
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
+                                            </Badge>
+                                        </TableCell>
+                                    </TableRow>
                                 ))
                             ) : (
-                                <tr>
-                                    <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                                <TableRow>
+                                    <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
                                         Bu rotada sipariş bulunmuyor
-                                    </td>
-                                </tr>
+                                    </TableCell>
+                                </TableRow>
                             )}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+                        </TableBody>
+                    </Table>
+                </CardContent>
+            </Card>
         </div>
     );
 }

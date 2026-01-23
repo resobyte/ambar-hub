@@ -231,19 +231,37 @@ export class ProductIntegrationsService {
   /**
    * Find all product integrations with optional filtering.
    */
-  async findAll(productStoreId?: string): Promise<ProductIntegrationResponseDto[]> {
-    const where = productStoreId ? { productStoreId } : {};
+  async findAll(productStoreId?: string, integrationId?: string): Promise<ProductIntegrationResponseDto[]> {
+    const where: any = {};
+    if (productStoreId) where.productStoreId = productStoreId;
+    if (integrationId) where.integrationId = integrationId;
+
     const integrations = await this.productIntegrationRepository.find({
       where,
-      relations: ['integration'],
+      relations: ['integration', 'productStore', 'productStore.product', 'productStore.store'],
     });
 
-    return integrations.map(pi =>
-      ProductIntegrationResponseDto.fromEntity(
+    return integrations.map(pi => {
+      const product = pi.productStore?.product;
+      const store = pi.productStore?.store;
+
+      return ProductIntegrationResponseDto.fromEntity(
         pi,
         pi.integration?.name,
         pi.integration?.type,
-      ),
-    );
+        product ? {
+          id: product.id,
+          name: product.name,
+          sku: product.sku,
+          barcode: product.barcode,
+          salePrice: Number(product.salePrice),
+        } : undefined,
+        store ? {
+          id: store.id,
+          name: store.name,
+          storeSalePrice: pi.productStore?.storeSalePrice ? Number(pi.productStore.storeSalePrice) : null,
+        } : undefined,
+      );
+    });
   }
 }

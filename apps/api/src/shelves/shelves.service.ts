@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, TreeRepository, IsNull } from 'typeorm';
 import { Shelf } from './entities/shelf.entity';
 import { ShelfStock } from './entities/shelf-stock.entity';
 import { ShelfConsumableStock } from './entities/shelf-consumable-stock.entity';
+import { ShelfStockMovement, MovementType, MovementDirection } from './entities/shelf-stock-movement.entity';
 import { CreateShelfDto } from './dto/create-shelf.dto';
 import { UpdateShelfDto } from './dto/update-shelf.dto';
 import { ShelfType, SHELF_TYPE_RULES } from './enums/shelf-type.enum';
@@ -13,6 +14,8 @@ import * as XLSX from 'xlsx';
 
 @Injectable()
 export class ShelvesService {
+    private readonly logger = new Logger(ShelvesService.name);
+
     constructor(
         @InjectRepository(Shelf)
         private readonly shelfRepository: TreeRepository<Shelf>,
@@ -22,6 +25,8 @@ export class ShelvesService {
         private readonly shelfConsumableStockRepository: Repository<ShelfConsumableStock>,
         @InjectRepository(ProductStore)
         private readonly productStoreRepository: Repository<ProductStore>,
+        @InjectRepository(ShelfStockMovement)
+        private readonly movementRepository: Repository<ShelfStockMovement>,
     ) { }
 
     async create(dto: CreateShelfDto): Promise<Shelf> {
@@ -637,5 +642,244 @@ export class ShelvesService {
         XLSX.utils.book_append_sheet(workbook, worksheet, 'Raflar');
 
         return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    }
+
+    async getProductTotalStock(productId: string): Promise<number> {
+        const result = await this.shelfStockRepository
+            .createQueryBuilder('ss')
+            .select('SUM(ss.quantity)', 'total')
+            .where('ss.productId = :productId', { productId })
+            .getRawOne();
+
+        return Number(result?.total) || 0;
+    }
+
+    async getConsumableTotalStock(consumableId: string): Promise<number> {
+        const result = await this.shelfConsumableStockRepository
+            .createQueryBuilder('scs')
+            .select('SUM(scs.quantity)', 'total')
+            .where('scs.consumableId = :consumableId', { consumableId })
+            .getRawOne();
+
+        return Number(result?.total) || 0;
+    }
+
+    async recordMovement(params: {
+        shelfId: string;
+        productId: string;
+        type: MovementType;
+        direction: MovementDirection;
+        quantity: number;
+        quantityBefore: number;
+        quantityAfter: number;
+        orderId?: string;
+        routeId?: string;
+        sourceShelfId?: string;
+        targetShelfId?: string;
+        referenceNumber?: string;
+        notes?: string;
+        userId?: string;
+    }): Promise<ShelfStockMovement> {
+        const movement = this.movementRepository.create({
+            shelfId: params.shelfId,
+            productId: params.productId,
+            type: params.type,
+            direction: params.direction,
+            quantity: params.quantity,
+            quantityBefore: params.quantityBefore,
+            quantityAfter: params.quantityAfter,
+            orderId: params.orderId || null,
+            routeId: params.routeId || null,
+            sourceShelfId: params.sourceShelfId || null,
+            targetShelfId: params.targetShelfId || null,
+            referenceNumber: params.referenceNumber,
+            notes: params.notes,
+            userId: params.userId || null,
+        });
+
+        return this.movementRepository.save(movement);
+    }
+
+    async transferWithHistory(
+        fromShelfId: string,
+        toShelfId: string,
+        productId: string,
+        quantity: number,
+        options?: {
+            type?: MovementType;
+            orderId?: string;
+            routeId?: string;
+            referenceNumber?: string;
+            notes?: string;
+            userId?: string;
+        }
+    ): Promise<{ from: ShelfStock | null; to: ShelfStock; movements: ShelfStockMovement[] }> {
+        const toShelf = await this.shelfRepository.findOne({ where: { id: toShelfId } });
+        if (!toShelf) {
+            throw new BadRequestException('Hedef raf bulunamadı');
+        }
+        if (!toShelf.isShelvable) {
+            throw new BadRequestException('Hedef raf transfer için uygun değil');
+        }
+
+        const fromStock = await this.shelfStockRepository.findOne({
+            where: { shelfId: fromShelfId, productId },
+        });
+
+        const fromQuantityBefore = fromStock?.quantity || 0;
+        if (fromQuantityBefore < quantity) {
+            throw new BadRequestException(`Yetersiz stok. Mevcut: ${fromQuantityBefore}, İstenen: ${quantity}`);
+        }
+
+        const toStock = await this.shelfStockRepository.findOne({
+            where: { shelfId: toShelfId, productId },
+        });
+        const toQuantityBefore = toStock?.quantity || 0;
+
+        const from = await this.removeStock(fromShelfId, productId, quantity);
+        const to = await this.addStock(toShelfId, productId, quantity);
+
+        const movements: ShelfStockMovement[] = [];
+
+        const outMovement = await this.recordMovement({
+            shelfId: fromShelfId,
+            productId,
+            type: options?.type || MovementType.TRANSFER,
+            direction: MovementDirection.OUT,
+            quantity,
+            quantityBefore: fromQuantityBefore,
+            quantityAfter: fromQuantityBefore - quantity,
+            orderId: options?.orderId,
+            routeId: options?.routeId,
+            sourceShelfId: fromShelfId,
+            targetShelfId: toShelfId,
+            referenceNumber: options?.referenceNumber,
+            notes: options?.notes,
+            userId: options?.userId,
+        });
+        movements.push(outMovement);
+
+        const inMovement = await this.recordMovement({
+            shelfId: toShelfId,
+            productId,
+            type: options?.type || MovementType.TRANSFER,
+            direction: MovementDirection.IN,
+            quantity,
+            quantityBefore: toQuantityBefore,
+            quantityAfter: toQuantityBefore + quantity,
+            orderId: options?.orderId,
+            routeId: options?.routeId,
+            sourceShelfId: fromShelfId,
+            targetShelfId: toShelfId,
+            referenceNumber: options?.referenceNumber,
+            notes: options?.notes,
+            userId: options?.userId,
+        });
+        movements.push(inMovement);
+
+        this.logger.log(`Transfer: ${quantity} x ${productId} from shelf ${fromShelfId} to ${toShelfId}`);
+
+        return { from, to, movements };
+    }
+
+    async removeStockWithHistory(
+        shelfId: string,
+        productId: string,
+        quantity: number,
+        options?: {
+            type?: MovementType;
+            orderId?: string;
+            routeId?: string;
+            referenceNumber?: string;
+            notes?: string;
+            userId?: string;
+        }
+    ): Promise<{ stock: ShelfStock | null; movement: ShelfStockMovement }> {
+        const stock = await this.shelfStockRepository.findOne({
+            where: { shelfId, productId },
+        });
+
+        const quantityBefore = stock?.quantity || 0;
+        const result = await this.removeStock(shelfId, productId, quantity);
+        const quantityAfter = result?.quantity || 0;
+
+        const movement = await this.recordMovement({
+            shelfId,
+            productId,
+            type: options?.type || MovementType.ADJUSTMENT,
+            direction: MovementDirection.OUT,
+            quantity,
+            quantityBefore,
+            quantityAfter,
+            orderId: options?.orderId,
+            routeId: options?.routeId,
+            referenceNumber: options?.referenceNumber,
+            notes: options?.notes,
+            userId: options?.userId,
+        });
+
+        return { stock: result, movement };
+    }
+
+    async getMovementHistory(filters: {
+        shelfId?: string;
+        productId?: string;
+        orderId?: string;
+        routeId?: string;
+        type?: MovementType;
+        startDate?: string;
+        endDate?: string;
+        page?: number;
+        limit?: number;
+    }): Promise<{ data: ShelfStockMovement[]; total: number }> {
+        const query = this.movementRepository.createQueryBuilder('movement')
+            .leftJoinAndSelect('movement.shelf', 'shelf')
+            .leftJoinAndSelect('movement.product', 'product')
+            .leftJoinAndSelect('movement.order', 'order')
+            .orderBy('movement.createdAt', 'DESC');
+
+        if (filters.shelfId) {
+            query.andWhere('movement.shelfId = :shelfId', { shelfId: filters.shelfId });
+        }
+        if (filters.productId) {
+            query.andWhere('movement.productId = :productId', { productId: filters.productId });
+        }
+        if (filters.orderId) {
+            query.andWhere('movement.orderId = :orderId', { orderId: filters.orderId });
+        }
+        if (filters.routeId) {
+            query.andWhere('movement.routeId = :routeId', { routeId: filters.routeId });
+        }
+        if (filters.type) {
+            query.andWhere('movement.type = :type', { type: filters.type });
+        }
+        if (filters.startDate) {
+            query.andWhere('movement.createdAt >= :startDate', { startDate: filters.startDate });
+        }
+        if (filters.endDate) {
+            query.andWhere('movement.createdAt <= :endDate', { endDate: filters.endDate });
+        }
+
+        const page = filters.page || 1;
+        const limit = filters.limit || 50;
+
+        const [data, total] = await query
+            .skip((page - 1) * limit)
+            .take(limit)
+            .getManyAndCount();
+
+        return { data, total };
+    }
+
+    async getPackingShelf(warehouseId: string): Promise<Shelf | null> {
+        return this.shelfRepository.findOne({
+            where: { warehouseId, type: ShelfType.PACKING },
+        });
+    }
+
+    async getPickingShelf(warehouseId: string): Promise<Shelf | null> {
+        return this.shelfRepository.findOne({
+            where: { warehouseId, type: ShelfType.PICKING },
+        });
     }
 }

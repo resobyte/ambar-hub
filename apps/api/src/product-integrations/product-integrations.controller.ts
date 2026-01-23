@@ -30,8 +30,11 @@ export class ProductIntegrationsController {
   }
 
   @Get()
-  findAll(@Query('productStoreId') productStoreId?: string) {
-    return this.productIntegrationsService.findAll(productStoreId);
+  findAll(
+    @Query('productStoreId') productStoreId?: string,
+    @Query('integrationId') integrationId?: string,
+  ) {
+    return this.productIntegrationsService.findAll(productStoreId, integrationId);
   }
 
   @Get(':id')

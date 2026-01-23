@@ -58,6 +58,9 @@ export class Product extends BaseEntity {
   @Column({ type: 'decimal', precision: 10, scale: 2, name: 'purchase_price', default: 0 })
   purchasePrice: number;
 
+  @Column({ type: 'decimal', precision: 10, scale: 2, name: 'average_cost', default: 0 })
+  averageCost: number;
+
   @Column({ type: 'decimal', precision: 10, scale: 2, name: 'sale_price', default: 0 })
   salePrice: number;
 

@@ -1,4 +1,5 @@
-import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ConsumableType, ConsumableUnit } from '../entities/consumable.entity';
 
 export class CreateConsumableDto {
@@ -7,8 +8,12 @@ export class CreateConsumableDto {
     name: string;
 
     @IsString()
-    @IsNotEmpty()
-    sku: string;
+    @IsOptional()
+    sku?: string;
+
+    @IsString()
+    @IsOptional()
+    barcode?: string;
 
     @IsEnum(ConsumableType)
     type: ConsumableType;
@@ -16,10 +21,21 @@ export class CreateConsumableDto {
     @IsEnum(ConsumableUnit)
     unit: ConsumableUnit;
 
+    @Transform(({ value }) => value !== undefined ? Number(value) : undefined)
     @IsNumber()
     @Min(0)
     @IsOptional()
     minStockLevel?: number;
+
+    @IsUUID()
+    @IsOptional()
+    parentId?: string;
+
+    @Transform(({ value }) => value !== undefined ? Number(value) : undefined)
+    @IsNumber()
+    @Min(0)
+    @IsOptional()
+    conversionQuantity?: number;
 }
 
 export class UpdateConsumableDto {
@@ -31,6 +47,10 @@ export class UpdateConsumableDto {
     @IsOptional()
     sku?: string;
 
+    @IsString()
+    @IsOptional()
+    barcode?: string;
+
     @IsEnum(ConsumableType)
     @IsOptional()
     type?: ConsumableType;
@@ -39,6 +59,7 @@ export class UpdateConsumableDto {
     @IsOptional()
     unit?: ConsumableUnit;
 
+    @Transform(({ value }) => value !== undefined ? Number(value) : undefined)
     @IsNumber()
     @Min(0)
     @IsOptional()
@@ -46,4 +67,14 @@ export class UpdateConsumableDto {
 
     @IsOptional()
     isActive?: boolean;
+
+    @IsUUID()
+    @IsOptional()
+    parentId?: string;
+
+    @Transform(({ value }) => value !== undefined ? Number(value) : undefined)
+    @IsNumber()
+    @Min(0)
+    @IsOptional()
+    conversionQuantity?: number;
 }

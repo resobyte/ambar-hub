@@ -69,6 +69,10 @@ export class IntegrationStore extends BaseEntity {
   // Fatura Ayarları (Invoice Settings)
   // =============================================
 
+  // Fatura Aktif mi?
+  @Column({ name: 'invoice_enabled', type: 'boolean', default: true })
+  invoiceEnabled: boolean;
+
   // Genel Fatura Ayarları
   @Column({ name: 'invoice_transaction_code', type: 'varchar', length: 50, nullable: true })
   invoiceTransactionCode: string;

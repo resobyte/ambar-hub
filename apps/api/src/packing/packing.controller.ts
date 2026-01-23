@@ -9,7 +9,7 @@ import {
     ParseUUIDPipe,
 } from '@nestjs/common';
 import { PackingService } from './packing.service';
-import { StartPackingDto, ScanBarcodeDto, CompleteOrderDto } from './dto/packing.dto';
+import { StartPackingDto, ScanBarcodeDto, CompleteOrderDto, ProcessShipmentDto } from './dto/packing.dto';
 
 @Controller('packing')
 export class PackingController {
@@ -65,7 +65,40 @@ export class PackingController {
             data: {
                 sessionComplete: result.sessionComplete,
                 nextOrderId: result.nextOrderId,
+                shipment: result.data,
             },
+        };
+    }
+
+    @Post('process-shipment')
+    async processShipment(@Body() dto: ProcessShipmentDto) {
+        const result = await this.packingService.processOrderShipment(dto.orderId);
+        return {
+            success: result.success,
+            message: result.message,
+            data: {
+                invoiceNumber: result.invoiceNumber,
+                cargoLabel: result.cargoLabel,
+                waybillNumber: result.waybillNumber,
+            },
+        };
+    }
+
+    @Get('cargo-label/:orderId')
+    async getCargoLabel(@Param('orderId', ParseUUIDPipe) orderId: string) {
+        const order = await this.packingService['orderRepository'].findOne({
+            where: { id: orderId },
+            relations: ['customer'],
+        });
+
+        if (!order) {
+            return { success: false, message: 'Order not found' };
+        }
+
+        const label = await this.packingService.getOrCreateCargoLabel(order);
+        return {
+            success: true,
+            data: label,
         };
     }
 

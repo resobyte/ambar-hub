@@ -23,6 +23,7 @@ import { PackingModule } from './packing/packing.module';
 import { PickingModule } from './picking/picking.module';
 import { ConsumablesModule } from './consumables/consumables.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { WaybillsModule } from './waybills/waybills.module';
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     PickingModule,
     ConsumablesModule,
     DashboardModule,
+    WaybillsModule,
   ],
 })
 export class AppModule { }

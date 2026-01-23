@@ -62,6 +62,9 @@ export class OrderItem extends BaseEntity {
     @Column('decimal', { name: 'unit_price', precision: 10, scale: 2 })
     unitPrice: number;
 
+    @Column('decimal', { name: 'unit_cost', precision: 10, scale: 2, default: 0 })
+    unitCost: number;
+
     @Column('decimal', { name: 'gross_amount', precision: 10, scale: 2, nullable: true })
     grossAmount: number;
 
