@@ -186,18 +186,22 @@ export class WaybillsService {
         const phone = shippingAddress.phone || order.customer?.phone || '';
 
         const items = order.items || [];
-        const itemRows = items.map((item, index) => `
+        const itemRows = items.map((item, index) => {
+            const unitPrice = Number(item.unitPrice) || 0;
+            const quantity = Number(item.quantity) || 1;
+            return `
             <tr>
                 <td>${index + 1}</td>
                 <td>${item.barcode || '-'}</td>
                 <td>${item.productName || 'Ürün'}</td>
-                <td style="text-align: center">${item.quantity || 1}</td>
-                <td style="text-align: right">${(item.unitPrice || 0).toFixed(2)} ₺</td>
-                <td style="text-align: right">${((item.unitPrice || 0) * (item.quantity || 1)).toFixed(2)} ₺</td>
+                <td style="text-align: center">${quantity}</td>
+                <td style="text-align: right">${unitPrice.toFixed(2)} ₺</td>
+                <td style="text-align: right">${(unitPrice * quantity).toFixed(2)} ₺</td>
             </tr>
-        `).join('');
+        `;
+        }).join('');
 
-        const totalAmount = order.totalPrice || 0;
+        const totalAmount = Number(order.totalPrice) || 0;
 
         return `
 <!DOCTYPE html>
@@ -282,7 +286,7 @@ export class WaybillsService {
 </head>
 <body>
     <div class="header">
-        <h1>SEVKİYAT İRSALİYESİ</h1>
+        <h1>SATIŞ İRSALİYESİ</h1>
         <div class="waybill-number">${waybillNumber}</div>
     </div>
 

@@ -90,6 +90,10 @@ export function RouteCreateClient() {
     const [maxQuantityFilter, setMaxQuantityFilter] = useState<string>('');
     const [microFilter, setMicroFilter] = useState<string>('');
     const [brandFilter, setBrandFilter] = useState<string>('');
+    const [orderDateStart, setOrderDateStart] = useState<string>('');
+    const [orderDateEnd, setOrderDateEnd] = useState<string>('');
+    const [agreedDeliveryDateStart, setAgreedDeliveryDateStart] = useState<string>('');
+    const [agreedDeliveryDateEnd, setAgreedDeliveryDateEnd] = useState<string>('');
     const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
     // Expanded orders (to show items)
@@ -113,6 +117,10 @@ export function RouteCreateClient() {
                 maxTotalQuantity: maxQuantityFilter ? parseInt(maxQuantityFilter) : undefined,
                 micro: microFilter === 'yes' ? true : microFilter === 'no' ? false : undefined,
                 brand: brandFilter || undefined,
+                orderDateStart: orderDateStart || undefined,
+                orderDateEnd: orderDateEnd || undefined,
+                agreedDeliveryDateStart: agreedDeliveryDateStart || undefined,
+                agreedDeliveryDateEnd: agreedDeliveryDateEnd || undefined,
             });
             setOrders(response.data || []);
         } catch (err) {
@@ -120,7 +128,7 @@ export function RouteCreateClient() {
         } finally {
             setLoading(false);
         }
-    }, [storeFilter, typeFilter, searchFilter, minQuantityFilter, maxQuantityFilter, microFilter, brandFilter]);
+    }, [storeFilter, typeFilter, searchFilter, minQuantityFilter, maxQuantityFilter, microFilter, brandFilter, orderDateStart, orderDateEnd, agreedDeliveryDateStart, agreedDeliveryDateEnd]);
 
     const fetchStores = useCallback(async () => {
         try {
@@ -203,6 +211,10 @@ export function RouteCreateClient() {
 
     const selectedOrders = orders.filter(o => selectedOrderIds.has(o.id));
     const totalSelectedQuantity = selectedOrders.reduce((sum, o) => sum + o.totalQuantity, 0);
+
+    const selectedStoreIds = new Set(selectedOrders.map(o => o.store?.id || 'no-store'));
+    const hasMultipleStores = selectedStoreIds.size > 1;
+    const selectedStoreNames = Array.from(new Set(selectedOrders.map(o => o.store?.name || 'Mağazasız')));
 
     return (
         <div className="space-y-6">
@@ -329,6 +341,40 @@ export function RouteCreateClient() {
                                             </Select>
                                         </div>
                                     </div>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                        <div className="space-y-2">
+                                            <Label className="text-xs text-muted-foreground">Sipariş Tarihi (Başlangıç)</Label>
+                                            <Input
+                                                type="date"
+                                                value={orderDateStart}
+                                                onChange={(e) => setOrderDateStart(e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs text-muted-foreground">Sipariş Tarihi (Bitiş)</Label>
+                                            <Input
+                                                type="date"
+                                                value={orderDateEnd}
+                                                onChange={(e) => setOrderDateEnd(e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs text-muted-foreground">Kargolama Tarihi (Başlangıç)</Label>
+                                            <Input
+                                                type="date"
+                                                value={agreedDeliveryDateStart}
+                                                onChange={(e) => setAgreedDeliveryDateStart(e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs text-muted-foreground">Kargolama Tarihi (Bitiş)</Label>
+                                            <Input
+                                                type="date"
+                                                value={agreedDeliveryDateEnd}
+                                                onChange={(e) => setAgreedDeliveryDateEnd(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
                                     <div className="flex justify-end">
                                         <Button
                                             variant="outline"
@@ -338,6 +384,10 @@ export function RouteCreateClient() {
                                                 setMaxQuantityFilter('');
                                                 setBrandFilter('');
                                                 setMicroFilter('');
+                                                setOrderDateStart('');
+                                                setOrderDateEnd('');
+                                                setAgreedDeliveryDateStart('');
+                                                setAgreedDeliveryDateEnd('');
                                             }}
                                         >
                                             <X className="h-3 w-3 mr-1" />
@@ -551,6 +601,11 @@ export function RouteCreateClient() {
                                     {error}
                                 </div>
                             )}
+                            {hasMultipleStores && (
+                                <div className="p-3 bg-amber-100 border border-amber-300 rounded-lg text-amber-800 text-sm">
+                                    <strong>Uyarı:</strong> Farklı mağazalardan siparişler seçtiniz ({selectedStoreNames.join(', ')}). Bir rotada sadece tek mağazanın siparişleri olabilir.
+                                </div>
+                            )}
                             <div className="p-3 bg-muted/50 border rounded-lg">
                                 <p className="text-sm text-muted-foreground">
                                     Rota otomatik olarak <strong className="text-foreground">R000001</strong> formatında numaralandırılacak
@@ -582,6 +637,14 @@ export function RouteCreateClient() {
                                 <span className="text-muted-foreground">Toplam Ürün:</span>
                                 <span className="font-semibold">{totalSelectedQuantity}</span>
                             </div>
+                            {selectedStoreNames.length > 0 && (
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-muted-foreground">Mağaza:</span>
+                                    <span className={`font-semibold ${hasMultipleStores ? 'text-amber-600' : ''}`}>
+                                        {selectedStoreNames.join(', ')}
+                                    </span>
+                                </div>
+                            )}
                             {selectedOrders.length > 0 && (
                                 <div className="pt-2 border-t">
                                     <p className="text-xs text-muted-foreground mb-2">
@@ -611,7 +674,7 @@ export function RouteCreateClient() {
                         className="w-full"
                         size="lg"
                         onClick={handleCreateRoute}
-                        disabled={creating || selectedOrderIds.size === 0}
+                        disabled={creating || selectedOrderIds.size === 0 || hasMultipleStores}
                     >
                         {creating ? (
                             <>

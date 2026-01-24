@@ -92,43 +92,34 @@ export interface Warehouse {
   updatedAt: string;
 }
 
+export type StoreType = 'TRENDYOL' | 'HEPSIBURADA' | 'IKAS' | 'MANUAL';
+
 export interface Store {
   id: string;
   name: string;
-  proxyUrl: string;
+  brandName: string;
+  type: StoreType;
   warehouseId: string;
+  warehouseName?: string;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
-}
 
-export interface Integration {
-  id: string;
-  name: string;
-  type: 'TRENDYOL' | 'HEPSIBURADA' | 'IKAS';
-  apiUrl: string;
-  isActive: boolean;
-  storeCount: number;
-  createdAt: string;
-  updatedAt: string;
-}
+  // API Credentials
+  apiUrl?: string;
+  sellerId?: string;
+  hasApiKey?: boolean;
+  hasApiSecret?: boolean;
 
-export interface IntegrationStore {
-  id: string;
-  integrationId: string;
-  storeId: string;
-  storeName?: string;
-  shippingProviderId: string | null;
-  sellerId: string;
-  apiKey: string;
-  apiSecret: string;
-  crawlIntervalMinutes: number;
-  sendStock: boolean;
-  sendPrice: boolean;
-  sendOrderStatus: boolean;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
+  // Kargo Ayarları
+  shippingProviderId?: string | null;
+  shippingProviderName?: string;
+
+  // Senkronizasyon Ayarları
+  crawlIntervalMinutes?: number;
+  sendStock?: boolean;
+  sendPrice?: boolean;
+  sendOrderStatus?: boolean;
 
   // Şirket Konfigürasyonu
   brandCode?: string;
@@ -140,27 +131,38 @@ export interface IntegrationStore {
   invoiceEnabled?: boolean;
   invoiceTransactionCode?: string;
   hasMicroExport?: boolean;
+  
+  // E-Arşiv
   eArchiveBulkCustomer?: boolean;
   eArchiveCardCode?: string;
-  eArchiveHavaleCardCode?: string;
   eArchiveAccountCode?: string;
-  eArchiveHavaleAccountCode?: string;
   eArchiveSerialNo?: string;
   eArchiveSequenceNo?: string;
+  eArchiveHavaleCardCode?: string;
+  eArchiveHavaleAccountCode?: string;
+  
+  // E-Fatura
   eInvoiceBulkCustomer?: boolean;
   eInvoiceCardCode?: string;
   eInvoiceAccountCode?: string;
-  eInvoiceHavaleAccountCode?: string;
   eInvoiceSerialNo?: string;
   eInvoiceSequenceNo?: string;
+  eInvoiceHavaleCardCode?: string;
+  eInvoiceHavaleAccountCode?: string;
+  
+  // Toplu Faturalama
   bulkEArchiveSerialNo?: string;
   bulkEArchiveSequenceNo?: string;
   bulkEInvoiceSerialNo?: string;
   bulkEInvoiceSequenceNo?: string;
+  
+  // İade Gider Pusulası
   refundExpenseVoucherEArchiveSerialNo?: string;
   refundExpenseVoucherEArchiveSequenceNo?: string;
   refundExpenseVoucherEInvoiceSerialNo?: string;
   refundExpenseVoucherEInvoiceSequenceNo?: string;
+  
+  // Mikro İhracat
   microExportTransactionCode?: string;
   microExportAccountCode?: string;
   microExportAzAccountCode?: string;
@@ -198,42 +200,12 @@ export interface ProductStore {
   productId: string;
   storeId: string;
   store: Store;
-  integrationId: string;
-  integration: Integration;
-  integrationStatus?: string;
-  items: OrderItem[];
   storeSku: string | null;
   storeSalePrice: number | null;
   stockQuantity: number;
   sellableQuantity: number;
   reservableQuantity: number;
   committedQuantity: number;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface ProductIntegrationProduct {
-  id: string;
-  name: string;
-  sku: string;
-  barcode: string | null;
-  salePrice: number;
-}
-
-export interface ProductIntegrationStore {
-  id: string;
-  name: string;
-  storeSalePrice: number | null;
-}
-
-export interface ProductIntegration {
-  id: string;
-  productStoreId: string;
-  integrationId: string;
-  integrationName?: string;
-  integrationType?: string;
-  integrationSalePrice: number | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -297,8 +269,13 @@ export async function deleteWarehouse(id: string): Promise<{ message: string }> 
 }
 
 // Store API
-export async function getStores(page = 1, limit = 10): Promise<PaginationResponse<Store>> {
-  const res = await fetch(`${API_URL}/stores?page=${page}&limit=${limit}`, {
+export async function getStores(page = 1, limit = 10, type?: string): Promise<PaginationResponse<Store>> {
+  const params = new URLSearchParams();
+  params.append('page', String(page));
+  params.append('limit', String(limit));
+  if (type) params.append('type', type);
+  
+  const res = await fetch(`${API_URL}/stores?${params}`, {
     cache: 'no-store',
     credentials: 'include',
   });
@@ -313,24 +290,32 @@ export async function getStore(id: string): Promise<ApiResponse<Store>> {
   return res.json();
 }
 
-export async function createStore(data: { name: string; proxyUrl: string; warehouseId: string; isActive?: boolean }): Promise<ApiResponse<Store>> {
+export async function createStore(data: Partial<Store>): Promise<ApiResponse<Store>> {
   const res = await fetch(`${API_URL}/stores`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify(data),
   });
-  return res.json();
+  const json = await res.json();
+  if (!res.ok || json.success === false) {
+    throw new Error(Array.isArray(json.message) ? json.message.join(', ') : json.message || 'Mağaza oluşturulamadı');
+  }
+  return json;
 }
 
-export async function updateStore(id: string, data: { name?: string; proxyUrl?: string; warehouseId?: string; isActive?: boolean }): Promise<ApiResponse<Store>> {
+export async function updateStore(id: string, data: Partial<Store>): Promise<ApiResponse<Store>> {
   const res = await fetch(`${API_URL}/stores/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify(data),
   });
-  return res.json();
+  const json = await res.json();
+  if (!res.ok || json.success === false) {
+    throw new Error(Array.isArray(json.message) ? json.message.join(', ') : json.message || 'Mağaza güncellenemedi');
+  }
+  return json;
 }
 
 export async function deleteStore(id: string): Promise<{ message: string }> {
@@ -664,157 +649,13 @@ export async function addIkasOrderInvoice(
   return res.json();
 }
 
-// IntegrationStore API
-export async function getIntegrationStores(integrationId?: string): Promise<IntegrationStore[]> {
-  const url = new URL(`${API_URL}/integration-stores`, BASE_URL);
-  if (integrationId) {
-    url.searchParams.append('integrationId', integrationId);
-  }
-  const res = await fetch(url.toString(), {
-    cache: 'no-store',
-    credentials: 'include',
-  });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.message || 'Request failed');
-  }
-  const data = await res.json();
-  // Handle both array response and wrapped response
-  return Array.isArray(data) ? data : (data?.data || []);
-}
-
-export async function createIntegrationStore(data: {
-  integrationId: string;
-  storeId: string;
-  shippingProviderId?: string;
-  sellerId: string;
-  apiKey: string;
-  apiSecret: string;
-  crawlIntervalMinutes: number;
-  sendStock: boolean;
-  sendPrice: boolean;
-  sendOrderStatus: boolean;
-  isActive?: boolean;
-  // Şirket Konfigürasyonu
-  brandCode?: string;
-  companyCode?: string;
-  branchCode?: string;
-  coCode?: string;
-  // Fatura Ayarları
-  invoiceTransactionCode?: string;
-  hasMicroExport?: boolean;
-  eArchiveBulkCustomer?: boolean;
-  eArchiveCardCode?: string;
-  eArchiveHavaleCardCode?: string;
-  eArchiveAccountCode?: string;
-  eArchiveHavaleAccountCode?: string;
-  eArchiveSerialNo?: string;
-  eArchiveSequenceNo?: string;
-  eInvoiceBulkCustomer?: boolean;
-  eInvoiceCardCode?: string;
-  eInvoiceAccountCode?: string;
-  eInvoiceHavaleAccountCode?: string;
-  eInvoiceSerialNo?: string;
-  eInvoiceSequenceNo?: string;
-  bulkEArchiveSerialNo?: string;
-  bulkEArchiveSequenceNo?: string;
-  bulkEInvoiceSerialNo?: string;
-  bulkEInvoiceSequenceNo?: string;
-  refundExpenseVoucherEArchiveSerialNo?: string;
-  refundExpenseVoucherEArchiveSequenceNo?: string;
-  refundExpenseVoucherEInvoiceSerialNo?: string;
-  refundExpenseVoucherEInvoiceSequenceNo?: string;
-  microExportTransactionCode?: string;
-  microExportAccountCode?: string;
-  microExportAzAccountCode?: string;
-  microExportEArchiveSerialNo?: string;
-  microExportEArchiveSequenceNo?: string;
-  microExportBulkSerialNo?: string;
-  microExportBulkSequenceNo?: string;
-  microExportRefundSerialNo?: string;
-  microExportRefundSequenceNo?: string;
-}): Promise<ApiResponse<IntegrationStore>> {
-  const res = await fetch(`${API_URL}/integration-stores`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.message || 'Request failed');
-  }
-  return res.json();
-}
-
-export async function updateIntegrationStore(id: string, data: {
-  shippingProviderId?: string;
-  sellerId?: string;
-  apiKey?: string;
-  apiSecret?: string;
-  crawlIntervalMinutes?: number;
-  sendStock?: boolean;
-  sendPrice?: boolean;
-  sendOrderStatus?: boolean;
-  isActive?: boolean;
-  // Şirket Konfigürasyonu
-  brandCode?: string;
-  companyCode?: string;
-  branchCode?: string;
-  coCode?: string;
-  // Fatura Ayarları
-  invoiceTransactionCode?: string;
-  hasMicroExport?: boolean;
-  eArchiveBulkCustomer?: boolean;
-  eArchiveCardCode?: string;
-  eArchiveHavaleCardCode?: string;
-  eArchiveAccountCode?: string;
-  eArchiveHavaleAccountCode?: string;
-  eArchiveSerialNo?: string;
-  eArchiveSequenceNo?: string;
-  eInvoiceBulkCustomer?: boolean;
-  eInvoiceCardCode?: string;
-  eInvoiceAccountCode?: string;
-  eInvoiceHavaleAccountCode?: string;
-  eInvoiceSerialNo?: string;
-  eInvoiceSequenceNo?: string;
-  bulkEArchiveSerialNo?: string;
-  bulkEArchiveSequenceNo?: string;
-  bulkEInvoiceSerialNo?: string;
-  bulkEInvoiceSequenceNo?: string;
-  refundExpenseVoucherEArchiveSerialNo?: string;
-  refundExpenseVoucherEArchiveSequenceNo?: string;
-  refundExpenseVoucherEInvoiceSerialNo?: string;
-  refundExpenseVoucherEInvoiceSequenceNo?: string;
-  microExportTransactionCode?: string;
-  microExportAccountCode?: string;
-  microExportAzAccountCode?: string;
-  microExportEArchiveSerialNo?: string;
-  microExportEArchiveSequenceNo?: string;
-  microExportBulkSerialNo?: string;
-  microExportBulkSequenceNo?: string;
-  microExportRefundSerialNo?: string;
-  microExportRefundSequenceNo?: string;
-}): Promise<ApiResponse<IntegrationStore>> {
-  const res = await fetch(`${API_URL}/integration-stores/${id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.message || 'Request failed');
-  }
-  return res.json();
-}
-
 // Product API
 export interface ProductFilters {
   name?: string;
   isActive?: string;
   brandId?: string;
   categoryId?: string;
+  storeId?: string;
 }
 
 export async function getProducts(page = 1, limit = 10, filters?: ProductFilters): Promise<PaginationResponse<Product>> {
@@ -826,6 +667,7 @@ export async function getProducts(page = 1, limit = 10, filters?: ProductFilters
   if (filters?.isActive) url.searchParams.append('isActive', filters.isActive);
   if (filters?.brandId) url.searchParams.append('brandId', filters.brandId);
   if (filters?.categoryId) url.searchParams.append('categoryId', filters.categoryId);
+  if (filters?.storeId) url.searchParams.append('storeId', filters.storeId);
 
   const res = await fetch(url.toString(), {
     cache: 'no-store',
@@ -974,8 +816,12 @@ export async function getProductStores(productId?: string): Promise<ProductStore
     const error = await res.json();
     throw new Error(error.message || 'Request failed');
   }
-  const data = await res.json();
-  return Array.isArray(data) ? data : (data?.data || []);
+  const json = await res.json();
+  // API returns { success: true, data: { data: [...], meta: {...} } } or { success: true, data: [...] }
+  if (Array.isArray(json)) return json;
+  if (Array.isArray(json?.data?.data)) return json.data.data;
+  if (Array.isArray(json?.data)) return json.data;
+  return [];
 }
 
 export async function createProductStore(data: {
@@ -1238,27 +1084,29 @@ export interface OrderItem {
 
 export enum OrderStatus {
   CREATED = 'CREATED',
-  PICKING = 'PICKING',
-  PACKED = 'PACKED',
-  INVOICED = 'INVOICED',
-  SHIPPED = 'SHIPPED',
-  CANCELLED = 'CANCELLED',
-  DELIVERED = 'DELIVERED',
-  UNDELIVERED = 'UNDELIVERED',
-  RETURNED = 'RETURNED',
-  REPACK = 'REPACK',
-  UNSUPPLIED = 'UNSUPPLIED',
+  WAITING_STOCK = 'WAITING_STOCK',       // Stok Bekliyor
+  WAITING_PICKING = 'WAITING_PICKING',   // Toplama Bekliyor
+  PICKING = 'PICKING',                   // Rotada Toplanıyor
+  PICKED = 'PICKED',                     // Rotada Toplandı
+  PACKING = 'PACKING',                   // Paketleniyor
+  PACKED = 'PACKED',                     // Paketlendi
+  INVOICED = 'INVOICED',                 // Faturalandı
+  SHIPPED = 'SHIPPED',                   // Kargoya Verildi
+  CANCELLED = 'CANCELLED',               // İptal Edildi
+  DELIVERED = 'DELIVERED',               // Teslim Edildi
+  UNDELIVERED = 'UNDELIVERED',           // Teslim Edilemedi
+  RETURNED = 'RETURNED',                 // İade Edildi
+  REPACK = 'REPACK',                     // Yeniden Paketle
+  UNSUPPLIED = 'UNSUPPLIED',             // Temin Edilemedi (legacy)
   UNKNOWN = 'UNKNOWN',
 }
 
 export interface Order {
   id: string;
   orderNumber: string;
-  integrationId: string;
-  integration?: Integration;
   customerId: string;
   customer?: Customer;
-  storeId?: string;
+  storeId: string;
   store?: Store;
   status: OrderStatus;
   integrationStatus: string | null;
@@ -1449,10 +1297,14 @@ export async function deleteFaultyOrder(id: string): Promise<{ success: boolean 
 
 // Invoice API
 
+export type DocumentType = 'INVOICE' | 'WAYBILL' | 'EXPENSE_VOUCHER' | 'REFUND_INVOICE';
+
 export interface Invoice {
   id: string;
-  orderId: string;
+  documentType: DocumentType;
+  orderId?: string;
   order?: Order;
+  returnId?: string;
   storeId?: string;
   invoiceNumber: string;
   invoiceSerial?: string;
@@ -1586,9 +1438,9 @@ export interface RouteConsumableInput {
   quantity: number;
 }
 
-export async function createRoute(data: { 
-  name?: string; 
-  description?: string; 
+export async function createRoute(data: {
+  name?: string;
+  description?: string;
   orderIds: string[];
   consumables?: RouteConsumableInput[];
 }): Promise<ApiResponse<Route>> {
@@ -1624,6 +1476,10 @@ export async function getFilteredOrders(filter: {
   maxTotalQuantity?: number;
   micro?: boolean;
   brand?: string;
+  orderDateStart?: string;
+  orderDateEnd?: string;
+  agreedDeliveryDateStart?: string;
+  agreedDeliveryDateEnd?: string;
 }): Promise<{ data: any[]; meta: { total: number } }> {
   const params = new URLSearchParams();
   if (filter.storeId) params.append('storeId', filter.storeId);
@@ -1636,6 +1492,10 @@ export async function getFilteredOrders(filter: {
   if (filter.maxTotalQuantity !== undefined) params.append('maxTotalQuantity', filter.maxTotalQuantity.toString());
   if (filter.micro !== undefined) params.append('micro', filter.micro.toString());
   if (filter.brand) params.append('brand', filter.brand);
+  if (filter.orderDateStart) params.append('orderDateStart', filter.orderDateStart);
+  if (filter.orderDateEnd) params.append('orderDateEnd', filter.orderDateEnd);
+  if (filter.agreedDeliveryDateStart) params.append('agreedDeliveryDateStart', filter.agreedDeliveryDateStart);
+  if (filter.agreedDeliveryDateEnd) params.append('agreedDeliveryDateEnd', filter.agreedDeliveryDateEnd);
 
   const res = await fetch(`${API_URL}/routes/filter-orders?${params}`, {
     cache: 'no-store',
@@ -1759,7 +1619,7 @@ export interface OrderConsumableInput {
 }
 
 export async function completePackingOrder(
-  sessionId: string, 
+  sessionId: string,
   orderId: string,
   consumables?: OrderConsumableInput[]
 ): Promise<{
@@ -2119,4 +1979,161 @@ export interface DashboardStats {
 export async function getDashboardStats(): Promise<ApiResponse<DashboardStats>> {
   const res = await fetch(`${API_URL}/dashboard/stats`, { credentials: 'include' });
   return res.json();
+}
+
+// Returns API
+export interface ReturnItem {
+  id: string;
+  claimItemId: string;
+  productName: string;
+  barcode: string;
+  merchantSku: string;
+  productColor: string;
+  productSize: string;
+  price: number;
+  quantity: number;
+  customerReasonName: string;
+  customerNote: string;
+  claimItemStatus: string;
+  shelfType: 'NORMAL' | 'DAMAGED' | null;
+  processedShelfId: string | null;
+  processedQuantity: number;
+  productId: string | null;
+  product?: Product;
+}
+
+export interface Return {
+  id: string;
+  claimId: string;
+  orderNumber: string;
+  orderDate: string;
+  claimDate: string;
+  customerFirstName: string;
+  customerLastName: string;
+  cargoTrackingNumber: string;
+  cargoTrackingLink: string;
+  cargoProviderName: string;
+  status: string;
+  integrationStatus: string;
+  shelfType: 'NORMAL' | 'DAMAGED' | null;
+  processedAt: string | null;
+  storeId: string;
+  store?: Store;
+  items: ReturnItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function getReturns(
+  page = 1,
+  limit = 10,
+  filters?: { status?: string; storeId?: string; search?: string }
+): Promise<PaginationResponse<Return>> {
+  const url = new URL(`${API_URL}/returns`, BASE_URL);
+  url.searchParams.append('page', String(page));
+  url.searchParams.append('limit', String(limit));
+  if (filters?.status) url.searchParams.append('status', filters.status);
+  if (filters?.storeId) url.searchParams.append('storeId', filters.storeId);
+  if (filters?.search) url.searchParams.append('search', filters.search);
+
+  const res = await fetch(url.toString(), { cache: 'no-store', credentials: 'include' });
+  return res.json();
+}
+
+export async function getReturn(id: string): Promise<ApiResponse<Return>> {
+  const res = await fetch(`${API_URL}/returns/${id}`, { cache: 'no-store', credentials: 'include' });
+  return res.json();
+}
+
+export async function syncReturns(storeId: string): Promise<ApiResponse<{ synced: number }>> {
+  const res = await fetch(`${API_URL}/returns/sync/${storeId}`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  return res.json();
+}
+
+export async function approveReturn(id: string): Promise<ApiResponse<void>> {
+  const res = await fetch(`${API_URL}/returns/${id}/approve`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  return res.json();
+}
+
+export async function rejectReturn(
+  id: string,
+  data: { reasonId: string; description: string }
+): Promise<ApiResponse<void>> {
+  const res = await fetch(`${API_URL}/returns/${id}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function processReturn(
+  id: string,
+  data: {
+    items: Array<{
+      returnItemId: string;
+      shelfId: string;
+      shelfType: 'NORMAL' | 'DAMAGED';
+      quantity: number;
+      notes?: string;
+    }>;
+    userId?: string;
+    notes?: string;
+  }
+): Promise<ApiResponse<Return>> {
+  const res = await fetch(`${API_URL}/returns/${id}/process`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function getReturnRejectReasons(): Promise<ApiResponse<Array<{ id: string; name: string }>>> {
+  const res = await fetch(`${API_URL}/returns/reject-reasons`, { credentials: 'include' });
+  return res.json();
+}
+
+export interface Shelf {
+  id: string;
+  name: string;
+  barcode: string;
+  type: 'NORMAL' | 'DAMAGED' | 'PACKING' | 'PICKING' | 'RECEIVING' | 'RETURN' | 'RETURN_DAMAGED';
+  warehouseId: string;
+  parentId: string | null;
+  isSellable: boolean;
+  isPickable: boolean;
+  isShelvable: boolean;
+}
+
+export async function getShelves(page?: number, limit?: number, type?: string): Promise<PaginationResponse<Shelf>> {
+  const url = new URL(`${API_URL}/shelves`, BASE_URL);
+  if (page) url.searchParams.append('page', String(page));
+  if (limit) url.searchParams.append('limit', String(limit));
+  if (type) url.searchParams.append('type', type);
+  const res = await fetch(url.toString(), {
+    cache: 'no-store',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Request failed');
+  }
+  const json = await res.json();
+  // API returns { success: true, data: { data: [...], meta: {...} } } or { success: true, data: [...] }
+  if (Array.isArray(json)) {
+    return { success: true, data: json, meta: { page: 1, limit: json.length, total: json.length, totalPages: 1 } };
+  }
+  if (json?.data) {
+    return { success: true, data: Array.isArray(json.data) ? json.data : json.data.data || [], meta: json.data.meta || json.meta || { page: 1, limit: 100, total: 0, totalPages: 1 } };
+  }
+  return { success: true, data: [], meta: { page: 1, limit: 100, total: 0, totalPages: 1 } };
 }

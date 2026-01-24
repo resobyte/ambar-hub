@@ -100,6 +100,7 @@ export function InvoicesClient() {
             const params: Record<string, any> = { page, limit: pageSize };
 
             if (status && status !== 'all') params.status = status;
+            if (urlFilters.documentType) params.documentType = urlFilters.documentType;
             if (dateRange?.from) params.startDate = dateRange.from.toISOString();
             if (dateRange?.to) params.endDate = dateRange.to.toISOString();
             if (customerName) params.customerName = customerName;
@@ -243,6 +244,20 @@ export function InvoicesClient() {
                                     />
                                 </div>
                                 <div className="space-y-2">
+                                    <Label>Belge Tipi</Label>
+                                    <Select value={urlFilters.documentType || 'all'} onValueChange={(v) => setFilter('documentType', v === 'all' ? '' : v)}>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Belge tipi seçin" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="all">Tümü</SelectItem>
+                                            <SelectItem value="INVOICE">Fatura</SelectItem>
+                                            <SelectItem value="EXPENSE_VOUCHER">Gider Pusulası</SelectItem>
+                                            <SelectItem value="REFUND_INVOICE">İade Faturası</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div className="space-y-2">
                                     <Label>Durum</Label>
                                     <Select value={status} onValueChange={(v) => setFilter('status', v === 'all' ? '' : v)}>
                                         <SelectTrigger>
@@ -306,7 +321,8 @@ export function InvoicesClient() {
                             <Table>
                                 <TableHeader>
                                     <TableRow>
-                                        <TableHead>Fatura No</TableHead>
+                                        <TableHead>Belge Tipi</TableHead>
+                                        <TableHead>Belge No</TableHead>
                                         <TableHead>Sipariş No</TableHead>
                                         <TableHead>Müşteri</TableHead>
                                         <TableHead>Kart Kodu</TableHead>
@@ -319,7 +335,7 @@ export function InvoicesClient() {
                                 <TableBody>
                                     {loading ? (
                                         <TableRow>
-                                            <TableCell colSpan={8} className="h-24 text-center">
+                                            <TableCell colSpan={9} className="h-24 text-center">
                                                 <div className="flex items-center justify-center">
                                                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                                                 </div>
@@ -327,13 +343,24 @@ export function InvoicesClient() {
                                         </TableRow>
                                     ) : invoices.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                                            <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
                                                 Kayıt bulunamadı.
                                             </TableCell>
                                         </TableRow>
                                     ) : (
                                         invoices.map((invoice) => (
                                             <TableRow key={invoice.id}>
+                                                <TableCell>
+                                                    <Badge variant={
+                                                        invoice.documentType === 'EXPENSE_VOUCHER' ? 'secondary' :
+                                                        invoice.documentType === 'REFUND_INVOICE' ? 'destructive' : 'default'
+                                                    }>
+                                                        {invoice.documentType === 'INVOICE' && 'Fatura'}
+                                                        {invoice.documentType === 'EXPENSE_VOUCHER' && 'Gider Pusulası'}
+                                                        {invoice.documentType === 'REFUND_INVOICE' && 'İade Fatura'}
+                                                        {!invoice.documentType && 'Fatura'}
+                                                    </Badge>
+                                                </TableCell>
                                                 <TableCell className="font-medium">{invoice.invoiceNumber}</TableCell>
                                                 <TableCell className="text-muted-foreground">{invoice.order?.orderNumber || '-'}</TableCell>
                                                 <TableCell>{invoice.customerFirstName} {invoice.customerLastName}</TableCell>

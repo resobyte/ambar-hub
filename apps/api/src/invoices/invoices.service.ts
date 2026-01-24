@@ -6,8 +6,9 @@ import axios from 'axios';
 import { Invoice } from './entities/invoice.entity';
 import { Order } from '../orders/entities/order.entity';
 import { Product } from '../products/entities/product.entity';
-import { IntegrationStore } from '../integration-stores/entities/integration-store.entity';
+import { Store, StoreType } from '../stores/entities/store.entity';
 import { InvoiceStatus } from './enums/invoice-status.enum';
+import { DocumentType } from './enums/document-type.enum';
 import { OrderHistoryService } from '../orders/order-history.service';
 import { OrderHistoryAction } from '../orders/entities/order-history.entity';
 import { OrderStatus } from '../orders/enums/order-status.enum';
@@ -23,8 +24,8 @@ export class InvoicesService {
         private readonly orderRepository: Repository<Order>,
         @InjectRepository(Product)
         private readonly productRepository: Repository<Product>,
-        @InjectRepository(IntegrationStore)
-        private readonly integrationStoreRepository: Repository<IntegrationStore>,
+        @InjectRepository(Store)
+        private readonly storeRepository: Repository<Store>,
         private readonly configService: ConfigService,
         private readonly orderHistoryService: OrderHistoryService,
     ) { }
@@ -183,7 +184,7 @@ export class InvoicesService {
         // 1. Find the order
         const order = await this.orderRepository.findOne({
             where: { id: orderId },
-            relations: ['items', 'customer', 'store', 'integration'],
+            relations: ['items', 'customer', 'store'],
         });
 
         if (!order) {
@@ -204,16 +205,14 @@ export class InvoicesService {
             where: { orderId, status: InvoiceStatus.PENDING },
         });
 
-        // 2. Get IntegrationStore settings (skip for manual orders without integration)
-        const storeConfig = order.integrationId
-            ? await this.getIntegrationStoreSettings(order.storeId, order.integrationId)
-            : null;
+        // 2. Get Store settings
+        const storeConfig = await this.getStoreSettings(order.storeId);
         if (!storeConfig) {
-            throw new BadRequestException('Integration store settings not found');
+            throw new BadRequestException('Store settings not found');
         }
 
         // 3. Determine Invoice Logic
-        const integrationType = order.integration?.type as string;
+        const integrationType = storeConfig.type as string;
         const isMicroExport = order.micro === true;
         const paymentMethod = order.paymentMethod?.toUpperCase() || '';
         const isHavale = paymentMethod.includes('HAVALE') || paymentMethod.includes('EFT') || paymentMethod.includes('TRANSFER');
@@ -229,10 +228,10 @@ export class InvoicesService {
         };
 
         // cardCodeSequenceToIncrement is still needed for E-Invoice card code auto-increment
-        let cardCodeSequenceToIncrement: keyof IntegrationStore | null = null;
+        let cardCodeSequenceToIncrement: keyof Store | null = null;
 
         // --- BRANCH: TRENDYOL MICRO EXPORT ---
-        if (integrationType === 'TRENDYOL' && isMicroExport && storeConfig.hasMicroExport) {
+        if (integrationType === StoreType.TRENDYOL && isMicroExport && storeConfig.hasMicroExport) {
             this.logger.log(`Processing Micro Export Invoice for Order ${orderId}`);
 
             // Fixed TCKN for Micro Export
@@ -296,7 +295,7 @@ export class InvoicesService {
                 cardCodeSequenceToIncrement = 'eInvoiceCardCode';
 
                 // Update Account Code based on Payment (Ikas Havale check)
-                if (integrationType === 'IKAS' && isHavale && storeConfig.eInvoiceHavaleAccountCode) {
+                if (integrationType === StoreType.IKAS && isHavale && storeConfig.eInvoiceHavaleAccountCode) {
                     invoiceSettings.accountCode = storeConfig.eInvoiceHavaleAccountCode;
                 } else {
                     invoiceSettings.accountCode = storeConfig.eInvoiceAccountCode;
@@ -319,14 +318,14 @@ export class InvoicesService {
                 invoiceSettings.vknTckn = '11111111111';
 
                 // E-Archive Card Code
-                if (integrationType === 'IKAS' && isHavale && storeConfig.eArchiveHavaleCardCode) {
+                if (integrationType === StoreType.IKAS && isHavale && storeConfig.eArchiveHavaleCardCode) {
                     invoiceSettings.cardCode = storeConfig.eArchiveHavaleCardCode;
                 } else {
                     invoiceSettings.cardCode = storeConfig.eArchiveCardCode;
                 }
 
                 // E-Archive Account Code
-                if (integrationType === 'IKAS' && isHavale && storeConfig.eArchiveHavaleAccountCode) {
+                if (integrationType === StoreType.IKAS && isHavale && storeConfig.eArchiveHavaleAccountCode) {
                     invoiceSettings.accountCode = storeConfig.eArchiveHavaleAccountCode;
                 } else {
                     invoiceSettings.accountCode = storeConfig.eArchiveAccountCode;
@@ -471,7 +470,7 @@ export class InvoicesService {
 
             // 8. Increment Card Code Sequence (Only on Success, for E-Invoice customers)
             if (cardCodeSequenceToIncrement) {
-                await this.incrementStoreSequence(storeConfig.storeId, storeConfig.integrationId, cardCodeSequenceToIncrement);
+                await this.incrementStoreSequence(storeConfig.id, cardCodeSequenceToIncrement);
             }
 
             // 9. Log to order history
@@ -500,9 +499,9 @@ export class InvoicesService {
             }
 
             // 11. Send Invoiced status to Trendyol if applicable
-            if (order.integrationId && order.storeId) {
+            if (order.storeId && storeConfig.type !== StoreType.MANUAL) {
                 try {
-                    await this.sendInvoicedStatusToIntegration(order, savedInvoice);
+                    await this.sendInvoicedStatusToIntegration(order, savedInvoice, storeConfig);
                 } catch (integrationError) {
                     this.logger.warn(`Failed to send Invoiced status to integration: ${integrationError.message}`);
                 }
@@ -541,7 +540,7 @@ export class InvoicesService {
         // 1. Fetch all orders with relations
         const orders = await this.orderRepository.find({
             where: orderIds.map(id => ({ id })),
-            relations: ['items', 'customer', 'store', 'integration'],
+            relations: ['items', 'customer', 'store'],
         });
 
         if (orders.length === 0) {
@@ -598,17 +597,15 @@ export class InvoicesService {
                     continue;
                 }
 
-                // Get IntegrationStore settings (skip for manual orders)
-                const storeConfig = order.integrationId
-                    ? await this.getIntegrationStoreSettings(order.storeId, order.integrationId)
-                    : null;
+                // Get Store settings
+                const storeConfig = await this.getStoreSettings(order.storeId);
                 if (!storeConfig) {
-                    results.failed.push({ orderId: order.id, error: 'Integration store settings not found' });
+                    results.failed.push({ orderId: order.id, error: 'Store settings not found' });
                     continue;
                 }
 
                 // Determine invoice settings (same logic as single invoice)
-                const integrationType = order.integration?.type as string;
+                const integrationType = storeConfig.type as string;
                 const isMicroExport = order.micro === true;
                 const paymentMethod = order.paymentMethod?.toUpperCase() || '';
                 const isHavale = paymentMethod.includes('HAVALE') || paymentMethod.includes('EFT') || paymentMethod.includes('TRANSFER');
@@ -644,7 +641,7 @@ export class InvoicesService {
                     : false;
 
                 // Apply BULK-specific serial numbers for bulk invoice creation
-                if (integrationType === 'TRENDYOL' && isMicroExport && storeConfig.hasMicroExport) {
+                if (integrationType === StoreType.TRENDYOL && isMicroExport && storeConfig.hasMicroExport) {
                     // Mikro İhracat Toplu - always E-Archive (foreign customers)
                     invoiceSettings.vknTckn = '11111111111';
                     invoiceSettings.cardCode = `TRENDYOL ${this.getCountryCode(order)}`;
@@ -661,7 +658,7 @@ export class InvoicesService {
                     invoiceSettings.vknTckn = cleanTaxId;
                     invoiceSettings.cardCode = storeConfig.eInvoiceCardCode;
 
-                    if (integrationType === 'IKAS' && isHavale && storeConfig.eInvoiceHavaleAccountCode) {
+                    if (integrationType === StoreType.IKAS && isHavale && storeConfig.eInvoiceHavaleAccountCode) {
                         invoiceSettings.accountCode = storeConfig.eInvoiceHavaleAccountCode;
                     } else {
                         invoiceSettings.accountCode = storeConfig.eInvoiceAccountCode;
@@ -675,12 +672,12 @@ export class InvoicesService {
                     this.logger.log(`Bulk: Customer ${order.customer?.firstName} is E-Archive (not E-Invoice)`);
                     invoiceSettings.vknTckn = '11111111111';
 
-                    if (integrationType === 'IKAS' && isHavale && storeConfig.eArchiveHavaleCardCode) {
+                    if (integrationType === StoreType.IKAS && isHavale && storeConfig.eArchiveHavaleCardCode) {
                         invoiceSettings.cardCode = storeConfig.eArchiveHavaleCardCode;
                     } else {
                         invoiceSettings.cardCode = storeConfig.eArchiveCardCode;
                     }
-                    if (integrationType === 'IKAS' && isHavale && storeConfig.eArchiveHavaleAccountCode) {
+                    if (integrationType === StoreType.IKAS && isHavale && storeConfig.eArchiveHavaleAccountCode) {
                         invoiceSettings.accountCode = storeConfig.eArchiveHavaleAccountCode;
                     } else {
                         invoiceSettings.accountCode = storeConfig.eArchiveAccountCode;
@@ -848,15 +845,15 @@ export class InvoicesService {
     }
 
     /**
-     * Get IntegrationStore settings for invoice configuration
+     * Get Store settings for invoice configuration
      */
-    private async getIntegrationStoreSettings(storeId: string, integrationId: string): Promise<IntegrationStore | null> {
-        if (!storeId || !integrationId) {
+    private async getStoreSettings(storeId: string): Promise<Store | null> {
+        if (!storeId) {
             return null;
         }
 
-        return this.integrationStoreRepository.findOne({
-            where: { storeId, integrationId },
+        return this.storeRepository.findOne({
+            where: { id: storeId },
         });
     }
 
@@ -877,7 +874,7 @@ export class InvoicesService {
         cardCode?: string;
         accountCode?: string;
         vknTckn?: string;
-        storeConfig?: IntegrationStore;
+        storeConfig?: Store;
     }): Promise<object> {
         const now = new Date();
         const orderDate = new Date(order.orderDate);
@@ -1187,6 +1184,7 @@ export class InvoicesService {
         limit = 10,
         filters?: {
             status?: string;
+            documentType?: string;
             startDate?: string;
             endDate?: string;
             customerName?: string;
@@ -1202,6 +1200,10 @@ export class InvoicesService {
 
         if (filters?.status) {
             query.andWhere('invoice.status = :status', { status: filters.status });
+        }
+
+        if (filters?.documentType) {
+            query.andWhere('invoice.documentType = :documentType', { documentType: filters.documentType });
         }
 
         if (filters?.startDate) {
@@ -1548,11 +1550,11 @@ export class InvoicesService {
     }
 
     /**
-     * Increment sequence number for a specific field in IntegrationStore
+     * Increment sequence number for a specific field in Store
      */
-    async incrementStoreSequence(storeId: string, integrationId: string, field: keyof IntegrationStore): Promise<void> {
-        const store = await this.integrationStoreRepository.findOne({
-            where: { storeId, integrationId }
+    async incrementStoreSequence(storeId: string, field: keyof Store): Promise<void> {
+        const store = await this.storeRepository.findOne({
+            where: { id: storeId }
         });
 
         if (!store) return;
@@ -1570,7 +1572,7 @@ export class InvoicesService {
         const nextValue = `${prefix}${nextNumber.toString().padStart(numberPart.length, '0')}`;
 
         // Update
-        await this.integrationStoreRepository.update(
+        await this.storeRepository.update(
             { id: store.id },
             { [field]: nextValue }
         );
@@ -1695,32 +1697,14 @@ export class InvoicesService {
     /**
      * Send Invoiced status to integration (Trendyol etc.) after invoice is successfully created
      */
-    private async sendInvoicedStatusToIntegration(order: Order, invoice: Invoice): Promise<void> {
-        if (!order.integrationId) {
-            this.logger.log(`Order ${order.id} has no integrationId, skipping status update`);
-            return;
-        }
-
-        // Get store config
-        const storeConfig = await this.integrationStoreRepository.findOne({
-            where: { storeId: order.storeId, integrationId: order.integrationId },
-            relations: ['integration'],
-        });
-
-        if (!storeConfig) {
-            this.logger.warn(`Store config not found for order ${order.id}`);
-            return;
-        }
-
+    private async sendInvoicedStatusToIntegration(order: Order, invoice: Invoice, storeConfig: Store): Promise<void> {
         // Check if sendOrderStatus is enabled
         if (!storeConfig.sendOrderStatus) {
-            this.logger.log(`Skipping Invoiced status - sendOrderStatus is disabled for store ${storeConfig.storeId}`);
+            this.logger.log(`Skipping Invoiced status - sendOrderStatus is disabled for store ${storeConfig.id}`);
             return;
         }
 
-        const integrationType = storeConfig.integration?.type;
-
-        if (integrationType === 'TRENDYOL') {
+        if (storeConfig.type === StoreType.TRENDYOL) {
             await this.updateTrendyolInvoicedStatus(order, storeConfig, invoice);
         }
     }
@@ -1730,7 +1714,7 @@ export class InvoicesService {
      */
     private async updateTrendyolInvoicedStatus(
         order: Order,
-        storeConfig: IntegrationStore,
+        storeConfig: Store,
         invoice: Invoice,
     ): Promise<void> {
         // Need to load order items if not already loaded
@@ -1791,7 +1775,7 @@ export class InvoicesService {
                 action: OrderHistoryAction.INTEGRATION_STATUS_INVOICED,
                 description: `Trendyol statüsü güncellendi: Invoiced - Fatura: ${invoice.invoiceNumber || invoice.edocNo}`,
                 metadata: {
-                    integration: 'TRENDYOL',
+                    integration: StoreType.TRENDYOL,
                     status: 'Invoiced',
                     invoiceNumber: invoice.invoiceNumber || invoice.edocNo,
                 },
@@ -1799,5 +1783,75 @@ export class InvoicesService {
         } catch (historyError) {
             this.logger.warn(`Failed to log integration status history: ${historyError.message}`);
         }
+    }
+
+    /**
+     * İade için Gider Pusulası oluştur
+     */
+    async createExpenseVoucherForReturn(data: {
+        returnId: string;
+        storeId: string;
+        customerFirstName: string;
+        customerLastName: string;
+        totalAmount: number;
+        items: Array<{
+            productName: string;
+            barcode: string;
+            quantity: number;
+            price: number;
+        }>;
+    }): Promise<Invoice> {
+        const store = await this.storeRepository.findOne({ where: { id: data.storeId } });
+        if (!store) {
+            throw new NotFoundException('Mağaza bulunamadı');
+        }
+
+        // Gider pusulası seri/sıra numarasını belirle
+        const serialNo = store.refundExpenseVoucherEArchiveSerialNo || 'GP';
+        const sequenceNo = await this.getNextSequenceNumber(serialNo);
+        const voucherNumber = `${serialNo}${new Date().getFullYear()}${sequenceNo.toString().padStart(9, '0')}`;
+
+        const invoice = this.invoiceRepository.create({
+            documentType: DocumentType.EXPENSE_VOUCHER,
+            returnId: data.returnId,
+            storeId: data.storeId,
+            invoiceNumber: voucherNumber,
+            invoiceSerial: serialNo,
+            status: InvoiceStatus.SUCCESS, // Gider pusulası için hemen SUCCESS
+            totalAmount: data.totalAmount,
+            currencyCode: 'TRY',
+            invoiceDate: new Date(),
+            customerFirstName: data.customerFirstName,
+            customerLastName: data.customerLastName,
+            cardCode: store.eArchiveCardCode || store.eInvoiceCardCode,
+            branchCode: store.branchCode,
+            docTraCode: 'GIDPSL',
+        } as any);
+
+        const saved = await this.invoiceRepository.save(invoice) as unknown as Invoice;
+        this.logger.log(`Expense voucher created for return ${data.returnId} - Voucher: ${voucherNumber}`);
+
+        return saved;
+    }
+
+    /**
+     * Bir sonraki sıra numarasını al
+     */
+    private async getNextSequenceNumber(serialNo: string): Promise<number> {
+        const year = new Date().getFullYear();
+        const pattern = `${serialNo}${year}%`;
+        
+        const lastInvoice = await this.invoiceRepository
+            .createQueryBuilder('invoice')
+            .where('invoice.invoiceNumber LIKE :pattern', { pattern })
+            .orderBy('invoice.invoiceNumber', 'DESC')
+            .getOne();
+
+        if (!lastInvoice) {
+            return 1;
+        }
+
+        const lastNumber = lastInvoice.invoiceNumber.replace(`${serialNo}${year}`, '');
+        return parseInt(lastNumber, 10) + 1;
     }
 }

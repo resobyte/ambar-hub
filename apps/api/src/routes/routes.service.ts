@@ -116,6 +116,17 @@ export class RoutesService {
             throw new BadRequestException('Some orders are already in an active route');
         }
 
+        // Check if all orders belong to the same store
+        const storeIds = new Set(orders.map(o => o.store?.id || 'no-store'));
+        if (storeIds.size > 1) {
+            const storeNames = orders
+                .map(o => o.store?.name || 'Mağazasız')
+                .filter((v, i, a) => a.indexOf(v) === i);
+            throw new BadRequestException(
+                `Farklı mağazalardaki siparişler aynı rotaya eklenemez. Seçilen mağazalar: ${storeNames.join(', ')}`
+            );
+        }
+
         // Check if all products are on sellable shelves
         const allProductBarcodes: string[] = [];
         for (const order of orders) {
@@ -318,14 +329,14 @@ export class RoutesService {
     }
 
     async getFilteredOrders(filter: RouteFilterDto): Promise<any[]> {
-        // Get orders that are ready for picking (PICKING status, not in active route)
+        // Get orders that are ready for picking (WAITING_PICKING status, not in active route)
         const queryBuilder = this.orderRepository
             .createQueryBuilder('order')
             .leftJoinAndSelect('order.store', 'store')
             .leftJoinAndSelect('order.items', 'items')
             .leftJoinAndSelect('order.customer', 'customer')
             .where('order.status IN (:...validStatuses)', {
-                validStatuses: [OrderStatus.CREATED, OrderStatus.PICKING],
+                validStatuses: [OrderStatus.WAITING_PICKING, OrderStatus.PICKING],
             });
 
         // Exclude orders already in active routes
@@ -368,6 +379,34 @@ export class RoutesService {
 
         if (filter.micro !== undefined) {
             queryBuilder.andWhere('order.micro = :micro', { micro: filter.micro });
+        }
+
+        if (filter.orderDateStart) {
+            queryBuilder.andWhere('order.orderDate >= :orderDateStart', { 
+                orderDateStart: new Date(filter.orderDateStart) 
+            });
+        }
+
+        if (filter.orderDateEnd) {
+            const endDate = new Date(filter.orderDateEnd);
+            endDate.setHours(23, 59, 59, 999);
+            queryBuilder.andWhere('order.orderDate <= :orderDateEnd', { 
+                orderDateEnd: endDate 
+            });
+        }
+
+        if (filter.agreedDeliveryDateStart) {
+            queryBuilder.andWhere('order.agreedDeliveryDate >= :agreedDeliveryDateStart', { 
+                agreedDeliveryDateStart: new Date(filter.agreedDeliveryDateStart) 
+            });
+        }
+
+        if (filter.agreedDeliveryDateEnd) {
+            const endDate = new Date(filter.agreedDeliveryDateEnd);
+            endDate.setHours(23, 59, 59, 999);
+            queryBuilder.andWhere('order.agreedDeliveryDate <= :agreedDeliveryDateEnd', { 
+                agreedDeliveryDateEnd: endDate 
+            });
         }
 
         const orders = await queryBuilder.orderBy('order.orderDate', 'ASC').getMany();
@@ -612,11 +651,11 @@ export class RoutesService {
         route.isActive = false;
         await this.routeRepository.save(route);
 
-        // Reset order statuses back to PICKING or CREATED
+        // Reset order statuses back to WAITING_PICKING
         if (orderIds.length > 0) {
             await this.orderRepository.update(
                 { id: In(orderIds) },
-                { status: OrderStatus.PICKING }
+                { status: OrderStatus.WAITING_PICKING }
             );
         }
     }

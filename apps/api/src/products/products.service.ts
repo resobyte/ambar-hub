@@ -36,7 +36,7 @@ export class ProductsService {
   async findAll(
     page: number = 1,
     limit: number = 10,
-    filters?: { name?: string; isActive?: string; brandId?: string; categoryId?: string },
+    filters?: { name?: string; isActive?: string; brandId?: string; categoryId?: string; storeId?: string },
   ): Promise<PaginationResponse<ProductResponseDto>> {
     const queryBuilder = this.productRepository.createQueryBuilder('product')
       .leftJoinAndSelect('product.productStores', 'productStores')
@@ -59,6 +59,11 @@ export class ProductsService {
 
     if (filters?.categoryId) {
       queryBuilder.andWhere('product.categoryId = :categoryId', { categoryId: filters.categoryId });
+    }
+
+    // Store filtresi - sadece bu mağazada tanımlı ürünleri getir
+    if (filters?.storeId) {
+      queryBuilder.andWhere('productStores.storeId = :storeId', { storeId: filters.storeId });
     }
 
     queryBuilder

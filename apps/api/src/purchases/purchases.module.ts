@@ -12,6 +12,7 @@ import { ShelvesModule } from '../shelves/shelves.module';
 import { InvoicesModule } from '../invoices/invoices.module';
 import { ConsumablesModule } from '../consumables/consumables.module';
 import { ProductsModule } from '../products/products.module';
+import { OrdersModule } from '../orders/orders.module';
 
 @Module({
     imports: [
@@ -27,6 +28,7 @@ import { ProductsModule } from '../products/products.module';
         InvoicesModule,
         ConsumablesModule,
         forwardRef(() => ProductsModule),
+        forwardRef(() => OrdersModule),
     ],
     controllers: [PurchasesController],
     providers: [PurchasesService],

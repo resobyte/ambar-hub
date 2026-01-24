@@ -14,12 +14,6 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-} from "@/components/ui/dialog";
-import {
     Select,
     SelectContent,
     SelectItem,
@@ -28,7 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
-import { Loader2, Plus, ShoppingCart, Trash2, Search, X, Package, Box } from 'lucide-react';
+import { Loader2, Plus, Search, X } from 'lucide-react';
 import Link from 'next/link';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { useTableQuery } from '@/hooks/use-table-query';
@@ -40,7 +34,6 @@ import {
     BreadcrumbPage,
     BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import { Combobox } from "@/components/ui/combobox";
 import { Consumable, getConsumables } from '@/lib/api';
 
 const isServer = typeof window === 'undefined';
@@ -99,15 +92,9 @@ export function PurchasesList() {
 
     const [purchases, setPurchases] = useState<PurchaseOrder[]>([]);
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-    const [products, setProducts] = useState<Product[]>([]);
-    const [consumables, setConsumables] = useState<Consumable[]>([]);
     const [loading, setLoading] = useState(true);
     const [total, setTotal] = useState(0);
     const [totalPages, setTotalPages] = useState(0);
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [isSelectionModalOpen, setIsSelectionModalOpen] = useState(false);
-    const [invoiceDocNo, setInvoiceDocNo] = useState('');
-    const [importing, setImporting] = useState(false);
     const { toast } = useToast();
 
     // Filters
@@ -116,29 +103,6 @@ export function PurchasesList() {
     const status = filters.status || 'ALL';
     const startDate = filters.startDate ? new Date(filters.startDate) : undefined;
     const endDate = filters.endDate ? new Date(filters.endDate) : undefined;
-
-    const [formData, setFormData] = useState<{
-        supplierId: string;
-        orderDate: string;
-        notes: string;
-        type: string;
-        invoiceNumber: string;
-        items: {
-            type: 'PRODUCT' | 'CONSUMABLE';
-            productId?: string;
-            consumableId?: string;
-            productName: string;
-            orderedQuantity: number;
-            unitPrice: number
-        }[];
-    }>({
-        supplierId: '',
-        orderDate: new Date().toISOString().split('T')[0],
-        notes: '',
-        type: 'MANUAL',
-        invoiceNumber: '',
-        items: [{ type: 'PRODUCT', productId: '', productName: '', orderedQuantity: 1, unitPrice: 0 }],
-    });
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -152,25 +116,17 @@ export function PurchasesList() {
             if (startDate) params.append('startDate', startDate.toISOString());
             if (endDate) params.append('endDate', endDate.toISOString());
 
-            const [poRes, supRes, prodRes, consRes] = await Promise.all([
+            const [poRes, supRes] = await Promise.all([
                 fetch(`${API_URL}/purchases?${params}`, { credentials: 'include' }),
                 fetch(`${API_URL}/suppliers?page=1&limit=100`, { credentials: 'include' }),
-                fetch(`${API_URL}/products?page=1&limit=100`, { credentials: 'include' }),
-                getConsumables(),
             ]);
             const poData = await poRes.json();
             const supData = await supRes.json();
-            const prodData = await prodRes.json();
 
             setPurchases(poData.data || []);
             setTotal(poData.meta?.total || 0);
             setTotalPages(Math.ceil((poData.meta?.total || 0) / pageSize));
             setSuppliers(supData.data || []);
-            setProducts(prodData.data || []);
-
-            if (consRes.success) {
-                setConsumables(consRes.data || []);
-            }
 
         } catch (err) {
             toast({ variant: 'destructive', title: 'Hata', description: 'Veriler yüklenemedi' });
@@ -180,163 +136,6 @@ export function PurchasesList() {
     }, [page, pageSize, search, supplierId, status, startDate, endDate, toast]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
-
-
-
-    const handleCreateClick = () => {
-        setIsSelectionModalOpen(true);
-    };
-
-    const handleManualCreate = () => {
-        setIsSelectionModalOpen(false);
-
-        // Ensure products and consumables are loaded or handle potential empty states more gracefully if needed
-        const defaultProductId = products[0]?.id || '';
-
-        setFormData({
-            supplierId: suppliers[0]?.id || '',
-            orderDate: new Date().toISOString().split('T')[0],
-            notes: '',
-            type: 'MANUAL',
-            invoiceNumber: '',
-            items: [{ type: 'PRODUCT', productId: defaultProductId, productName: '', orderedQuantity: 1, unitPrice: 0 }],
-        });
-        setIsModalOpen(true);
-    };
-
-    const handleImportInvoice = async () => {
-        if (!invoiceDocNo) return;
-        setImporting(true);
-        try {
-            const res = await fetch(`${API_URL}/purchases/import-invoice`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ docNo: invoiceDocNo }),
-            });
-
-            if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.message || 'Fatura bulunamadı veya uygun değil');
-            }
-
-            const resData = await res.json();
-            const data = resData.data || resData;
-
-            // Populate form data
-            setFormData({
-                supplierId: data.supplierId || '',
-                orderDate: data.orderDate ? new Date(data.orderDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-                notes: `Fatura No: ${data.invoiceNumber}`,
-                type: 'INVOICE',
-                invoiceNumber: data.invoiceNumber,
-                items: data.items.map((item: any) => {
-                    // Try to match product by ID (backend) or SKU/Barcode (frontend fallback)
-                    const matchedProduct = products.find(p =>
-                        p.id === item.productId ||
-                        (item.productCode && p.sku === item.productCode) ||
-                        (item.productCode && p.barcode === item.productCode)
-                    );
-
-                    // TODO: Improve Consumable matching if invoices can contain consumables
-
-                    return {
-                        type: 'PRODUCT',
-                        productId: matchedProduct ? matchedProduct.id : (item.productId || ''),
-                        productName: item.productName || '',
-                        orderedQuantity: item.orderedQuantity,
-                        unitPrice: item.unitPrice,
-                    };
-                }),
-            });
-
-            setIsSelectionModalOpen(false);
-            setIsModalOpen(true);
-            toast({ title: 'Başarılı', description: 'Fatura bilgileri çekildi', variant: 'success' });
-
-        } catch (error: any) {
-            toast({ variant: 'destructive', title: 'Hata', description: error.message });
-        } finally {
-            setImporting(false);
-        }
-    };
-
-    const addItem = () => {
-        setFormData({
-            ...formData,
-            items: [...formData.items, { type: 'PRODUCT', productId: '', productName: '', orderedQuantity: 1, unitPrice: 0 }],
-        });
-    };
-
-    const removeItem = (index: number) => {
-        setFormData({
-            ...formData,
-            items: formData.items.filter((_, i) => i !== index),
-        });
-    };
-
-    const updateItem = (index: number, field: string, value: any) => {
-        const items = [...formData.items];
-
-        // Handle type switching logic to clear previous selections
-        if (field === 'type') {
-            // Reset ID fields when switching type
-            items[index] = {
-                ...items[index],
-                type: value,
-                productId: undefined,
-                consumableId: undefined,
-                productName: '' // Reset name if it was manual
-            };
-        } else {
-            (items[index] as any)[field] = value;
-        }
-
-        setFormData({ ...formData, items });
-    };
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-
-        // Clean up data before sending
-        const payload = {
-            ...formData,
-            items: formData.items.map(item => {
-                if (item.type === 'PRODUCT') {
-                    return {
-                        productId: item.productId,
-                        orderedQuantity: item.orderedQuantity,
-                        unitPrice: item.unitPrice
-                    };
-                } else {
-                    return {
-                        consumableId: item.consumableId,
-                        orderedQuantity: item.orderedQuantity,
-                        unitPrice: item.unitPrice
-                    };
-                }
-            })
-        };
-
-        try {
-            const res = await fetch(`${API_URL}/purchases`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify(payload),
-            });
-
-            if (!res.ok) throw new Error('Failed');
-            toast({ title: 'Başarılı', description: 'Satın alma oluşturuldu', variant: 'success' });
-            setIsModalOpen(false);
-            fetchData();
-        } catch (err) {
-            toast({ variant: 'destructive', title: 'Hata', description: 'İşlem başarısız' });
-        }
-    };
-
-    const totalAmount = formData.items.reduce((sum, item) => sum + item.orderedQuantity * item.unitPrice, 0);
-
     const handleClearFilters = () => {
         clearUrlFilters();
     };
@@ -355,10 +154,12 @@ export function PurchasesList() {
                         </BreadcrumbItem>
                     </BreadcrumbList>
                 </Breadcrumb>
-                <Button onClick={handleCreateClick}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Yeni Satın Alma
-                </Button>
+                <Link href="/purchases/create">
+                    <Button>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Yeni Satın Alma
+                    </Button>
+                </Link>
             </div>
 
             <Card>
@@ -500,184 +301,6 @@ export function PurchasesList() {
                 onPageSizeChange={setPageSize}
             />
 
-            <Dialog open={isSelectionModalOpen} onOpenChange={setIsSelectionModalOpen}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Satın Alma Oluştur</DialogTitle>
-                    </DialogHeader>
-                    <div className="grid gap-4 py-4">
-                        <Button variant="outline" className="h-20 text-lg" onClick={handleManualCreate}>
-                            Manuel Oluştur
-                        </Button>
-                        <div className="relative">
-                            <div className="absolute inset-0 flex items-center">
-                                <span className="w-full border-t" />
-                            </div>
-                            <div className="relative flex justify-center text-xs uppercase">
-                                <span className="bg-background px-2 text-muted-foreground">
-                                    veya
-                                </span>
-                            </div>
-                        </div>
-                        <div className="space-y-4 border rounded-md p-4">
-                            <div className="space-y-2">
-                                <Label>Faturadan Çek (Uyumsoft)</Label>
-                                <div className="flex gap-2">
-                                    <Input
-                                        placeholder="Fatura No (örn: FAT2024...)"
-                                        value={invoiceDocNo}
-                                        onChange={(e) => setInvoiceDocNo(e.target.value)}
-                                    />
-                                    <Button onClick={handleImportInvoice} disabled={importing || !invoiceDocNo}>
-                                        {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Sorgula'}
-                                    </Button>
-                                </div>
-                                <p className="text-xs text-muted-foreground">
-                                    Sadece &quot;MALALIS&quot; özel kodlu faturalar kabul edilir.
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </DialogContent>
-            </Dialog>
-
-            <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-                <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                    <DialogHeader>
-                        <DialogTitle>Yeni Satın Alma</DialogTitle>
-                    </DialogHeader>
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label>Tedarikçi</Label>
-                                <Select
-                                    value={formData.supplierId}
-                                    onValueChange={(v) => setFormData({ ...formData, supplierId: v })}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Tedarikçi seçin" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {suppliers.map(s => (
-                                            <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Sipariş Tarihi</Label>
-                                <Input type="date" value={formData.orderDate} onChange={(e) => setFormData({ ...formData, orderDate: e.target.value })} required />
-                            </div>
-                        </div>
-
-                        <div className="border-t pt-4">
-                            <div className="flex justify-between items-center mb-2">
-                                <h3 className="font-medium">Ürünler</h3>
-                                <Button type="button" size="sm" variant="outline" onClick={addItem}>
-                                    <Plus className="w-4 h-4 mr-2" /> Ürün Ekle
-                                </Button>
-                            </div>
-                            <div className="flex gap-2 px-2 pb-2">
-                                <div className="w-32"><Label className="text-xs text-muted-foreground">Tip</Label></div>
-                                <div className="flex-1"><Label className="text-xs text-muted-foreground">Seçim</Label></div>
-                                <div className="w-20"><Label className="text-xs text-muted-foreground">Adet</Label></div>
-                                <div className="w-28"><Label className="text-xs text-muted-foreground">Birim Fiyat</Label></div>
-                                <div className="w-9"></div>
-                            </div>
-                            <div className="space-y-2">
-                                {formData.items.map((item, index) => (
-                                    <div key={index} className={`flex gap-2 items-center p-2 rounded-md border transition-colors ${item.type === 'CONSUMABLE' ? 'bg-orange-50/50 border-orange-100' : 'bg-muted/20 border-transparent hover:border-border'}`}>
-                                        <div className="w-32 shrink-0">
-                                            <div className="flex rounded-md shadow-sm border bg-muted p-1 gap-1">
-                                                <Button
-                                                    type="button"
-                                                    variant={item.type === 'PRODUCT' ? 'secondary' : 'ghost'}
-                                                    size="sm"
-                                                    className={`h-7 flex-1 text-xs ${item.type === 'PRODUCT' ? 'bg-background shadow-sm text-primary font-medium' : 'text-muted-foreground hover:bg-background/50'}`}
-                                                    onClick={() => updateItem(index, 'type', 'PRODUCT')}
-                                                >
-                                                    Ürün
-                                                </Button>
-                                                <Button
-                                                    type="button"
-                                                    variant={item.type === 'CONSUMABLE' ? 'secondary' : 'ghost'}
-                                                    size="sm"
-                                                    className={`h-7 flex-1 text-xs ${item.type === 'CONSUMABLE' ? 'bg-orange-50 text-orange-700 shadow-sm font-medium border-orange-100' : 'text-muted-foreground hover:bg-background/50'}`}
-                                                    onClick={() => updateItem(index, 'type', 'CONSUMABLE')}
-                                                >
-                                                    Sarf
-                                                </Button>
-                                            </div>
-                                        </div>
-
-                                        <div className="flex-1 min-w-0">
-                                            {item.type === 'PRODUCT' ? (
-                                                <Combobox
-                                                    options={products.map(p => ({ value: p.id, label: `${p.name} [${p.barcode || p.sku}]` }))}
-                                                    value={item.productId}
-                                                    onValueChange={(v) => updateItem(index, 'productId', v)}
-                                                    placeholder="Ürün Ara..."
-                                                    searchPlaceholder="Ürün adı, barkod veya SKU ara..."
-                                                    emptyMessage="Ürün bulunamadı."
-                                                    className="w-full h-9"
-                                                />
-                                            ) : (
-                                                <Combobox
-                                                    options={consumables.filter(c => !c.parentId).map(c => ({ value: c.id, label: `${c.name} [${c.sku || c.barcode || c.type}]` }))}
-                                                    value={item.consumableId}
-                                                    onValueChange={(v) => updateItem(index, 'consumableId', v)}
-                                                    placeholder="Malzeme Ara..."
-                                                    searchPlaceholder="Malzeme adı ara..."
-                                                    emptyMessage="Malzeme bulunamadı."
-                                                    className="w-full h-9"
-                                                />
-                                            )}
-                                        </div>
-
-                                        <div className="w-20 shrink-0">
-                                            <Input
-                                                type="number"
-                                                className="h-9"
-                                                value={item.orderedQuantity}
-                                                onChange={(e) => updateItem(index, 'orderedQuantity', parseInt(e.target.value) || 0)}
-                                            />
-                                        </div>
-                                        <div className="w-28 shrink-0">
-                                            <Input
-                                                type="number"
-                                                className="h-9"
-                                                step="0.01"
-                                                value={item.unitPrice}
-                                                onChange={(e) => updateItem(index, 'unitPrice', parseFloat(e.target.value) || 0)}
-                                            />
-                                        </div>
-                                        <div className="shrink-0">
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                                                onClick={() => removeItem(index)}
-                                                disabled={formData.items.length <= 1}
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </Button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="text-right mt-4 text-lg font-semibold">
-                                Toplam: {totalAmount.toFixed(2)} ₺
-                            </div>
-                        </div>
-
-                        <div className="flex justify-end gap-2 pt-4 border-t">
-                            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>İptal</Button>
-                            <Button type="submit">Oluştur</Button>
-                        </div>
-                    </form>
-                </DialogContent>
-            </Dialog>
         </div>
     );
 }

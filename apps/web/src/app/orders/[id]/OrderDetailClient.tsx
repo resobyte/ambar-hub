@@ -60,10 +60,15 @@ interface Props {
 }
 
 const statusColors: Record<string, string> = {
-    CREATED: 'bg-blue-100 text-blue-800',
-    PICKING: 'bg-yellow-100 text-yellow-800',
+    CREATED: 'bg-gray-100 text-gray-800',
+    WAITING_STOCK: 'bg-red-50 text-red-700',
+    WAITING_PICKING: 'bg-yellow-100 text-yellow-800',
+    PICKING: 'bg-orange-100 text-orange-800',
+    PICKED: 'bg-amber-100 text-amber-800',
+    PACKING: 'bg-cyan-100 text-cyan-800',
+    PACKED: 'bg-indigo-100 text-indigo-800',
     INVOICED: 'bg-purple-100 text-purple-800',
-    SHIPPED: 'bg-green-100 text-green-800',
+    SHIPPED: 'bg-blue-100 text-blue-800',
     DELIVERED: 'bg-green-100 text-green-800',
     CANCELLED: 'bg-red-100 text-red-800',
     RETURNED: 'bg-orange-100 text-orange-800',
@@ -75,7 +80,12 @@ const statusColors: Record<string, string> = {
 
 const statusLabels: Record<string, string> = {
     CREATED: 'Oluşturuldu',
+    WAITING_STOCK: 'Stok Bekliyor',
+    WAITING_PICKING: 'Toplama Bekliyor',
     PICKING: 'Toplanıyor',
+    PICKED: 'Toplandı',
+    PACKING: 'Paketleniyor',
+    PACKED: 'Paketlendi',
     INVOICED: 'Faturalandı',
     SHIPPED: 'Kargoya Verildi',
     DELIVERED: 'Teslim Edildi',
@@ -183,6 +193,7 @@ function formatDate(dateStr: string): string {
         year: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
+        second: '2-digit',
     });
 }
 
@@ -296,12 +307,12 @@ export function OrderDetailClient({ orderId }: Props) {
                                 <p className="font-medium">{formatCurrency(order.totalPrice || 0)}</p>
                             </div>
                             <div>
-                                <p className="text-sm text-muted-foreground">Entegrasyon</p>
-                                <p className="font-medium">{order.integration?.name || '-'}</p>
-                            </div>
-                            <div>
                                 <p className="text-sm text-muted-foreground">Mağaza</p>
                                 <p className="font-medium">{order.store?.name || '-'}</p>
+                            </div>
+                            <div>
+                                <p className="text-sm text-muted-foreground">Mağaza Tipi</p>
+                                <p className="font-medium">{order.store?.type || '-'}</p>
                             </div>
                             {order.cargoTrackingNumber && (
                                 <div>

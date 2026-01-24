@@ -13,6 +13,10 @@ export class CreateProductStoreDto {
   @IsOptional()
   storeSku?: string;
 
+  @IsString()
+  @IsOptional()
+  storeBarcode?: string;
+
   @IsNumber()
   @Min(0)
   @IsOptional()

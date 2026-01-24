@@ -13,7 +13,7 @@ import {
 import { StoresService } from './stores.service';
 import { CreateStoreDto } from './dto/create-store.dto';
 import { UpdateStoreDto } from './dto/update-store.dto';
-import { PaginationDto } from '../common/dto/pagination.dto';
+import { StoreFilterDto } from './dto/store-filter.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -31,8 +31,8 @@ export class StoresController {
   }
 
   @Get()
-  findAll(@Query() paginationDto: PaginationDto) {
-    return this.storesService.findAll(paginationDto);
+  findAll(@Query() filterDto: StoreFilterDto) {
+    return this.storesService.findAll(filterDto);
   }
 
   @Get(':id')

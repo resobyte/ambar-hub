@@ -13,6 +13,7 @@ import { RouteOrder } from '../routes/entities/route-order.entity';
 import { RouteStatus } from '../routes/enums/route-status.enum';
 import { Order } from '../orders/entities/order.entity';
 import { OrderItem } from '../orders/entities/order-item.entity';
+import { OrderStatus } from '../orders/enums/order-status.enum';
 import { Product } from '../products/entities/product.entity';
 import { ShelfStock } from '../shelves/entities/shelf-stock.entity';
 import { Shelf } from '../shelves/entities/shelf.entity';
@@ -739,15 +740,22 @@ export class PickingService {
 
             const routeOrders = await this.routeOrderRepository.find({
                 where: { routeId },
+                relations: ['order'],
             });
 
             for (const ro of routeOrders) {
+                // Update order status to PICKED
+                const previousStatus = ro.order?.status;
+                await this.orderRepository.update(ro.orderId, { status: OrderStatus.PICKED });
+
                 await this.orderHistoryService.logEvent({
                     orderId: ro.orderId,
                     action: OrderHistoryAction.PICKING_COMPLETED,
                     userId: userId || route?.createdById,
                     routeId,
                     routeName: route?.name,
+                    previousStatus,
+                    newStatus: OrderStatus.PICKED,
                     description: `Sipariş toplama tamamlandı - Rota: ${route?.name}`,
                 });
             }

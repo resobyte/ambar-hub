@@ -3,13 +3,25 @@ import { BaseEntity } from '../../common/entities/base.entity';
 import { Order } from '../../orders/entities/order.entity';
 import { Store } from '../../stores/entities/store.entity';
 import { InvoiceStatus } from '../enums/invoice-status.enum';
+import { DocumentType } from '../enums/document-type.enum';
 
 @Entity('invoices')
 export class Invoice extends BaseEntity {
     // ─────────────────────────────────────────────────────────────
+    // Document Type
+    // ─────────────────────────────────────────────────────────────
+    @Column({
+        name: 'document_type',
+        type: 'enum',
+        enum: DocumentType,
+        default: DocumentType.INVOICE
+    })
+    documentType: DocumentType;
+
+    // ─────────────────────────────────────────────────────────────
     // Relations
     // ─────────────────────────────────────────────────────────────
-    @Column({ name: 'order_id' })
+    @Column({ name: 'order_id', nullable: true })
     orderId: string;
 
     @ManyToOne(() => Order)
@@ -22,6 +34,10 @@ export class Invoice extends BaseEntity {
     @ManyToOne(() => Store)
     @JoinColumn({ name: 'store_id' })
     store: Store;
+
+    // İade için (Gider Pusulası)
+    @Column({ name: 'return_id', nullable: true })
+    returnId: string;
 
     // ─────────────────────────────────────────────────────────────
     // Invoice Identifiers

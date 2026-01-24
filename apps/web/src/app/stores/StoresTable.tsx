@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   Table,
   TableBody,
@@ -12,21 +11,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,7 +21,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
 import {
   Breadcrumb,
@@ -53,38 +37,29 @@ import { useTableQuery } from '@/hooks/use-table-query';
 import { Loader2, Plus, Pencil, Trash2, Store as StoreIcon } from 'lucide-react';
 import {
   getStores,
-  createStore,
-  updateStore,
   deleteStore,
-  getWarehouses,
+  Store,
+  StoreType,
 } from '@/lib/api';
 
-interface Store {
-  id: string;
-  name: string;
-  proxyUrl: string;
-  warehouseId: string;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
+const STORE_TYPE_LABELS: Record<StoreType, string> = {
+  TRENDYOL: 'Trendyol',
+  HEPSIBURADA: 'Hepsiburada',
+  IKAS: 'İkas',
+  MANUAL: 'Manuel',
+};
 
-interface Warehouse {
-  id: string;
-  name: string;
-}
-
-interface StoreFormData {
-  name: string;
-  proxyUrl: string;
-  warehouseId: string;
-  isActive: boolean;
-}
+const STORE_TYPE_COLORS: Record<StoreType, string> = {
+  TRENDYOL: 'bg-orange-100 text-orange-800',
+  HEPSIBURADA: 'bg-red-100 text-red-800',
+  IKAS: 'bg-blue-100 text-blue-800',
+  MANUAL: 'bg-gray-100 text-gray-800',
+};
 
 export function StoresTable() {
+  const router = useRouter();
   const { toast } = useToast();
   const [stores, setStores] = useState<Store[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
 
@@ -93,12 +68,8 @@ export function StoresTable() {
     defaultPageSize: 10,
   });
 
-  // Modal states
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
-  const [editingStore, setEditingStore] = useState<Store | null>(null);
   const [deletingStoreId, setDeletingStoreId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<StoreFormData>({ name: '', proxyUrl: '', warehouseId: '', isActive: true });
 
   const fetchStores = useCallback(async () => {
     setLoading(true);
@@ -106,67 +77,28 @@ export function StoresTable() {
       const response = await getStores(page, pageSize);
       setStores(response.data);
       setTotal(response.meta.total);
-    } catch (err) {
+    } catch {
       toast({ variant: 'destructive', title: 'Hata', description: 'Mağazalar yüklenemedi' });
     } finally {
       setLoading(false);
     }
   }, [page, pageSize, toast]);
 
-  const fetchWarehouses = useCallback(async () => {
-    try {
-      const response = await getWarehouses(1, 100);
-      setWarehouses(response.data);
-    } catch (err) {
-      toast({ variant: 'destructive', title: 'Hata', description: 'Depolar yüklenemedi' });
-    }
-  }, [toast]);
-
   useEffect(() => {
     fetchStores();
-    fetchWarehouses();
-  }, [fetchStores, fetchWarehouses]);
+  }, [fetchStores]);
 
   const handleCreate = () => {
-    setEditingStore(null);
-    setFormData({ name: '', proxyUrl: '', warehouseId: '', isActive: true });
-    setIsModalOpen(true);
+    router.push('/stores/create');
   };
 
   const handleEdit = (store: Store) => {
-    setEditingStore(store);
-    setFormData({
-      name: store.name,
-      proxyUrl: store.proxyUrl,
-      warehouseId: store.warehouseId,
-      isActive: store.isActive
-    });
-    setIsModalOpen(true);
+    router.push(`/stores/${store.id}`);
   };
 
   const handleDelete = (id: string) => {
     setDeletingStoreId(id);
     setIsDeleteOpen(true);
-  };
-
-  const handleSubmit = async () => {
-    try {
-      if (editingStore) {
-        await updateStore(editingStore.id, formData);
-        toast({ title: 'Başarılı', description: 'Mağaza güncellendi', variant: 'success' });
-      } else {
-        await createStore(formData);
-        toast({ title: 'Başarılı', description: 'Mağaza oluşturuldu', variant: 'success' });
-      }
-      setIsModalOpen(false);
-      fetchStores();
-    } catch (err: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Hata',
-        description: err.message || 'İşlem başarısız'
-      });
-    }
   };
 
   const handleConfirmDelete = async () => {
@@ -176,17 +108,14 @@ export function StoresTable() {
       toast({ title: 'Başarılı', description: 'Mağaza silindi', variant: 'success' });
       setIsDeleteOpen(false);
       fetchStores();
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Silme işlemi başarısız';
       toast({
         variant: 'destructive',
         title: 'Hata',
-        description: err.message || 'Silme işlemi başarısız'
+        description: message
       });
     }
-  };
-
-  const getWarehouseName = (warehouseId: string) => {
-    return warehouses.find(w => w.id === warehouseId)?.name || 'Bilinmiyor';
   };
 
   const totalPages = Math.ceil(total / pageSize);
@@ -212,14 +141,16 @@ export function StoresTable() {
       </div>
 
       <Card>
-
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Mağaza Adı</TableHead>
+                <TableHead>Marka</TableHead>
+                <TableHead>Tip</TableHead>
                 <TableHead>Depo</TableHead>
-                <TableHead>Proxy URL</TableHead>
+                <TableHead>Kargo</TableHead>
+                <TableHead>Fatura</TableHead>
                 <TableHead>Durum</TableHead>
                 <TableHead className="text-right">İşlemler</TableHead>
               </TableRow>
@@ -227,7 +158,7 @@ export function StoresTable() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center">
+                  <TableCell colSpan={8} className="h-24 text-center">
                     <div className="flex justify-center items-center">
                       <Loader2 className="w-6 h-6 animate-spin text-primary" />
                     </div>
@@ -235,13 +166,13 @@ export function StoresTable() {
                 </TableRow>
               ) : stores.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                     Henüz mağaza bulunmuyor.
                   </TableCell>
                 </TableRow>
               ) : (
                 stores.map((store) => (
-                  <TableRow key={store.id}>
+                  <TableRow key={store.id} className="cursor-pointer hover:bg-muted/50" onClick={() => handleEdit(store)}>
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-2">
                         <StoreIcon className="w-4 h-4 text-muted-foreground" />
@@ -249,12 +180,31 @@ export function StoresTable() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline">
-                        {getWarehouseName(store.warehouseId)}
+                      <span className="text-muted-foreground">{store.brandName || '-'}</span>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={STORE_TYPE_COLORS[store.type]}>
+                        {STORE_TYPE_LABELS[store.type]}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-sm truncate max-w-[200px]">
-                      {store.proxyUrl}
+                    <TableCell>
+                      <span className="text-sm">{store.warehouseName || '-'}</span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-sm text-muted-foreground">
+                        {store.shippingProviderName || '-'}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={store.invoiceEnabled
+                          ? "bg-green-100 text-green-800"
+                          : "bg-gray-100 text-gray-600"
+                        }
+                      >
+                        {store.invoiceEnabled ? 'Aktif' : 'Pasif'}
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       <Badge
@@ -268,7 +218,7 @@ export function StoresTable() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
+                      <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -303,85 +253,12 @@ export function StoresTable() {
         onPageSizeChange={setPageSize}
       />
 
-      {/* Create/Edit Client Modal */}
-      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editingStore ? 'Mağazayı Düzenle' : 'Yeni Mağaza Ekle'}</DialogTitle>
-            <DialogDescription>
-              Mağaza bilgilerini aşağıdan yönetebilirsiniz.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Mağaza Adı</Label>
-              <Input
-                placeholder="Örn: Trendyol Mağazam"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Proxy URL</Label>
-              <Input
-                placeholder="https://api.example.com"
-                value={formData.proxyUrl}
-                onChange={(e) => setFormData({ ...formData, proxyUrl: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Varsayılan Depo</Label>
-              <Select
-                value={formData.warehouseId}
-                onValueChange={(value) => setFormData({ ...formData, warehouseId: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Depo seçin" />
-                </SelectTrigger>
-                <SelectContent>
-                  {warehouses.map((w) => (
-                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Durum</Label>
-              <Select
-                value={formData.isActive ? 'active' : 'passive'}
-                onValueChange={(value) => setFormData({ ...formData, isActive: value === 'active' })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Aktif</SelectItem>
-                  <SelectItem value="passive">Pasif</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsModalOpen(false)}>İptal</Button>
-            <Button onClick={handleSubmit}>
-              {editingStore ? 'Güncelle' : 'Oluştur'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Confirmation Alert */}
       <AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Mağazayı silmek istiyor musunuz?</AlertDialogTitle>
             <AlertDialogDescription>
-              Bu işlem geri alınamaz. Bu mağazaya bağlı tüm entegrasyon ayarları silinecektir.
+              Bu işlem geri alınamaz. Bu mağazaya ait tüm ayarlar ve bağlantılar silinecektir.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

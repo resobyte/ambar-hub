@@ -1,6 +1,5 @@
 import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { BaseEntity } from '../../common/entities/base.entity';
-import { Integration } from '../../integrations/entities/integration.entity';
 import { Store } from '../../stores/entities/store.entity';
 
 export enum FaultyOrderReason {
@@ -14,36 +13,25 @@ export class FaultyOrder extends BaseEntity {
     @PrimaryGeneratedColumn('uuid')
     id: string;
 
-    @Column({ name: 'integration_id' })
-    integrationId: string;
-
-    @ManyToOne(() => Integration, { onDelete: 'CASCADE' })
-    @JoinColumn({ name: 'integration_id' })
-    integration: Integration;
-
-    @Column({ name: 'store_id', nullable: true })
+    @Column({ name: 'store_id' })
     storeId: string;
 
-    @ManyToOne(() => Store, { onDelete: 'SET NULL', nullable: true })
+    @ManyToOne(() => Store, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'store_id' })
     store: Store;
 
-    // Unique key - same as orders table
     @Column({ name: 'package_id', unique: true })
     packageId: string;
 
     @Column({ name: 'order_number', nullable: true })
     orderNumber: string;
 
-    // Original order data from integration (full JSON)
     @Column('simple-json', { name: 'raw_data' })
     rawData: object;
 
-    // Missing product barcodes
     @Column('simple-json', { name: 'missing_barcodes' })
     missingBarcodes: string[];
 
-    // Error reason
     @Column({
         type: 'enum',
         enum: FaultyOrderReason,
@@ -52,11 +40,9 @@ export class FaultyOrder extends BaseEntity {
     })
     errorReason: FaultyOrderReason;
 
-    // How many times we tried to process
     @Column({ name: 'retry_count', default: 0 })
     retryCount: number;
 
-    // Customer info (for display purposes)
     @Column({ name: 'customer_name', nullable: true })
     customerName: string;
 

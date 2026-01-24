@@ -3,14 +3,12 @@ import {
   Column,
   PrimaryGeneratedColumn,
   ManyToOne,
-  OneToMany,
   JoinColumn,
   Unique,
 } from 'typeorm';
 import { BaseEntity } from '../../common/entities/base.entity';
 import { Product } from '../../products/entities/product.entity';
 import { Store } from '../../stores/entities/store.entity';
-import { ProductIntegration } from '../../product-integrations/entities/product-integration.entity';
 
 @Entity('product_stores')
 @Unique(['productId', 'storeId'])
@@ -25,19 +23,20 @@ export class ProductStore extends BaseEntity {
   storeId!: string;
 
   @Column({ name: 'store_sku', type: 'varchar', length: 255, nullable: true })
-  storeSku!: string;
+  storeSku!: string | null;
+
+  @Column({ name: 'store_barcode', type: 'varchar', length: 255, nullable: true })
+  storeBarcode!: string | null;
 
   @Column({ type: 'decimal', precision: 10, scale: 2, name: 'store_sale_price', nullable: true })
-  storeSalePrice!: number;
+  storeSalePrice!: number | null;
 
   @Column({ type: 'int', name: 'stock_quantity', default: 0 })
   stockQuantity!: number;
 
-  // Stock available for sale (e.g. in Normal shelves)
   @Column({ type: 'int', name: 'sellable_quantity', default: 0 })
   sellableQuantity!: number;
 
-  // Stock available for reservation (e.g. in Receiving shelves)
   @Column({ type: 'int', name: 'reservable_quantity', default: 0 })
   reservableQuantity!: number;
 
@@ -58,9 +57,4 @@ export class ProductStore extends BaseEntity {
   })
   @JoinColumn({ name: 'store_id' })
   store!: Store;
-
-  @OneToMany(() => ProductIntegration, (pi) => pi.productStore, {
-    onDelete: 'CASCADE',
-  })
-  productIntegrations!: ProductIntegration[];
 }

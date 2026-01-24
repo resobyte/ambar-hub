@@ -20,7 +20,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Loader2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
-import { getIntegrations, Integration, syncOrders } from '@/lib/api';
+import { getStores, Store, syncOrders } from '@/lib/api';
 
 interface SyncOrdersDialogProps {
     open: boolean;
@@ -29,44 +29,44 @@ interface SyncOrdersDialogProps {
 }
 
 export function SyncOrdersDialog({ open, onClose, onSuccess }: SyncOrdersDialogProps) {
-    const [integrations, setIntegrations] = useState<Integration[]>([]);
-    const [selectedIntegrationId, setSelectedIntegrationId] = useState('');
+    const [stores, setStores] = useState<Store[]>([]);
+    const [selectedStoreId, setSelectedStoreId] = useState('');
     const [loading, setLoading] = useState(false);
-    const [fetchingIntegrations, setFetchingIntegrations] = useState(false);
+    const [fetchingStores, setFetchingStores] = useState(false);
     const { toast } = useToast();
 
     useEffect(() => {
         if (open) {
-            fetchIntegrations();
+            fetchStores();
         }
     }, [open]);
 
-    const fetchIntegrations = async () => {
-        setFetchingIntegrations(true);
+    const fetchStores = async () => {
+        setFetchingStores(true);
         try {
-            // Fetch all pages if needed, but for now getting first page (assuming < 100 integrations)
-            const res = await getIntegrations(1, 100);
-            // Filter for supported integrations (Trendyol, Hepsiburada, Ikas)
-            const supportedIntegrations = res.data.filter(i => (i.type === 'TRENDYOL' || i.type === 'HEPSIBURADA' || i.type === 'IKAS') && i.isActive);
-            setIntegrations(supportedIntegrations);
+            const res = await getStores(1, 100);
+            const marketplaceStores = res.data.filter(
+                s => (s.type === 'TRENDYOL' || s.type === 'HEPSIBURADA' || s.type === 'IKAS') && s.isActive
+            );
+            setStores(marketplaceStores);
         } catch (error) {
-            console.error('Failed to fetch integrations', error);
+            console.error('Failed to fetch stores', error);
             toast({
                 title: "Hata",
-                description: "Entegrasyonlar yüklenirken bir hata oluştu.",
+                description: "Mağazalar yüklenirken bir hata oluştu.",
                 variant: "destructive",
             });
         } finally {
-            setFetchingIntegrations(false);
+            setFetchingStores(false);
         }
     };
 
     const handleSync = async () => {
-        if (!selectedIntegrationId) return;
+        if (!selectedStoreId) return;
 
         setLoading(true);
         try {
-            await syncOrders(selectedIntegrationId);
+            await syncOrders(selectedStoreId);
             toast({
                 title: "Başarılı",
                 description: "Sipariş eşitleme işlemi başlatıldı.",
@@ -74,11 +74,12 @@ export function SyncOrdersDialog({ open, onClose, onSuccess }: SyncOrdersDialogP
             });
             onSuccess();
             onClose();
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('Sync failed', error);
+            const message = error instanceof Error ? error.message : 'Sipariş eşitleme başarısız.';
             toast({
                 title: "Hata",
-                description: error.message || "Sipariş eşitleme başarısız.",
+                description: message,
                 variant: "destructive",
             });
         } finally {
@@ -92,30 +93,30 @@ export function SyncOrdersDialog({ open, onClose, onSuccess }: SyncOrdersDialogP
                 <DialogHeader>
                     <DialogTitle>Siparişleri Eşitle</DialogTitle>
                     <DialogDescription>
-                        Seçilen entegrasyondan son siparişleri çekmek için işlemi başlatın.
+                        Seçilen mağazadan son siparişleri çekmek için işlemi başlatın.
                     </DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
                     <div className="grid gap-2">
-                        <Label htmlFor="integration">Entegrasyon</Label>
+                        <Label htmlFor="store">Mağaza</Label>
                         <Select
-                            value={selectedIntegrationId}
-                            onValueChange={setSelectedIntegrationId}
-                            disabled={fetchingIntegrations}
+                            value={selectedStoreId}
+                            onValueChange={setSelectedStoreId}
+                            disabled={fetchingStores}
                         >
-                            <SelectTrigger id="integration">
-                                <SelectValue placeholder={fetchingIntegrations ? "Yükleniyor..." : "Entegrasyon Seçin"} />
+                            <SelectTrigger id="store">
+                                <SelectValue placeholder={fetchingStores ? "Yükleniyor..." : "Mağaza Seçin"} />
                             </SelectTrigger>
                             <SelectContent>
-                                {integrations.map((integration) => (
-                                    <SelectItem key={integration.id} value={integration.id}>
-                                        {integration.name}
+                                {stores.map((store) => (
+                                    <SelectItem key={store.id} value={store.id}>
+                                        {store.name} ({store.type})
                                     </SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>
-                        {integrations.length === 0 && !fetchingIntegrations && (
-                            <p className="text-sm text-destructive">Aktif entegrasyon bulunamadı.</p>
+                        {stores.length === 0 && !fetchingStores && (
+                            <p className="text-sm text-destructive">Aktif pazaryeri mağazası bulunamadı.</p>
                         )}
                     </div>
                 </div>
@@ -123,7 +124,7 @@ export function SyncOrdersDialog({ open, onClose, onSuccess }: SyncOrdersDialogP
                     <Button variant="outline" onClick={onClose} disabled={loading}>
                         İptal
                     </Button>
-                    <Button onClick={handleSync} disabled={loading || !selectedIntegrationId}>
+                    <Button onClick={handleSync} disabled={loading || !selectedStoreId}>
                         {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                         {loading ? 'Eşitleniyor...' : 'Eşitlemeyi Başlat'}
                     </Button>

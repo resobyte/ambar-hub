@@ -8,6 +8,7 @@ import {
   Delete,
   Query,
   UseGuards,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { ProductStoresService } from './product-stores.service';
 import { CreateProductStoreDto } from './dto/create-product-store.dto';
@@ -29,22 +30,48 @@ export class ProductStoresController {
   }
 
   @Get()
-  findAll(@Query('productId') productId?: string) {
-    return this.productStoresService.findAll(productId);
+  findAll(
+    @Query('productId') productId?: string,
+    @Query('storeId') storeId?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.productStoresService.findAll({
+      productId,
+      storeId,
+      page: page ? parseInt(page, 10) : 1,
+      limit: limit ? parseInt(limit, 10) : 20,
+      search,
+    });
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.productStoresService.findOne(id);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateProductStoreDto: UpdateProductStoreDto) {
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateProductStoreDto: UpdateProductStoreDto,
+  ) {
     return this.productStoresService.update(id, updateProductStoreDto);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
+  remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.productStoresService.remove(id);
+  }
+
+  @Post('bulk-upsert')
+  bulkUpsert(@Body() data: { storeId: string; items: Array<{
+    productId: string;
+    storeBarcode?: string;
+    storeSku?: string;
+    storeSalePrice?: number;
+    isActive?: boolean;
+  }> }) {
+    return this.productStoresService.bulkUpsert(data.storeId, data.items);
   }
 }

@@ -36,6 +36,7 @@ import {
   Contact,
   Menu,
   ChevronDown,
+  RotateCcw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from '@/components/common/ThemeToggle';
@@ -53,10 +54,12 @@ const iconMap: Record<string, React.ReactNode> = {
   warehouse: <Warehouse className="w-4 h-4" />,
   store: <ShoppingBag className="w-4 h-4" />,
   integration: <Link2 className="w-4 h-4" />,
+  link: <Link2 className="w-4 h-4" />,
   products: <Package className="w-4 h-4" />,
   shipping: <Truck className="w-4 h-4" />,
   account: <Settings className="w-4 h-4" />,
   orders: <ShoppingCart className="w-4 h-4" />,
+  plus: <ShoppingCart className="w-4 h-4" />,
   error: <AlertTriangle className="w-4 h-4" />,
   shelf: <Archive className="w-4 h-4" />,
   supplier: <UsersRound className="w-4 h-4" />,
@@ -67,6 +70,7 @@ const iconMap: Record<string, React.ReactNode> = {
   invoice: <FileText className="w-4 h-4" />,
   settings: <Settings className="w-4 h-4" />,
   customer: <Contact className="w-4 h-4" />,
+  return: <RotateCcw className="w-4 h-4" />,
 };
 
 type GroupedRoutes = {

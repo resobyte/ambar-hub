@@ -192,7 +192,7 @@ export function FaultyOrdersTable() {
                                         <TableCell className="font-medium">{order.orderNumber}</TableCell>
                                         <TableCell>{order.customerName || '-'}</TableCell>
                                         <TableCell>
-                                            <Badge variant="outline">{order.integration?.name || '-'}</Badge>
+                                            <Badge variant="outline">{order.store?.name || '-'}</Badge>
                                         </TableCell>
                                         <TableCell>
                                             <div className="flex flex-wrap gap-1">

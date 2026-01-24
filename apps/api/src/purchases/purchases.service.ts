@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, ILike, Between, FindOperator } from 'typeorm';
 import { PurchaseOrder } from './entities/purchase-order.entity';
@@ -14,9 +14,12 @@ import { Product } from '../products/entities/product.entity';
 import { Supplier } from '../suppliers/entities/supplier.entity';
 import { ConsumablesService } from '../consumables/consumables.service';
 import { ProductsService } from '../products/products.service';
+import { OrdersService } from '../orders/orders.service';
 
 @Injectable()
 export class PurchasesService {
+    private readonly logger = new Logger(PurchasesService.name);
+
     constructor(
         @InjectRepository(PurchaseOrder)
         private readonly poRepository: Repository<PurchaseOrder>,
@@ -34,6 +37,8 @@ export class PurchasesService {
         private readonly productRepository: Repository<Product>,
         private readonly consumablesService: ConsumablesService,
         private readonly productsService: ProductsService,
+        @Inject(forwardRef(() => OrdersService))
+        private readonly ordersService: OrdersService,
     ) { }
 
     // Generate unique order number
@@ -312,6 +317,16 @@ export class PurchasesService {
 
         // Update PO status
         await this.updatePurchaseOrderStatus(purchaseOrderId);
+
+        // Process waiting stock orders - move to WAITING_PICKING if stock now available
+        try {
+            const productIds = data.items.filter(i => i.productId).map(i => i.productId!);
+            for (const productId of productIds) {
+                await this.ordersService.processWaitingStockOrders(productId);
+            }
+        } catch (error) {
+            this.logger.warn(`Failed to process waiting stock orders: ${error.message}`);
+        }
 
         return this.findGoodsReceipt(savedGr.id);
     }

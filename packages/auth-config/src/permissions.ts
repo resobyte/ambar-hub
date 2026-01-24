@@ -34,6 +34,14 @@ export const ROUTE_PERMISSIONS: RouteConfig[] = [
     group: 'Depo & Stok',
   },
   {
+    path: '/product-stores',
+    label: 'Ürün-Mağaza Eşleştirme',
+    icon: 'link',
+    roles: [Role.PLATFORM_OWNER],
+    showInSidebar: true,
+    group: 'Depo & Stok',
+  },
+  {
     path: '/stock-movements',
     label: 'Stok Hareketleri',
     icon: 'route',
@@ -51,6 +59,14 @@ export const ROUTE_PERMISSIONS: RouteConfig[] = [
     group: 'Sipariş İşlemleri',
   },
   {
+    path: '/orders/create',
+    label: 'Sipariş Ekle',
+    icon: 'plus',
+    roles: [Role.PLATFORM_OWNER],
+    showInSidebar: true,
+    group: 'Sipariş İşlemleri',
+  },
+  {
     path: '/invoices',
     label: 'Fatura & İrsaliye',
     icon: 'invoice',
@@ -62,6 +78,14 @@ export const ROUTE_PERMISSIONS: RouteConfig[] = [
     path: '/customers',
     label: 'Müşteriler',
     icon: 'customer',
+    roles: [Role.PLATFORM_OWNER],
+    showInSidebar: true,
+    group: 'Sipariş İşlemleri',
+  },
+  {
+    path: '/faulty-orders',
+    label: 'Hatalı Siparişler',
+    icon: 'error',
     roles: [Role.PLATFORM_OWNER],
     showInSidebar: true,
     group: 'Sipariş İşlemleri',
@@ -92,12 +116,12 @@ export const ROUTE_PERMISSIONS: RouteConfig[] = [
     group: 'Operasyon',
   },
   {
-    path: '/faulty-orders',
-    label: 'Hatalı Siparişler',
-    icon: 'error',
+    path: '/returns',
+    label: 'İadeler',
+    icon: 'return',
     roles: [Role.PLATFORM_OWNER],
     showInSidebar: true,
-    group: 'Sipariş İşlemleri',
+    group: 'Operasyon',
   },
   // Satın Alma
   {
@@ -116,22 +140,14 @@ export const ROUTE_PERMISSIONS: RouteConfig[] = [
     showInSidebar: true,
     group: 'Satın Alma',
   },
-  // Entegrasyonlar
+  // Ayarlar - Mağazalar ve Kargo
   {
     path: '/stores',
     label: 'Mağazalar',
     icon: 'store',
     roles: [Role.PLATFORM_OWNER],
     showInSidebar: true,
-    group: 'Entegrasyonlar',
-  },
-  {
-    path: '/integrations',
-    label: 'Entegrasyonlar',
-    icon: 'integration',
-    roles: [Role.PLATFORM_OWNER],
-    showInSidebar: true,
-    group: 'Entegrasyonlar',
+    group: 'Ayarlar',
   },
   {
     path: '/shippings',
@@ -139,7 +155,7 @@ export const ROUTE_PERMISSIONS: RouteConfig[] = [
     icon: 'shipping',
     roles: [Role.PLATFORM_OWNER],
     showInSidebar: true,
-    group: 'Entegrasyonlar',
+    group: 'Ayarlar',
   },
   // Ayarlar
   {

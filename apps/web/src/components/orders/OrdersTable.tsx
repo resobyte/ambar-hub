@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Order, OrderStatus, createInvoiceFromOrder, getInvoicePdf, Integration, Store } from '@/lib/api';
+import { Order, OrderStatus, createInvoiceFromOrder, getInvoicePdf, Store } from '@/lib/api';
 import { useToast } from '@/components/ui/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -54,7 +54,6 @@ import { DataTablePagination } from '@/components/ui/data-table-pagination';
 
 interface OrdersTableProps {
     orders: Order[];
-    integrations: Integration[];
     stores: Store[];
     isLoading: boolean;
     currentPage: number;
@@ -65,10 +64,8 @@ interface OrdersTableProps {
     filters: {
         orderNumber?: string;
         packageId?: string;
-        integrationId?: string;
         storeId?: string;
         status?: string;
-        // Expanded filters support - assuming parent will handle or ignore extra fields
         [key: string]: any;
     };
     onFilterChange: (filters: any) => void;
@@ -77,7 +74,6 @@ interface OrdersTableProps {
 
 export function OrdersTable({
     orders,
-    integrations,
     stores,
     isLoading,
     currentPage,
@@ -161,12 +157,16 @@ export function OrdersTable({
 
     const getStatusVariant = (status: OrderStatus) => {
         switch (status) {
-            case OrderStatus.DELIVERED: return 'default'; // dark/success looking
+            case OrderStatus.DELIVERED: return 'default';
             case OrderStatus.SHIPPED: return 'secondary';
             case OrderStatus.CANCELLED:
-            case OrderStatus.UNSUPPLIED: return 'destructive';
-            case OrderStatus.CREATED:
-            case OrderStatus.PICKING: return 'outline';
+            case OrderStatus.UNSUPPLIED: 
+            case OrderStatus.WAITING_STOCK: return 'destructive';
+            case OrderStatus.WAITING_PICKING:
+            case OrderStatus.PICKING:
+            case OrderStatus.PICKED:
+            case OrderStatus.PACKING:
+            case OrderStatus.PACKED: return 'outline';
             default: return 'outline';
         }
     };
@@ -177,8 +177,12 @@ export function OrdersTable({
             case OrderStatus.SHIPPED: return 'bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-200';
             case OrderStatus.CANCELLED:
             case OrderStatus.UNSUPPLIED: return 'bg-red-100 text-red-800 border-red-200 hover:bg-red-200';
-            case OrderStatus.CREATED: return 'bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-200';
+            case OrderStatus.CREATED: return 'bg-gray-100 text-gray-800 border-gray-200 hover:bg-gray-200';
+            case OrderStatus.WAITING_STOCK: return 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100';
+            case OrderStatus.WAITING_PICKING: return 'bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-200';
             case OrderStatus.PICKING: return 'bg-orange-100 text-orange-800 border-orange-200 hover:bg-orange-200';
+            case OrderStatus.PICKED: return 'bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-200';
+            case OrderStatus.PACKING: return 'bg-cyan-100 text-cyan-800 border-cyan-200 hover:bg-cyan-200';
             case OrderStatus.PACKED: return 'bg-indigo-100 text-indigo-800 border-indigo-200 hover:bg-indigo-200';
             case OrderStatus.INVOICED: return 'bg-purple-100 text-purple-800 border-purple-200 hover:bg-purple-200';
             case OrderStatus.RETURNED: return 'bg-pink-100 text-pink-800 border-pink-200 hover:bg-pink-200';
@@ -191,7 +195,11 @@ export function OrdersTable({
     const getStatusLabel = (status: OrderStatus) => {
         switch (status) {
             case OrderStatus.CREATED: return 'Oluşturuldu';
-            case OrderStatus.PICKING: return 'Toplama';
+            case OrderStatus.WAITING_STOCK: return 'Stok Bekliyor';
+            case OrderStatus.WAITING_PICKING: return 'Toplama Bekliyor';
+            case OrderStatus.PICKING: return 'Toplanıyor';
+            case OrderStatus.PICKED: return 'Toplandı';
+            case OrderStatus.PACKING: return 'Paketleniyor';
             case OrderStatus.PACKED: return 'Paketlendi';
             case OrderStatus.INVOICED: return 'Faturalandı';
             case OrderStatus.SHIPPED: return 'Kargoya Verildi';
@@ -396,31 +404,17 @@ export function OrdersTable({
                             />
                         </div>
 
-                        {/* Entegrasyon */}
-                        <div className="space-y-1.5">
-                            <label className="text-xs font-medium text-muted-foreground">Entegrasyon</label>
-                            <Combobox
-                                options={[
-                                    { value: "", label: "Tümü" },
-                                    ...integrations.map(i => ({ value: i.id, label: i.name }))
-                                ]}
-                                value={filters.integrationId || ""}
-                                onValueChange={(val) => onFilterChange({ ...filters, integrationId: val })}
-                                placeholder="Entegrasyon Seç..."
-                                searchPlaceholder="Entegrasyon ara..."
-                                emptyMessage="Entegrasyon bulunamadı."
-                                className="h-9"
-                            />
-                        </div>
-
                         {/* Sipariş Durumu */}
                         <div className="space-y-1.5">
                             <label className="text-xs font-medium text-muted-foreground">Sipariş Durumu</label>
                             <Combobox
                                 options={[
                                     { value: "", label: "Tümü" },
-                                    { value: "CREATED", label: "Oluşturuldu" },
-                                    { value: "PICKING", label: "Toplama" },
+                                    { value: "WAITING_STOCK", label: "Stok Bekliyor" },
+                                    { value: "WAITING_PICKING", label: "Toplama Bekliyor" },
+                                    { value: "PICKING", label: "Toplanıyor" },
+                                    { value: "PICKED", label: "Toplandı" },
+                                    { value: "PACKING", label: "Paketleniyor" },
                                     { value: "PACKED", label: "Paketlendi" },
                                     { value: "INVOICED", label: "Faturalandı" },
                                     { value: "SHIPPED", label: "Kargoya Verildi" },
@@ -622,7 +616,7 @@ export function OrdersTable({
                                             )}
                                         </Button>
                                     </TableHead>
-                                    <TableHead className="font-semibold">Kaynak</TableHead>
+                                                    <TableHead className="font-semibold">Mağaza</TableHead>
                                     <TableHead className="font-semibold">Müşteri</TableHead>
                                     <TableHead className="font-semibold">
                                         <Button
@@ -730,9 +724,9 @@ export function OrdersTable({
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>
-                                                    <Badge variant="outline" className="font-normal bg-background">
-                                                        {order.integration?.name || '-'}
-                                                    </Badge>
+                                                    <span className="text-sm text-muted-foreground">
+                                                        {order.store?.name || '-'}
+                                                    </span>
                                                 </TableCell>
                                                 <TableCell>
                                                     <div className="flex items-center gap-2">
@@ -750,21 +744,52 @@ export function OrdersTable({
                                                         month: '2-digit',
                                                         year: 'numeric',
                                                         hour: '2-digit',
-                                                        minute: '2-digit'
+                                                        minute: '2-digit',
+                                                        second: '2-digit'
                                                     })}
                                                 </TableCell>
                                                 <TableCell className="text-sm whitespace-nowrap">
                                                     {(() => {
-                                                        const countdown = getDeliveryCountdown(order.agreedDeliveryDate);
-                                                        return (
-                                                            <span className={cn(
-                                                                countdown.isOverdue && "text-red-600 font-medium",
-                                                                countdown.isUrgent && !countdown.isOverdue && "text-orange-600 font-medium",
-                                                                !countdown.isOverdue && !countdown.isUrgent && "text-muted-foreground"
-                                                            )}>
-                                                                {countdown.text}
-                                                            </span>
-                                                        );
+                                                        // Aktif bekleyen durumlar - sayaç göster
+                                                        const activeStatuses = [
+                                                            OrderStatus.WAITING_STOCK,
+                                                            OrderStatus.WAITING_PICKING,
+                                                            OrderStatus.PICKING,
+                                                            OrderStatus.PICKED,
+                                                            OrderStatus.PACKING,
+                                                            OrderStatus.PACKED,
+                                                            OrderStatus.INVOICED,
+                                                        ];
+                                                        const isActiveOrder = activeStatuses.includes(order.status);
+
+                                                        if (isActiveOrder) {
+                                                            // Sayaç göster
+                                                            const countdown = getDeliveryCountdown(order.agreedDeliveryDate);
+                                                            return (
+                                                                <span className={cn(
+                                                                    countdown.isOverdue && "text-red-600 font-semibold bg-red-50 px-2 py-0.5 rounded",
+                                                                    countdown.isUrgent && !countdown.isOverdue && "text-orange-600 font-medium",
+                                                                    !countdown.isOverdue && !countdown.isUrgent && "text-muted-foreground"
+                                                                )}>
+                                                                    {countdown.text}
+                                                                </span>
+                                                            );
+                                                        } else {
+                                                            // Tamamlanan durumlar - tarih göster
+                                                            if (!order.agreedDeliveryDate) return <span className="text-muted-foreground">-</span>;
+                                                            return (
+                                                                <span className="text-muted-foreground">
+                                                                    {new Date(order.agreedDeliveryDate).toLocaleString('tr-TR', {
+                                                                        day: '2-digit',
+                                                                        month: '2-digit',
+                                                                        year: 'numeric',
+                                                                        hour: '2-digit',
+                                                                        minute: '2-digit',
+                                                                        second: '2-digit'
+                                                                    })}
+                                                                </span>
+                                                            );
+                                                        }
                                                     })()}
                                                 </TableCell>
                                                 <TableCell className="font-medium">
@@ -788,7 +813,7 @@ export function OrdersTable({
                                                             {invoiceLoading === order.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
                                                         </Button>
 
-                                                        {!order.cargoTrackingNumber && !order.integration && (
+                                                        {!order.cargoTrackingNumber && order.store?.type === 'MANUAL' && (
                                                             <Button
                                                                 size="icon"
                                                                 variant="ghost"
@@ -856,7 +881,7 @@ export function OrdersTable({
                                             {/* Expanded View */}
                                             {expandedIds.has(order.id) && (
                                                 <TableRow className="bg-muted/5 hover:bg-muted/5">
-                                                    <TableCell colSpan={9} className="p-0">
+                                                    <TableCell colSpan={10} className="p-0">
                                                         <div className="p-4 pl-12 bg-muted/20 border-b shadow-inner">
                                                             <div className="bg-background rounded-md border overflow-hidden">
                                                                 <div className="bg-muted/50 px-4 py-2 border-b flex justify-between items-center">

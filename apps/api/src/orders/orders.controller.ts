@@ -178,8 +178,8 @@ export class OrdersController {
         res.end(buffer);
     }
     @Post(':id/create-shipment')
-    async createShipment(@Param('id') id: string, @Body() shipmentDetails: any) {
-        return this.ordersService.createShipmentForOrder(id, shipmentDetails);
+    async createShipment(@Param('id') id: string) {
+        return this.ordersService.createShipmentForOrder(id);
     }
 
     @Post(':id/cancel')
@@ -193,6 +193,20 @@ export class OrdersController {
                 cargoReverted: result.cargoReverted,
                 stockReleased: result.stockReleased,
             },
+        };
+    }
+
+    /**
+     * WAITING_STOCK siparişlerini kontrol et ve stok yeterliyse WAITING_PICKING'e geçir.
+     * Manuel tetikleme veya cron job için kullanılabilir.
+     */
+    @Post('process-waiting-stock')
+    async processWaitingStockOrders() {
+        const result = await this.ordersService.processWaitingStockOrders();
+        return {
+            success: true,
+            message: `${result.movedToWaitingPicking.length} sipariş WAITING_PICKING'e taşındı`,
+            data: result,
         };
     }
 

@@ -63,7 +63,7 @@ interface ShippingProvider {
   name: string;
   type: 'ARAS';
   isActive: boolean;
-  integrationCount: number;
+  storeCount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -242,7 +242,7 @@ export function ShippingTable() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {provider.integrationCount} entegrasyon
+                      {provider.storeCount} mağaza
                     </TableCell>
                     <TableCell>
                       <Badge
@@ -269,8 +269,8 @@ export function ShippingTable() {
                           size="icon"
                           className="text-destructive hover:text-destructive hover:bg-destructive/10"
                           onClick={() => handleDelete(provider.id)}
-                          disabled={provider.integrationCount > 0}
-                          title={provider.integrationCount > 0 ? 'Entegrasyonlar tarafından kullanılıyor' : 'Sil'}
+                          disabled={provider.storeCount > 0}
+                          title={provider.storeCount > 0 ? 'Mağazalar tarafından kullanılıyor' : 'Sil'}
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>

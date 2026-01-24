@@ -1,7 +1,6 @@
 import { Entity, Column, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
 import { BaseEntity } from '../../common/entities/base.entity';
 import { Customer } from '../../customers/entities/customer.entity';
-import { Integration } from '../../integrations/entities/integration.entity';
 import { Store } from '../../stores/entities/store.entity';
 import { OrderItem } from './order-item.entity';
 import { OrderStatus } from '../enums/order-status.enum';
@@ -18,12 +17,12 @@ export class Order extends BaseEntity {
     @Column({ name: 'package_id', unique: true })
     packageId: string;
 
-    @Column({ name: 'integration_id', nullable: true })
-    integrationId: string | null;
+    @Column({ name: 'store_id' })
+    storeId: string;
 
-    @ManyToOne(() => Integration, { nullable: true })
-    @JoinColumn({ name: 'integration_id' })
-    integration: Integration;
+    @ManyToOne(() => Store)
+    @JoinColumn({ name: 'store_id' })
+    store: Store;
 
     @Column({ name: 'customer_id' })
     customerId: string;
@@ -31,13 +30,6 @@ export class Order extends BaseEntity {
     @ManyToOne(() => Customer, (customer) => customer.orders)
     @JoinColumn({ name: 'customer_id' })
     customer: Customer;
-
-    @Column({ name: 'store_id', nullable: true })
-    storeId: string;
-
-    @ManyToOne(() => Store)
-    @JoinColumn({ name: 'store_id' })
-    store: Store;
 
     // ─────────────────────────────────────────────────────────────
     // Status
@@ -211,6 +203,12 @@ export class Order extends BaseEntity {
     // ─────────────────────────────────────────────────────────────
     @Column({ name: 'waybill_id', nullable: true })
     waybillId: string;
+
+    // ─────────────────────────────────────────────────────────────
+    // Document Type (Belge Tipi) - Manuel siparişler için
+    // ─────────────────────────────────────────────────────────────
+    @Column({ name: 'document_type', nullable: true, default: 'WAYBILL' })
+    documentType: string; // 'WAYBILL' | 'INVOICE'
 
     // ─────────────────────────────────────────────────────────────
     // Items Relation

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { OrdersTable } from '@/components/orders/OrdersTable';
 import { SyncOrdersDialog } from '@/components/orders/SyncOrdersDialog';
-import { getIntegrations, getStores, Order, Integration, Store } from '@/lib/api';
+import { getStores, Order, Store } from '@/lib/api';
 import { RefreshCw, Download, Plus, MoreHorizontal } from 'lucide-react';
 import {
     DropdownMenu,
@@ -33,7 +33,6 @@ export function OrdersClient() {
     });
 
     const [orders, setOrders] = useState<Order[]>([]);
-    const [integrations, setIntegrations] = useState<Integration[]>([]);
     const [stores, setStores] = useState<Store[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSyncDialogOpen, setIsSyncDialogOpen] = useState(false);
@@ -42,7 +41,6 @@ export function OrdersClient() {
 
     // Initial load only
     useEffect(() => {
-        getIntegrations(1, 100).then(res => setIntegrations(res.data)).catch(console.error);
         getStores(1, 100).then(res => setStores(res.data)).catch(console.error);
     }, []);
 
@@ -60,6 +58,12 @@ export function OrdersClient() {
                     params.append(key, String(value));
                 }
             });
+
+            // Default sorting by orderDate DESC if not specified
+            if (!params.has('sortBy')) {
+                params.append('sortBy', 'orderDate');
+                params.append('sortOrder', 'DESC');
+            }
 
             const res = await fetch(`/api/orders?${params}`, {
                 credentials: 'include',
@@ -90,7 +94,6 @@ export function OrdersClient() {
             const params = new URLSearchParams();
             if (filters.orderNumber) params.append('orderNumber', filters.orderNumber);
             if (filters.packageId) params.append('packageId', filters.packageId);
-            if (filters.integrationId) params.append('integrationId', filters.integrationId);
             if (filters.storeId) params.append('storeId', filters.storeId);
             if (filters.status) params.append('status', filters.status);
             if (filters.startDate) params.append('startDate', filters.startDate);
@@ -174,7 +177,6 @@ export function OrdersClient() {
             <div className="border border-border rounded-xl bg-card p-4">
                 <OrdersTable
                     orders={orders}
-                    integrations={integrations}
                     stores={stores}
                     isLoading={isLoading}
                     currentPage={page}

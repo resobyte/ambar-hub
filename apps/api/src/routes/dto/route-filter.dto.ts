@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsNumber, IsArray, IsBoolean } from 'class-validator';
+import { IsOptional, IsString, IsNumber, IsArray, IsBoolean, IsDateString } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 
 export class RouteFilterDto {
@@ -65,4 +65,20 @@ export class RouteFilterDto {
     @IsOptional()
     @IsString()
     search?: string;
+
+    @IsOptional()
+    @IsDateString()
+    orderDateStart?: string;
+
+    @IsOptional()
+    @IsDateString()
+    orderDateEnd?: string;
+
+    @IsOptional()
+    @IsDateString()
+    agreedDeliveryDateStart?: string;
+
+    @IsOptional()
+    @IsDateString()
+    agreedDeliveryDateEnd?: string;
 }

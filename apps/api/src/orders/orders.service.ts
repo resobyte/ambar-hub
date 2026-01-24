@@ -5,21 +5,21 @@ import { Order } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { FaultyOrder, FaultyOrderReason } from './entities/faulty-order.entity';
 import { CustomersService } from '../customers/customers.service';
-import { IntegrationsService } from '../integrations/integrations.service';
+import { StoresService } from '../stores/stores.service';
 import { OrderStatus } from './enums/order-status.enum';
-import { IntegrationType } from '../integrations/entities/integration.entity';
+import { Store, StoreType } from '../stores/entities/store.entity';
 import { Product } from '../products/entities/product.entity';
 import * as XLSX from 'xlsx';
 import { ProductSetItem } from '../products/entities/product-set-item.entity';
 import { ProductType } from '../products/enums/product-type.enum';
 import { ProductStore } from '../product-stores/entities/product-store.entity';
 import { RouteOrder } from '../routes/entities/route-order.entity';
-import { ArasKargoService } from '../integrations/aras/aras-kargo.service';
+import { ShelfStock } from '../shelves/entities/shelf-stock.entity';
+import { ArasKargoService } from '../stores/providers/aras-kargo.service';
 import axios from 'axios';
 
 import { InvoicesService } from '../invoices/invoices.service';
 import { CreateOrderDto } from './dto/create-order.dto';
-import { randomUUID } from 'crypto';
 import { Customer, CustomerType } from '../customers/entities/customer.entity';
 
 export interface CancelOrderResult {
@@ -33,6 +33,27 @@ export interface CancelOrderResult {
 @Injectable()
 export class OrdersService {
     private readonly logger = new Logger(OrdersService.name);
+
+    /**
+     * Marketplace timestamp'lerini UTC'ye dönüştürür.
+     * - Trendyol: Unix timestamp (ms) olarak gönderir ama UTC+3 offset'lidir, 3 saat çıkarılır
+     * - Hepsiburada/IKAS: ISO string gönderir, olduğu gibi parse edilir
+     */
+    private convertMarketplaceTimestamp(timestamp: number | string | null | undefined): Date | null {
+        if (!timestamp) return null;
+        
+        // ISO string ise (örn: "2024-01-15T14:30:00.000Z")
+        if (typeof timestamp === 'string' && timestamp.includes('-')) {
+            const date = new Date(timestamp);
+            return isNaN(date.getTime()) ? null : date;
+        }
+        
+        // Unix timestamp (Trendyol) - +3 offset'li gelir, 3 saat çıkar
+        const ts = typeof timestamp === 'string' ? parseInt(timestamp, 10) : timestamp;
+        if (isNaN(ts)) return null;
+        const utcTime = ts - (3 * 60 * 60 * 1000);
+        return new Date(utcTime);
+    }
 
     constructor(
         @InjectRepository(Order)
@@ -49,8 +70,12 @@ export class OrdersService {
         private readonly productStoreRepository: Repository<ProductStore>,
         @InjectRepository(RouteOrder)
         private readonly routeOrderRepository: Repository<RouteOrder>,
+        @InjectRepository(Store)
+        private readonly storeRepository: Repository<Store>,
+        @InjectRepository(ShelfStock)
+        private readonly shelfStockRepository: Repository<ShelfStock>,
         private readonly customersService: CustomersService,
-        private readonly integrationsService: IntegrationsService,
+        private readonly storesService: StoresService,
         private readonly arasKargoService: ArasKargoService,
         private readonly invoicesService: InvoicesService,
     ) { }
@@ -59,15 +84,13 @@ export class OrdersService {
         if (!status) return OrderStatus.UNKNOWN;
         const s = status.toLowerCase();
 
-        // Common/Hepsiburada statuses
         if (s === 'created' || s === 'open') return OrderStatus.CREATED;
-        if (s === 'unpacked') return OrderStatus.REPACK; // Mapped "Unpacked" (Damaged/Open Pkg) to REPACK
+        if (s === 'unpacked') return OrderStatus.REPACK;
         if (s === 'picking' || s === 'ready_to_ship' || s === 'preparing') return OrderStatus.PICKING;
         if (s === 'shipped') return OrderStatus.SHIPPED;
         if (s === 'cancelled') return OrderStatus.CANCELLED;
         if (s === 'delivered') return OrderStatus.DELIVERED;
 
-        // Trendyol Statuses
         switch (status) {
             case 'Created': return OrderStatus.CREATED;
             case 'Picking': return OrderStatus.PICKING;
@@ -79,35 +102,26 @@ export class OrdersService {
             case 'Returned': return OrderStatus.RETURNED;
             case 'Repack': return OrderStatus.REPACK;
             case 'UnSupplied': return OrderStatus.UNSUPPLIED;
-
-            // Ikas Statuses
             case 'DRAFT': return OrderStatus.CREATED;
-            case 'PARTIALLY_CANCELLED': return OrderStatus.CREATED; // Treat partial cancel as still active/created
+            case 'PARTIALLY_CANCELLED': return OrderStatus.CREATED;
             case 'PARTIALLY_REFUNDED': return OrderStatus.RETURNED;
             case 'REFUNDED': return OrderStatus.RETURNED;
-            case 'REFUND_REJECTED': return OrderStatus.DELIVERED; // Return rejected implies kept by customer
+            case 'REFUND_REJECTED': return OrderStatus.DELIVERED;
             case 'REFUND_REQUESTED': return OrderStatus.RETURNED;
             case 'WAITING_UPSELL_ACTION': return OrderStatus.CREATED;
-
             default: return OrderStatus.UNKNOWN;
         }
     }
 
-    /**
-     * Check if a barcode belongs to a SET product and return expanded components
-     * Returns null if not a SET, or array of component items if it is
-     */
     private async expandSetProduct(barcode: string, originalLine: any): Promise<any[] | null> {
         if (!barcode) return null;
 
-        // Find product by barcode
         const product = await this.productRepository.findOne({
             where: { barcode, productType: ProductType.SET },
         });
 
         if (!product) return null;
 
-        // Get SET components
         const setItems = await this.productSetItemRepository.find({
             where: { setProductId: product.id },
             relations: ['componentProduct'],
@@ -116,34 +130,24 @@ export class OrdersService {
 
         if (setItems.length === 0) return null;
 
-        // Expand to component items
         return setItems.map((setItem, index) => ({
             ...originalLine,
-            // Use component product info
             productName: setItem.componentProduct.name,
             barcode: setItem.componentProduct.barcode,
             sku: setItem.componentProduct.sku,
             merchantSku: setItem.componentProduct.sku,
             stockCode: setItem.componentProduct.sku,
-            // Quantity multiplied by component quantity
             quantity: (originalLine.quantity || 1) * setItem.quantity,
-            // Use price share from SET definition
             price: Number(setItem.priceShare),
             lineUnitPrice: Number(setItem.priceShare),
             unitPrice: Number(setItem.priceShare),
-            // Mark as SET component
             _isSetComponent: true,
             _setProductId: product.id,
             _setBarcode: barcode,
-            // Adjust line number
             lineNo: (originalLine.lineNo || 1) * 100 + index,
         }));
     }
 
-    /**
-     * Check if all products in order lines exist in our database
-     * Returns missing barcodes if any
-     */
     private async checkProductsExist(lines: any[]): Promise<{ valid: boolean; missing: string[] }> {
         const missing: string[] = [];
         for (const line of lines) {
@@ -158,18 +162,13 @@ export class OrdersService {
         return { valid: missing.length === 0, missing };
     }
 
-    /**
-     * Save order to faulty orders table
-     */
     private async saveAsFaultyOrder(
         pkg: any,
-        integrationId: string,
         storeId: string,
         missingBarcodes: string[],
     ): Promise<void> {
         const packageId = pkg.shipmentPackageId?.toString() || pkg.packageId?.toString() || pkg.orderNumber;
 
-        // Check if already exists
         const existing = await this.faultyOrderRepository.findOne({ where: { packageId } });
         if (existing) {
             existing.missingBarcodes = missingBarcodes;
@@ -181,7 +180,6 @@ export class OrdersService {
         }
 
         const faultyOrder = this.faultyOrderRepository.create({
-            integrationId,
             storeId,
             packageId,
             orderNumber: pkg.orderNumber?.toString(),
@@ -201,7 +199,6 @@ export class OrdersService {
     async create(dto: CreateOrderDto): Promise<Order> {
         let customer: Customer;
 
-        // 1. Resolve Customer
         if (dto.customerId) {
             const existing = await this.customersService.findOne(dto.customerId);
             if (!existing) {
@@ -209,8 +206,6 @@ export class OrdersService {
             }
             customer = existing;
         } else if (dto.newCustomerData) {
-            // Create new customer
-            // Generate a dummy email if not provided, to satisfy unique constraint if needed
             const email = dto.newCustomerData.email || `manual-${Date.now()}@placeholder.com`;
 
             customer = await this.customersService.createOrUpdate({
@@ -231,7 +226,6 @@ export class OrdersService {
             throw new Error('Müşteri seçilmeli veya yeni müşteri bilgileri girilmelidir.');
         }
 
-        // 2. Calculate Totals
         let totalPrice = 0;
         let grossAmount = 0;
 
@@ -240,16 +234,22 @@ export class OrdersService {
             grossAmount += item.price * item.quantity;
         }
 
-        // 3. Create Order
-        const orderNumber = `MAN-${Date.now()}`; // Manual Order
+        const orderNumber = `MAN-${Date.now()}`;
+
+        // Check stock availability for manual orders
+        let initialStatus = OrderStatus.CREATED;
+        if (dto.storeId) {
+            initialStatus = await this.determineManualOrderStatus(dto.items, dto.storeId);
+        }
+
+        const isCommercial = customer.type === CustomerType.COMMERCIAL || !!dto.newCustomerData?.company;
 
         const newOrder = this.orderRepository.create({
             orderNumber,
-            packageId: orderNumber, // Use orderNumber as packageId for manual orders
-            integrationId: null, // Manual orders don't have an integration
+            packageId: orderNumber,
             customerId: customer.id,
-            storeId: dto.storeId, // Ensure Store ID is handled if provided
-            status: OrderStatus.CREATED,
+            storeId: dto.storeId,
+            status: initialStatus,
             type: dto.orderType,
             totalPrice,
             grossAmount,
@@ -263,29 +263,27 @@ export class OrdersService {
             paymentMethod: dto.paymentMethod,
             isCod: dto.isCod || false,
             customer: customer,
-            commercial: !!dto.newCustomerData?.company, // Simple check, refine if needed based on tax info
-            createdBy: 'MANUAL_USER', // Could be dynamic from auth context if available
+            commercial: isCommercial,
+            isEInvoiceUser: isCommercial,
+            createdBy: 'MANUAL_USER',
+            documentType: dto.documentType || 'WAYBILL',
         });
 
-        // Use a transaction or just save sequentially (simple for now)
         const savedOrder = await this.orderRepository.save(newOrder);
 
-        // 4. Create Items
         const orderItems: OrderItem[] = [];
         for (const itemDto of dto.items) {
-            // Fetch product to get details
             const product = await this.productRepository.findOne({ where: { id: itemDto.productId } });
 
             const orderItem = this.orderItemRepository.create({
                 orderId: savedOrder.id,
-                // productId field does not exist in OrderItem entity, we rely on sku/barcode/name
                 productName: product ? product.name : 'Unknown Product',
                 sku: product ? product.sku : 'UNKNOWN',
                 barcode: product ? product.barcode : 'UNKNOWN',
                 quantity: itemDto.quantity,
                 unitPrice: itemDto.price,
                 grossAmount: itemDto.price * itemDto.quantity,
-                vatRate: product ? product.vatRate : 20, // Default 20 if not found
+                vatRate: product ? product.vatRate : 20,
                 currencyCode: 'TRY',
             });
             orderItems.push(orderItem);
@@ -295,43 +293,36 @@ export class OrdersService {
             await this.orderItemRepository.save(orderItems);
         }
 
-        // 5. Reserve Stock
         await this.updateStockCommitment(savedOrder, 'reserve');
 
         return savedOrder;
     }
 
-    async syncOrders(integrationId: string) {
-        const integration = await this.integrationsService.findWithStores(integrationId);
-        if (!integration || !integration.isActive) {
-            this.logger.warn(`Invalid or inactive integration: ${integrationId}`);
+    async syncOrders(storeId: string) {
+        const store = await this.storeRepository.findOne({
+            where: { id: storeId },
+            relations: ['warehouse'],
+        });
+
+        if (!store || !store.isActive) {
+            this.logger.warn(`Invalid or inactive store: ${storeId}`);
             return;
         }
 
-        if (!integration.integrationStores || integration.integrationStores.length === 0) {
-            this.logger.warn(`No stores found for integration: ${integrationId}`);
-            return;
-        }
-
-        // For each connected store in this integration
-        for (const storeConfig of integration.integrationStores) {
-            if (!storeConfig.isActive) continue;
-
-            try {
-                if (integration.type === IntegrationType.TRENDYOL) {
-                    await this.syncTrendyolOrders(storeConfig.sellerId, storeConfig.apiKey, storeConfig.apiSecret, integrationId, storeConfig.storeId);
-                } else if (integration.type === IntegrationType.HEPSIBURADA) {
-                    await this.syncHepsiburadaOrders(storeConfig.sellerId, storeConfig.apiKey, storeConfig.apiSecret, integrationId, storeConfig.storeId, storeConfig.store?.name || 'Unknown Store');
-                } else if (integration.type === IntegrationType.IKAS) {
-                    await this.syncIkasOrders(storeConfig.apiKey, storeConfig.apiSecret, storeConfig.sellerId, integrationId, storeConfig.storeId);
-                }
-            } catch (error) {
-                this.logger.error(`Failed to sync orders for store ${storeConfig.storeId}`, error);
+        try {
+            if (store.type === StoreType.TRENDYOL) {
+                await this.syncTrendyolOrders(store.sellerId, store.apiKey, store.apiSecret, storeId);
+            } else if (store.type === StoreType.HEPSIBURADA) {
+                await this.syncHepsiburadaOrders(store.sellerId, store.apiKey, store.apiSecret, storeId, store.name);
+            } else if (store.type === StoreType.IKAS) {
+                await this.syncIkasOrders(store.apiKey, store.apiSecret, store.sellerId, storeId);
             }
+        } catch (error) {
+            this.logger.error(`Failed to sync orders for store ${storeId}`, error);
         }
     }
 
-    private async syncTrendyolOrders(sellerId: string, apiKey: string, apiSecret: string, integrationId: string, storeId: string) {
+    private async syncTrendyolOrders(sellerId: string, apiKey: string, apiSecret: string, storeId: string) {
         const url = `https://apigw.trendyol.com/integration/order/sellers/${sellerId}/orders`;
         const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
 
@@ -364,7 +355,7 @@ export class OrdersService {
                 this.logger.log(`Fetched page ${page + 1}/${totalPages} (${packages.length} orders) for store ${storeId}`);
 
                 for (const pkg of packages) {
-                    await this.processOrderPackage(pkg, integrationId, storeId);
+                    await this.processOrderPackage(pkg, storeId);
                 }
 
                 page++;
@@ -376,68 +367,60 @@ export class OrdersService {
     }
 
     async fetchSingleTrendyolOrder(orderNumber: string): Promise<{ success: boolean; message: string; order?: Order }> {
-        // 1. Get all active Trendyol integrations
-        const integrations = await this.integrationsService.findActiveByType(IntegrationType.TRENDYOL);
+        const stores = await this.storesService.findByType(StoreType.TRENDYOL);
 
-        if (!integrations || integrations.length === 0) {
-            return { success: false, message: 'Aktif Trendyol entegrasyonu bulunamadı.' };
+        if (!stores || stores.length === 0) {
+            return { success: false, message: 'Aktif Trendyol mağazası bulunamadı.' };
         }
 
         let found = false;
         let processedOrder: Order | null = null;
 
-        for (const integration of integrations) {
-            for (const storeConfig of integration.integrationStores) {
-                if (!storeConfig.isActive) continue;
+        for (const store of stores) {
+            if (!store.isActive) continue;
 
-                try {
-                    const url = `https://apigw.trendyol.com/integration/order/sellers/${storeConfig.sellerId}/orders`;
-                    const auth = Buffer.from(`${storeConfig.apiKey}:${storeConfig.apiSecret}`).toString('base64');
+            try {
+                const url = `https://apigw.trendyol.com/integration/order/sellers/${store.sellerId}/orders`;
+                const auth = Buffer.from(`${store.apiKey}:${store.apiSecret}`).toString('base64');
 
-                    const params = new URLSearchParams({
-                        orderNumber: orderNumber,
-                        size: '10' // We expect 1 but API requires page/size usually or just returns list
-                    });
+                const params = new URLSearchParams({
+                    orderNumber: orderNumber,
+                    size: '10'
+                });
 
-                    this.logger.log(`Checking Trendyol store ${storeConfig.store?.name} for order ${orderNumber}`);
+                this.logger.log(`Checking Trendyol store ${store.name} for order ${orderNumber}`);
 
-                    const response = await fetch(`${url}?${params}`, {
-                        method: 'GET',
-                        headers: { Authorization: `Basic ${auth}` },
-                    });
+                const response = await fetch(`${url}?${params}`, {
+                    method: 'GET',
+                    headers: { Authorization: `Basic ${auth}` },
+                });
 
-                    if (!response.ok) {
-                        continue;
-                    }
-
-                    const data: any = await response.json();
-                    const packages = data.content;
-
-                    if (packages && packages.length > 0) {
-                        // Found the order!
-                        this.logger.log(`Order ${orderNumber} found in store ${storeConfig.store?.name}`);
-
-                        // Process it
-                        for (const pkg of packages) {
-                            // Only process the specific order number to be safe (though API filtering should have handled it)
-                            if (pkg.orderNumber === orderNumber) {
-                                await this.processOrderPackage(pkg, integration.id, storeConfig.storeId);
-
-                                // Fetch the newly created/updated order to return it
-                                processedOrder = await this.orderRepository.findOne({
-                                    where: { orderNumber },
-                                    relations: ['items', 'customer', 'integration', 'store']
-                                });
-                                found = true;
-                            }
-                        }
-                    }
-                } catch (error) {
-                    this.logger.error(`Error checking Trendyol store ${storeConfig.storeId}`, error);
+                if (!response.ok) {
+                    continue;
                 }
 
-                if (found) break;
+                const data: any = await response.json();
+                const packages = data.content;
+
+                if (packages && packages.length > 0) {
+                    this.logger.log(`Order ${orderNumber} found in store ${store.name}`);
+
+                    for (const pkg of packages) {
+                        if (pkg.orderNumber === orderNumber) {
+                            await this.processOrderPackage(pkg, store.id);
+
+                            processedOrder = await this.orderRepository.findOne({
+                                where: { orderNumber },
+                                relations: ['items', 'customer', 'store']
+                            });
+                            found = true;
+                        }
+                    }
+                }
+            } catch (error) {
+                this.logger.error(`Error checking Trendyol store ${store.id}`, error);
             }
+
             if (found) break;
         }
 
@@ -448,8 +431,7 @@ export class OrdersService {
         }
     }
 
-    private async syncHepsiburadaOrders(merchantId: string, username: string, password: string, integrationId: string, storeId: string, storeName: string) {
-        // Trim credentials
+    private async syncHepsiburadaOrders(merchantId: string, username: string, password: string, storeId: string, storeName: string) {
         merchantId = merchantId?.trim();
         username = username?.trim();
         password = password?.trim();
@@ -457,15 +439,12 @@ export class OrdersService {
         this.logger.log(`[Hepsiburada] Starting sync for Store: ${storeName} (MerchantID: ${merchantId})`);
 
         try {
-            // HB Auth: merchantId:password
             const auth = Buffer.from(`${merchantId}:${password}`).toString('base64');
 
-            // Full order data endpoint (creates/updates orders with all details)
             const orderEndpoints = [
                 { url: `https://oms-external.hepsiburada.com/orders/merchantid/${merchantId}`, type: 'Open', status: OrderStatus.CREATED },
             ];
 
-            // Status update endpoints (only updates status of existing orders)
             const statusEndpoints = [
                 { url: `https://oms-external.hepsiburada.com/orders/merchantid/${merchantId}/cancelled`, type: 'Cancelled', status: OrderStatus.CANCELLED, orderNumberField: 'orderNumber' },
                 { url: `https://oms-external.hepsiburada.com/packages/merchantid/${merchantId}/shipped`, type: 'Shipped', status: OrderStatus.SHIPPED, orderNumberField: 'OrderNumber' },
@@ -473,10 +452,7 @@ export class OrdersService {
                 { url: `https://oms-external.hepsiburada.com/packages/merchantid/${merchantId}/undelivered`, type: 'Undelivered', status: OrderStatus.UNDELIVERED, orderNumberField: 'OrderNumber' },
             ];
 
-            // First, process full order endpoints
-            const endpoints = orderEndpoints;
-
-            for (const endpoint of endpoints) {
+            for (const endpoint of orderEndpoints) {
                 this.logger.log(`Fetching ${endpoint.type} Hepsiburada orders from ${endpoint.url}`);
 
                 let offset = 0;
@@ -493,16 +469,11 @@ export class OrdersService {
                                 'Accept': 'application/json',
                                 'Content-Type': 'application/json'
                             },
-                            params: {
-                                limit: limit,
-                                offset: offset
-                            }
+                            params: { limit: limit, offset: offset }
                         });
 
                         const data = response.data;
                         
-                        // HB can return: Array directly, or { items: [...] }, or { content: [...] }
-                        // HB returns items (line items), not orders - need to group by orderNumber
                         let items: any[] = [];
                         if (Array.isArray(data)) {
                             items = data;
@@ -510,19 +481,13 @@ export class OrdersService {
                             items = data.items;
                         } else if (data?.content && Array.isArray(data.content)) {
                             items = data.content;
-                        } else {
-                            this.logger.warn(`[Hepsiburada] Unexpected response structure for ${endpoint.type}: ${JSON.stringify(data).substring(0, 500)}`);
                         }
 
                         if (items.length === 0) {
-                            this.logger.log(`[Hepsiburada] No more ${endpoint.type} items at offset ${offset}`);
                             hasMore = false;
                             break;
                         }
 
-                        this.logger.log(`[Hepsiburada] Fetched ${items.length} ${endpoint.type} items (Offset: ${offset})`);
-
-                        // Group items by orderNumber to create orders
                         const orderMap = new Map<string, any[]>();
                         for (const item of items) {
                             const orderNumber = item.orderNumber || item.OrderNumber || item.orderId || item.OrderId;
@@ -534,28 +499,17 @@ export class OrdersService {
                             orderMap.get(orderNumber)!.push(item);
                         }
 
-                        this.logger.log(`[Hepsiburada] Grouped into ${orderMap.size} orders from ${items.length} items`);
-
-                        let successCount = 0;
-                        let failCount = 0;
-
                         for (const [orderNumber, orderItems] of orderMap) {
                             try {
                                 const internalPkg = this.mapHepsiburadaItems(orderItems);
-                                if (!internalPkg) {
-                                    this.logger.warn(`Skipping empty order ${orderNumber} from ${endpoint.type}`);
-                                    continue;
-                                }
-                                await this.processOrderPackage(internalPkg, integrationId, storeId);
-                                successCount++;
+                                if (!internalPkg) continue;
+                                await this.processOrderPackage(internalPkg, storeId);
                             } catch (err) {
-                                failCount++;
-                                this.logger.error(`Failed to process order ${orderNumber}: ${err.message}`, err);
+                                this.logger.error(`Failed to process order ${orderNumber}: ${err.message}`);
                             }
                         }
 
                         totalFetched += items.length;
-                        this.logger.log(`Processed batch: ${successCount} orders succeeded, ${failCount} failed. Total items fetched: ${totalFetched}`);
 
                         if (items.length < limit) {
                             hasMore = false;
@@ -566,34 +520,20 @@ export class OrdersService {
                     } catch (error) {
                         if (axios.isAxiosError(error)) {
                             const status = error.response?.status;
-                            const errData = error.response?.data;
-                            this.logger.error(
-                                `[Hepsiburada] API Error - ${endpoint.type} orders at offset ${offset}. ` +
-                                `Status: ${status}, Message: ${error.message}, Response: ${JSON.stringify(errData)}`
-                            );
-                            
-                            // 401/403 means auth problem - stop immediately
                             if (status === 401 || status === 403) {
-                                this.logger.error(`[Hepsiburada] Authentication failed! Check credentials. MerchantID: ${merchantId}, Username: ${username}`);
+                                this.logger.error(`[Hepsiburada] Authentication failed!`);
                                 return;
                             }
-                        } else {
-                            this.logger.error(`[Hepsiburada] Error fetching ${endpoint.type} orders for store ${storeId} at offset ${offset}`, error);
                         }
                         hasMore = false;
                     }
                 }
             }
 
-            // Now process status endpoints - only update status of existing orders
             for (const statusEndpoint of statusEndpoints) {
-                this.logger.log(`[Hepsiburada] Fetching ${statusEndpoint.type} for status update`);
-                
                 let offset = 0;
                 const limit = 100;
                 let hasMore = true;
-                let totalUpdated = 0;
-                let notFound = 0;
                 
                 while (hasMore) {
                     try {
@@ -619,27 +559,17 @@ export class OrdersService {
                             break;
                         }
 
-                        this.logger.log(`[Hepsiburada] Fetched ${items.length} ${statusEndpoint.type} items (offset: ${offset})`);
-
-                        // Update status for each item's order
                         for (const item of items) {
-                            // Get order number based on endpoint type
                             const orderNumber = item[statusEndpoint.orderNumberField] || item.orderNumber || item.OrderNumber;
                             if (!orderNumber) continue;
 
-                            // Find existing order and update status
                             const existingOrder = await this.orderRepository.findOne({
-                                where: { orderNumber, integrationId }
+                                where: { orderNumber, storeId }
                             });
 
-                            if (existingOrder) {
-                                if (existingOrder.status !== statusEndpoint.status) {
-                                    existingOrder.status = statusEndpoint.status;
-                                    await this.orderRepository.save(existingOrder);
-                                    totalUpdated++;
-                                }
-                            } else {
-                                notFound++;
+                            if (existingOrder && existingOrder.status !== statusEndpoint.status) {
+                                existingOrder.status = statusEndpoint.status;
+                                await this.orderRepository.save(existingOrder);
                             }
                         }
 
@@ -649,22 +579,8 @@ export class OrdersService {
                             offset += limit;
                         }
                     } catch (error) {
-                        if (axios.isAxiosError(error)) {
-                            const status = error.response?.status;
-                            if (status === 401 || status === 403) {
-                                this.logger.error(`[Hepsiburada] Auth failed for ${statusEndpoint.type}`);
-                                break;
-                            }
-                            this.logger.warn(`[Hepsiburada] Error ${status} fetching ${statusEndpoint.type}: ${error.message}`);
-                        } else {
-                            this.logger.warn(`[Hepsiburada] Error fetching ${statusEndpoint.type}: ${error.message}`);
-                        }
                         hasMore = false;
                     }
-                }
-
-                if (totalUpdated > 0 || notFound > 0) {
-                    this.logger.log(`[Hepsiburada] ${statusEndpoint.type}: Updated ${totalUpdated} orders, ${notFound} not found in DB`);
                 }
             }
 
@@ -675,17 +591,11 @@ export class OrdersService {
         }
     }
 
-    /**
-     * Map Hepsiburada items (grouped by orderNumber) to internal order format
-     * HB returns line items, not orders - so we receive an array of items for the same order
-     */
     private mapHepsiburadaItems(hbItems: any[]): any {
         if (!hbItems || hbItems.length === 0) return null;
 
-        // Use first item for order-level data
         const firstItem = hbItems[0];
         
-        // Extract order info from first item
         const orderNumber = firstItem.orderNumber || firstItem.OrderNumber;
         const orderId = firstItem.orderId || firstItem.OrderId;
         const orderDate = firstItem.orderDate || firstItem.OrderDate;
@@ -696,9 +606,7 @@ export class OrdersService {
         const status = firstItem.status || firstItem.Status || 'UNKNOWN';
         const dueDate = firstItem.dueDate || firstItem.DueDate;
         const isMicroExport = firstItem.isMicroExport || firstItem.IsMicroExport || false;
-        
 
-        // Calculate total price from all items
         let totalPrice = 0;
         for (const item of hbItems) {
             const itemTotal = item.totalPrice?.amount || item.totalPrice?.Amount || 
@@ -707,7 +615,6 @@ export class OrdersService {
             totalPrice += parseFloat(itemTotal) || 0;
         }
 
-        // Extract identity (TCKN/VKN) from invoice
         const hbId = invoice?.turkishIdentityNumber || invoice?.TurkishIdentityNumber;
         const hbTax = invoice?.taxNumber || invoice?.TaxNumber;
         
@@ -719,12 +626,10 @@ export class OrdersService {
             validId = hbTax;
         }
 
-        // Parse customer name
         const nameParts = (customerName || '').toString().trim().split(/\s+/).filter((p: string) => p.length > 0);
         const customerFirstName = nameParts[0] || 'Müşteri';
         const customerLastName = nameParts.slice(1).join(' ') || '';
 
-        // Extract address info
         const addressName = shippingAddress?.addressName || shippingAddress?.AddressName || '';
         const addressLine = shippingAddress?.address || shippingAddress?.Address || 
                            shippingAddress?.addressLine || shippingAddress?.AddressLine || '';
@@ -734,12 +639,9 @@ export class OrdersService {
         const phone = shippingAddress?.phoneNumber || shippingAddress?.PhoneNumber || '';
         const zipCode = shippingAddress?.zipCode || shippingAddress?.ZipCode || '';
 
-        // Invoice address info
         const invoiceAddress = invoice?.address || invoice?.Address || {};
         const taxOffice = invoice?.taxOffice || invoice?.TaxOffice || '';
         const companyName = invoiceAddress?.name || invoiceAddress?.Name || '';
-
-        this.logger.debug(`[Hepsiburada] Mapping Order ${orderNumber}: Customer=${customerName}, Items=${hbItems.length}, Total=${totalPrice}, Status=${status}`);
 
         return {
             packageId: orderId || orderNumber,
@@ -800,46 +702,36 @@ export class OrdersService {
         };
     }
 
-    private async processOrderPackage(pkg: any, integrationId: string, storeId: string) {
+    private async processOrderPackage(pkg: any, storeId: string) {
         const packageId = pkg.packageId || pkg.shipmentPackageId?.toString() || pkg.orderNumber;
         const orderNumber = pkg.orderNumber;
         const lines = pkg.lines || [];
 
-        // 0. Check if this is already in faulty orders and products now exist
         const existingFaulty = await this.faultyOrderRepository.findOne({ where: { packageId } });
 
-        // 1. Validate all products exist
         const { valid, missing } = await this.checkProductsExist(lines);
 
         if (!valid) {
-            // Products missing - save to faulty orders
-            await this.saveAsFaultyOrder(pkg, integrationId, storeId, missing);
-            return; // Don't process as regular order
+            await this.saveAsFaultyOrder(pkg, storeId, missing);
+            return;
         }
 
-        // Products exist - if was faulty, remove from faulty orders
         if (existingFaulty) {
             await this.faultyOrderRepository.delete({ id: existingFaulty.id });
             this.logger.log(`Resolved faulty order ${packageId} - all products now exist`);
         }
 
-        // 2. Create/Update Customer
         const customerData = {
             firstName: pkg.invoiceAddress?.firstName || pkg.customerFirstName,
             lastName: pkg.invoiceAddress?.lastName || pkg.customerLastName,
             email: pkg.customerEmail,
             phone: pkg.invoiceAddress?.phone || pkg.shipmentAddress?.phone,
-
-            // Shipping Address / Default Address
             city: pkg.shipmentAddress?.city || pkg.invoiceAddress?.city,
             district: pkg.shipmentAddress?.district || pkg.invoiceAddress?.district,
             address: pkg.shipmentAddress?.fullAddress || pkg.shipmentAddress?.address1 || pkg.invoiceAddress?.fullAddress,
-
-            // Invoice Address (New)
             invoiceCity: pkg.invoiceAddress?.city,
             invoiceDistrict: pkg.invoiceAddress?.district,
             invoiceAddress: pkg.invoiceAddress?.fullAddress || pkg.invoiceAddress?.address1,
-
             tcIdentityNumber: pkg.tcIdentityNumber || pkg.identityNumber || pkg.invoiceAddress?.taxNumber || pkg.invoiceAddress?.identityNumber || pkg.taxNumber,
             trendyolCustomerId: pkg.customerId?.toString(),
             company: pkg.invoiceAddress?.company || null,
@@ -853,37 +745,30 @@ export class OrdersService {
 
         const customer = await this.customersService.createOrUpdate(customerData);
 
-        // 2. Check Order by packageId (unique)
         let order = await this.orderRepository.findOne({ where: { packageId } });
         const status = this.mapStatus(pkg.status || pkg.shipmentPackageStatus);
 
         if (order) {
-            // Update existing order
-            if (order.status !== status || order.integrationStatus !== pkg.status) {
-                order.status = status;
-                order.integrationStatus = pkg.status || pkg.shipmentPackageStatus;
-                order.lastModifiedDate = pkg.lastModifiedDate ? new Date(pkg.lastModifiedDate) : new Date();
+            const newIntegrationStatus = pkg.status || pkg.shipmentPackageStatus;
+            if (order.integrationStatus !== newIntegrationStatus) {
+                // Sadece integrationStatus güncellenir, bizim internal status'umuz korunur
+                order.integrationStatus = newIntegrationStatus;
+                order.lastModifiedDate = this.convertMarketplaceTimestamp(pkg.lastModifiedDate) || new Date();
                 order.invoiceLink = pkg.invoiceLink || order.invoiceLink;
                 order.cargoTrackingNumber = pkg.cargoTrackingNumber?.toString() || order.cargoTrackingNumber;
                 order.cargoTrackingLink = pkg.cargoTrackingLink || order.cargoTrackingLink;
                 order.packageHistories = pkg.packageHistories || order.packageHistories;
-                order.packageHistories = pkg.packageHistories || order.packageHistories;
                 await this.orderRepository.save(order);
 
-                // Handle Status Change for Commitment
-                // If Cancelled or Shipped, release commitment
-                if ((status === OrderStatus.CANCELLED || status === OrderStatus.SHIPPED || status === OrderStatus.RETURNED) &&
-                    order.status !== OrderStatus.CANCELLED && order.status !== OrderStatus.SHIPPED && order.status !== OrderStatus.RETURNED) {
+                // Trendyol'dan iptal/iade gelirse stok serbest bırakılır
+                if ((newIntegrationStatus === 'Cancelled' || newIntegrationStatus === 'Returned' || newIntegrationStatus === 'UnSupplied') &&
+                    order.status !== OrderStatus.CANCELLED && order.status !== OrderStatus.RETURNED) {
                     await this.updateStockCommitment(order, 'release');
                 }
             }
         } else {
-            // Determine initial status based on stock availability
             const initialStatus = await this.determineInitialStatus(status, lines, storeId);
 
-            // Check if user is E-Invoice User
-            // Check if user is E-Invoice User
-            // Prioritize Valid Tax Number over Dummy TCKN
             const tckn = pkg.tcIdentityNumber || customer?.tcIdentityNumber;
             const taxNo = pkg.taxNumber || pkg.invoiceAddress?.taxNumber || customer?.taxNumber;
 
@@ -903,41 +788,25 @@ export class OrdersService {
                 ? await this.invoicesService.checkEInvoiceUser(cleanTaxId)
                 : false;
 
-            if (cleanTaxId) {
-                this.logger.log(`E-Invoice Check for Order ${orderNumber}: TCKN=${cleanTaxId}, IsEInvoice=${isEInvoiceUser}`);
-            } else {
-                this.logger.debug(`Skipping E-Invoice Check for Order ${orderNumber}: No Valid TCKN`);
-            }
-
             const newOrder = this.orderRepository.create({
-                // Identifiers
                 packageId,
                 orderNumber,
                 isEInvoiceUser,
-                integrationId,
                 storeId,
                 customer,
-
-                // Status
                 status: initialStatus,
                 integrationStatus: pkg.status || pkg.shipmentPackageStatus,
-
-                // Pricing
                 totalPrice: pkg.totalPrice ?? pkg.packageTotalPrice ?? 0,
                 grossAmount: pkg.grossAmount ?? pkg.packageGrossAmount,
                 totalDiscount: pkg.totalDiscount ?? pkg.packageTotalDiscount ?? 0,
                 sellerDiscount: pkg.packageSellerDiscount ?? pkg.sellerDiscount ?? 0,
                 tyDiscount: pkg.totalTyDiscount ?? pkg.packageTyDiscount ?? pkg.tyDiscount ?? 0,
                 currencyCode: pkg.currencyCode,
-
-                // Dates
-                orderDate: new Date(pkg.orderDate),
-                estimatedDeliveryStart: pkg.estimatedDeliveryStartDate ? new Date(pkg.estimatedDeliveryStartDate) : null,
-                estimatedDeliveryEnd: pkg.estimatedDeliveryEndDate ? new Date(pkg.estimatedDeliveryEndDate) : null,
-                agreedDeliveryDate: pkg.agreedDeliveryDate ? new Date(pkg.agreedDeliveryDate) : null,
-                lastModifiedDate: pkg.lastModifiedDate ? new Date(pkg.lastModifiedDate) : null,
-
-                // Cargo & Shipping
+                orderDate: this.convertMarketplaceTimestamp(pkg.orderDate) || new Date(),
+                estimatedDeliveryStart: this.convertMarketplaceTimestamp(pkg.estimatedDeliveryStartDate),
+                estimatedDeliveryEnd: this.convertMarketplaceTimestamp(pkg.estimatedDeliveryEndDate),
+                agreedDeliveryDate: this.convertMarketplaceTimestamp(pkg.agreedDeliveryDate),
+                lastModifiedDate: this.convertMarketplaceTimestamp(pkg.lastModifiedDate),
                 cargoTrackingNumber: pkg.cargoTrackingNumber?.toString(),
                 cargoTrackingLink: pkg.cargoTrackingLink,
                 cargoSenderNumber: pkg.cargoSenderNumber,
@@ -945,24 +814,16 @@ export class OrdersService {
                 deliveryType: pkg.deliveryType,
                 fastDelivery: pkg.fastDelivery ?? false,
                 whoPays: pkg.whoPays,
-
-                // Addresses (JSON)
                 shippingAddress: pkg.shipmentAddress,
                 invoiceAddress: pkg.invoiceAddress,
-
-                // Invoice & Tax
                 invoiceLink: pkg.invoiceLink,
                 taxNumber: pkg.taxNumber,
                 commercial: pkg.commercial ?? false,
-
-                // Micro Export
                 micro: pkg.micro ?? false,
                 etgbNo: pkg.etgbNo,
-                etgbDate: pkg.etgbDate ? new Date(pkg.etgbDate) : null,
+                etgbDate: this.convertMarketplaceTimestamp(pkg.etgbDate),
                 hsCode: pkg.hsCode,
                 containsDangerousProduct: pkg.containsDangerousProduct ?? false,
-
-                // Warehouse & Fulfillment
                 warehouseId: pkg.warehouseId?.toString(),
                 giftBoxRequested: pkg.giftBoxRequested ?? false,
                 threePByTrendyol: pkg['3pByTrendyol'] ?? false,
@@ -971,40 +832,25 @@ export class OrdersService {
                 isCod: pkg.isCod ?? false,
                 createdBy: pkg.createdBy,
                 originPackageIds: pkg.originPackageIds,
-
-                // Package History
                 packageHistories: pkg.packageHistories,
             } as any);
 
-            // Reserve stock for new non-cancelled/shipped orders
-            if (initialStatus !== OrderStatus.CANCELLED && initialStatus !== OrderStatus.SHIPPED && initialStatus !== OrderStatus.RETURNED && initialStatus !== OrderStatus.UNSUPPLIED) {
-                // We need to save items first to calculate commitment
-                // So we do it after saving items below
-            }
-
             const savedOrder = await this.orderRepository.save(newOrder) as unknown as Order;
 
-            // Create order items with SET expansion
             const rawLines = pkg.lines || [];
             const expandedLines: any[] = [];
 
-            // Expand SET products to components
             for (const line of rawLines) {
                 const expandedComponents = await this.expandSetProduct(line.barcode, line);
                 if (expandedComponents) {
-                    // This is a SET product, add expanded components
                     expandedLines.push(...expandedComponents);
                 } else {
-                    // Not a SET, add as-is
                     expandedLines.push(line);
                 }
             }
 
-            // Create order items from expanded lines
             const items = expandedLines.map((line: any) => this.orderItemRepository.create({
                 orderId: savedOrder.id,
-
-                // Identifiers
                 lineId: line.lineId?.toString() || line.id?.toString(),
                 productName: line.productName,
                 sku: line.sku,
@@ -1013,14 +859,10 @@ export class OrdersService {
                 barcode: line.barcode,
                 productCode: line.productCode?.toString() || line.contentId?.toString(),
                 contentId: line.contentId?.toString(),
-
-                // Product Details
                 productColor: line.productColor,
                 productSize: line.productSize,
                 productOrigin: line.productOrigin,
                 productCategoryId: line.productCategoryId,
-
-                // Quantity & Pricing
                 quantity: line.quantity,
                 unitPrice: line.price ?? line.lineUnitPrice ?? 0,
                 grossAmount: line.lineGrossAmount ?? line.amount,
@@ -1028,26 +870,16 @@ export class OrdersService {
                 sellerDiscount: line.lineSellerDiscount ?? 0,
                 tyDiscount: line.tyDiscount ?? line.lineTyDiscount ?? 0,
                 currencyCode: line.currencyCode,
-
-                // Tax & Commission
                 vatBaseAmount: line.vatBaseAmount,
                 vatRate: line.vatRate,
                 commission: line.commission,
-
-                // Status & Campaign
                 orderLineItemStatus: line.orderLineItemStatusName,
                 salesCampaignId: line.salesCampaignId,
-
-                // Cancellation
                 cancelledBy: line.cancelledBy,
                 cancelReason: line.cancelReason,
                 cancelReasonCode: line.cancelReasonCode,
-
-                // JSON Details
                 discountDetails: line.discountDetails,
                 fastDeliveryOptions: line.fastDeliveryOptions,
-
-                // SET Product Tracking
                 setProductId: line._setProductId || null,
                 isSetComponent: line._isSetComponent || false,
                 setBarcode: line._setBarcode || null,
@@ -1057,38 +889,21 @@ export class OrdersService {
                 await this.orderItemRepository.save(items);
             }
 
-            // Reserve Stock for new active orders (only if we have stock - status is PICKING)
             if (initialStatus !== OrderStatus.CANCELLED && initialStatus !== OrderStatus.SHIPPED && initialStatus !== OrderStatus.RETURNED && initialStatus !== OrderStatus.UNSUPPLIED) {
                 await this.updateStockCommitment(savedOrder, 'reserve');
             }
         }
     }
 
-
-    /**
-     * Update committed stock for an order
-     * @param order The order to process
-     * @param action 'reserve' (increase commitment) or 'release' (decrease commitment)
-     */
     private async updateStockCommitment(order: Order, action: 'reserve' | 'release') {
         const factor = action === 'reserve' ? 1 : -1;
-
-        // Find items associated with this order
         const items = await this.orderItemRepository.find({ where: { orderId: order.id } });
 
         for (const item of items) {
-            // Find product store entry (assuming a default store or the order's store)
-            // If order doesn't have storeId, we might skip or use a default.
-            // Usually orders come with storeId.
             const storeId = order.storeId;
-            if (!storeId) continue; // Cannot track stock without store context
-
-            // Resolve actual product ID (handle set components or regular items)
-            // OrderItem often has barcode or SKU. We need to map to Product entity to get ID.
-            // Optimization: OrderItem should ideally have productId, but if not we look up via barcode/sku
+            if (!storeId) continue;
 
             let productId = null;
-            // Check via barcode
             if (item.barcode) {
                 const product = await this.productRepository.findOne({ where: { barcode: item.barcode } });
                 if (product) productId = product.id;
@@ -1108,28 +923,12 @@ export class OrdersService {
             if (productStore) {
                 const change = item.quantity * factor;
                 productStore.committedQuantity = Math.max(0, (productStore.committedQuantity || 0) + change);
-                // Recalculate sellable
-                // Sellable = Total Sellable Physical - Committed
-                // Note: We don't have the "Total Sellable Physical" here easily without re-querying shelves.
-                // BUT, we can assume: committedQuantity affects sellable directly.
-                // Actually, syncProductStock calculates: sellable = physical_sellable - committed.
-                // So we should re-trigger syncProductStock logic? 
-                // Or just update sellable here assuming physical didn't change:
-                // New Sellable = Old Sellable - Change
-
-                // Simpler: Just update committed and let the formula work if we were to resync.
-                // But for immediate UI update, we update sellable too.
                 productStore.sellableQuantity = Math.max(0, productStore.sellableQuantity - change);
-
                 await this.productStoreRepository.save(productStore);
             }
         }
     }
 
-    /**
-     * Check stock availability for order items
-     * Returns whether all items have sufficient stock and what type
-     */
     private async checkStockAvailability(lines: any[], storeId: string): Promise<{
         allItemsHaveStock: boolean;
         insufficientProducts: string[];
@@ -1142,14 +941,12 @@ export class OrdersService {
 
             if (!barcode) continue;
 
-            // Find product by barcode
             const product = await this.productRepository.findOne({ where: { barcode } });
             if (!product) {
                 insufficientProducts.push(barcode);
                 continue;
             }
 
-            // Check product store for stock quantities
             const productStore = await this.productStoreRepository.findOne({
                 where: { productId: product.id, storeId }
             });
@@ -1159,7 +956,6 @@ export class OrdersService {
                 continue;
             }
 
-            // Check if sellable + reservable stock is enough
             const availableStock = (productStore.sellableQuantity || 0) + (productStore.reservableQuantity || 0);
 
             if (availableStock < requiredQty) {
@@ -1167,46 +963,71 @@ export class OrdersService {
             }
         }
 
-        return {
-            allItemsHaveStock: insufficientProducts.length === 0,
-            insufficientProducts
-        };
+        return { allItemsHaveStock: insufficientProducts.length === 0, insufficientProducts };
     }
 
-    /**
-     * Determine initial order status based on stock availability
-     * If stock is available -> PICKING (ready to pick)
-     * If no stock -> UNSUPPLIED (waiting for stock)
-     */
+    private async determineManualOrderStatus(
+        items: Array<{ productId: string; quantity: number; price: number }>,
+        storeId: string
+    ): Promise<OrderStatus> {
+        for (const item of items) {
+            const product = await this.productRepository.findOne({
+                where: { id: item.productId }
+            });
+
+            if (!product) {
+                this.logger.log(`Manual order: Product ${item.productId} not found, status WAITING_STOCK`);
+                return OrderStatus.WAITING_STOCK;
+            }
+
+            const sellableStock = await this.shelfStockRepository
+                .createQueryBuilder('ss')
+                .innerJoin('ss.shelf', 'shelf')
+                .where('ss.productId = :productId', { productId: item.productId })
+                .andWhere('shelf.isSellable = :isSellable', { isSellable: true })
+                .select('SUM(ss.quantity)', 'totalQuantity')
+                .getRawOne();
+
+            const totalSellableQuantity = Number(sellableStock?.totalQuantity) || 0;
+
+            this.logger.log(`Manual order: Product ${product.name} (${item.productId}) - need ${item.quantity}, sellable stock: ${totalSellableQuantity}`);
+
+            if (totalSellableQuantity < item.quantity) {
+                this.logger.log(`Manual order: Insufficient stock for product ${item.productId}, status WAITING_STOCK`);
+                return OrderStatus.WAITING_STOCK;
+            }
+        }
+
+        this.logger.log(`Manual order: All items have sufficient stock, status WAITING_PICKING`);
+        return OrderStatus.WAITING_PICKING;
+    }
+
     private async determineInitialStatus(
         marketplaceStatus: OrderStatus,
         lines: any[],
         storeId: string
     ): Promise<OrderStatus> {
-        // Only check stock for CREATED orders (new orders from marketplace)
         if (marketplaceStatus !== OrderStatus.CREATED) {
             return marketplaceStatus;
         }
 
-        const { allItemsHaveStock, insufficientProducts } = await this.checkStockAvailability(lines, storeId);
+        const { allItemsHaveStock } = await this.checkStockAvailability(lines, storeId);
 
         if (allItemsHaveStock) {
-            this.logger.log(`Order has sufficient stock, setting status to PICKING`);
-            return OrderStatus.PICKING;
+            this.logger.log(`Order has sufficient stock, setting status to WAITING_PICKING`);
+            return OrderStatus.WAITING_PICKING;
         } else {
-            this.logger.log(`Order missing stock for: ${insufficientProducts.join(', ')}, status: UNSUPPLIED`);
-            return OrderStatus.UNSUPPLIED;
+            this.logger.log(`Order has insufficient stock, setting status to WAITING_STOCK`);
+            return OrderStatus.WAITING_STOCK;
         }
     }
 
-    private async syncIkasOrders(clientId: string, clientSecret: string, storeName: string, integrationId: string, storeId: string) {
+    private async syncIkasOrders(clientId: string, clientSecret: string, storeName: string, storeId: string) {
         this.logger.debug(`Syncing Ikas orders for store: ${storeName}`);
-        const authUrl = `https://embeauty.myikas.com/api/admin/oauth/token`;
-        // Based on docs, GraphQL might be on the main api domain or v1 path
+        const authUrl = `https://${storeName}.myikas.com/api/admin/oauth/token`;
         const graphQlUrl = `https://api.myikas.com/api/v1/admin/graphql`;
 
         try {
-            // 1. Get Access Token
             const tokenResponse = await axios.post(authUrl, new URLSearchParams({
                 grant_type: 'client_credentials',
                 client_id: clientId,
@@ -1221,7 +1042,6 @@ export class OrdersService {
                 return;
             }
 
-            // 2. Fetch Orders via GraphQL
             const query = `
                 query ListOrders($page: Int, $limit: Int) {
                     listOrder(pagination: { page: $page, limit: $limit }) {
@@ -1301,25 +1121,21 @@ export class OrdersService {
                     try {
                         const internalPkg = this.mapIkasOrder(order);
                         if (internalPkg) {
-                            await this.processOrderPackage(internalPkg, integrationId, storeId);
+                            await this.processOrderPackage(internalPkg, storeId);
                         }
                     } catch (err) {
-                        this.logger.error(`Failed to process Ikas order ${order.orderNumber}: ${err.message}`, err);
+                        this.logger.error(`Failed to process Ikas order ${order.orderNumber}: ${err.message}`);
                     }
                 }
 
                 if (hasNext) {
                     page++;
-                } else {
-                    break; // Just to be safe
                 }
             }
 
         } catch (error) {
             if (axios.isAxiosError(error)) {
                 this.logger.error(`Error syncing Ikas orders for ${storeName}: ${error.message}`);
-                this.logger.error(`Response Status: ${error.response?.status}`);
-                this.logger.error(`Response Data: ${JSON.stringify(error.response?.data)}`);
             } else {
                 this.logger.error(`Error syncing Ikas orders for ${storeName}`, error);
             }
@@ -1334,17 +1150,14 @@ export class OrdersService {
 
         const address = [shippingAddress?.addressLine1, shippingAddress?.addressLine2].filter(Boolean).join(' ');
 
-        // Calculate totals for Ikas
         const totalDiscount = (ikasOrder.orderLineItems || []).reduce(
             (sum: number, item: any) => sum + (item.discountPrice || 0), 0
         );
         const grossAmount = (ikasOrder.totalPrice || 0) + totalDiscount;
 
-        // Logic for Ikas ID selection
         const ikasId = ikasOrder.billingAddress?.identityNumber;
         const ikasTax = ikasOrder.billingAddress?.taxNumber;
 
-        // Inline dummy check
         let validIkasId = null;
         const isDummyIkas = (id: string) => !id || id === '11111111111' || id === '2222222222' || id.length < 10;
 
@@ -1352,15 +1165,7 @@ export class OrdersService {
             validIkasId = ikasId;
         } else if (!isDummyIkas(ikasTax)) {
             validIkasId = ikasTax;
-        } else {
-            validIkasId = ikasId || ikasTax || null;
         }
-
-        // LOG: Verification Log
-        const logIdIkas = validIkasId;
-        const logOfficeIkas = ikasOrder.billingAddress?.taxOffice;
-        const logCompanyIkas = ikasOrder.billingAddress?.company;
-        this.logger.debug(`Ikas Mapping - Order ${ikasOrder.orderNumber}: Identity=${logIdIkas} (Raw ID=${ikasId}, Tax=${ikasTax}), TaxOffice=${logOfficeIkas}, Company=${logCompanyIkas}`);
 
         return {
             orderNumber: ikasOrder.orderNumber,
@@ -1368,7 +1173,7 @@ export class OrdersService {
             totalPrice: ikasOrder.totalPrice,
             grossAmount,
             totalDiscount,
-            sellerDiscount: 0, // Ikas doesn't distinguish seller vs platform discount
+            sellerDiscount: 0,
             tyDiscount: 0,
             status: ikasOrder.status,
             customerFirstName: customer?.firstName || 'Ikas',
@@ -1408,7 +1213,7 @@ export class OrdersService {
     async findOne(id: string): Promise<Order> {
         const order = await this.orderRepository.findOne({
             where: { id },
-            relations: ['customer', 'items', 'store', 'integration'],
+            relations: ['customer', 'items', 'store'],
         });
         if (!order) {
             throw new Error('Sipariş bulunamadı');
@@ -1419,7 +1224,6 @@ export class OrdersService {
     async findAll(page = 1, limit = 10, filters?: {
         orderNumber?: string;
         packageId?: string;
-        integrationId?: string;
         storeId?: string;
         status?: string;
         startDate?: string;
@@ -1434,17 +1238,13 @@ export class OrdersService {
         const queryBuilder = this.orderRepository.createQueryBuilder('order')
             .leftJoinAndSelect('order.customer', 'customer')
             .leftJoinAndSelect('order.items', 'items')
-            .leftJoinAndSelect('order.store', 'store')
-            .leftJoinAndSelect('order.integration', 'integration');
+            .leftJoinAndSelect('order.store', 'store');
 
         if (filters?.orderNumber) {
             queryBuilder.andWhere('order.orderNumber LIKE :orderNumber', { orderNumber: `%${filters.orderNumber}%` });
         }
         if (filters?.packageId) {
             queryBuilder.andWhere('order.packageId LIKE :packageId', { packageId: `%${filters.packageId}%` });
-        }
-        if (filters?.integrationId) {
-            queryBuilder.andWhere('order.integrationId = :integrationId', { integrationId: filters.integrationId });
         }
         if (filters?.storeId) {
             queryBuilder.andWhere('order.storeId = :storeId', { storeId: filters.storeId });
@@ -1460,7 +1260,7 @@ export class OrdersService {
         }
         if (filters?.customerName) {
             queryBuilder.andWhere(
-                "(CONCAT(customer.firstName, ' ', customer.lastName) LIKE :customerName OR customer.firstName LIKE :customerName OR customer.lastName LIKE :customerName)",
+                "(CONCAT(customer.firstName, ' ', customer.lastName) LIKE :customerName)",
                 { customerName: `%${filters.customerName}%` }
             );
         }
@@ -1474,7 +1274,6 @@ export class OrdersService {
             queryBuilder.andWhere('order.agreedDeliveryDate <= :endDeliveryDate', { endDeliveryDate: new Date(filters.endDeliveryDate) });
         }
 
-        // Sorting - default to createdAt DESC
         const allowedSortFields: Record<string, string> = {
             orderNumber: 'order.orderNumber',
             orderDate: 'order.orderDate',
@@ -1483,7 +1282,7 @@ export class OrdersService {
             status: 'order.status',
             createdAt: 'order.createdAt',
         };
-        const sortField = allowedSortFields[filters?.sortBy || 'createdAt'] || 'order.createdAt';
+        const sortField = allowedSortFields[filters?.sortBy || 'orderDate'] || 'order.orderDate';
         const sortOrder = filters?.sortOrder === 'ASC' ? 'ASC' : 'DESC';
 
         queryBuilder.orderBy(sortField, sortOrder)
@@ -1497,7 +1296,6 @@ export class OrdersService {
     async exportOrders(filters?: {
         orderNumber?: string;
         packageId?: string;
-        integrationId?: string;
         storeId?: string;
         status?: string;
         startDate?: string;
@@ -1510,19 +1308,17 @@ export class OrdersService {
         const queryBuilder = this.orderRepository.createQueryBuilder('order')
             .leftJoinAndSelect('order.customer', 'customer')
             .leftJoinAndSelect('order.items', 'items')
-            .leftJoinAndSelect('order.store', 'store')
-            .leftJoinAndSelect('order.integration', 'integration');
+            .leftJoinAndSelect('order.store', 'store');
 
         if (filters?.orderNumber) queryBuilder.andWhere('order.orderNumber LIKE :orderNumber', { orderNumber: `%${filters.orderNumber}%` });
         if (filters?.packageId) queryBuilder.andWhere('order.packageId LIKE :packageId', { packageId: `%${filters.packageId}%` });
-        if (filters?.integrationId) queryBuilder.andWhere('order.integrationId = :integrationId', { integrationId: filters.integrationId });
         if (filters?.storeId) queryBuilder.andWhere('order.storeId = :storeId', { storeId: filters.storeId });
         if (filters?.status) queryBuilder.andWhere('order.status = :status', { status: filters.status });
         if (filters?.startDate) queryBuilder.andWhere('order.orderDate >= :startDate', { startDate: new Date(filters.startDate) });
         if (filters?.endDate) queryBuilder.andWhere('order.orderDate <= :endDate', { endDate: new Date(filters.endDate) });
         if (filters?.customerName) {
             queryBuilder.andWhere(
-                "(CONCAT(customer.firstName, ' ', customer.lastName) LIKE :customerName OR customer.firstName LIKE :customerName OR customer.lastName LIKE :customerName)",
+                "(CONCAT(customer.firstName, ' ', customer.lastName) LIKE :customerName)",
                 { customerName: `%${filters.customerName}%` }
             );
         }
@@ -1543,7 +1339,6 @@ export class OrdersService {
         const data = orders.map(order => ({
             'Sipariş No': order.orderNumber,
             'Paket No': order.packageId || '',
-            'Entegrasyon': order.integration?.name || '',
             'Mağaza': order.store?.name || '',
             'Müşteri': order.customer ? `${order.customer.firstName} ${order.customer.lastName}` : 'Misafir',
             'Tarih': new Date(order.orderDate).toLocaleString('tr-TR'),
@@ -1573,12 +1368,10 @@ export class OrdersService {
         }
     ) {
         const query = this.faultyOrderRepository.createQueryBuilder('faulty')
-            .leftJoinAndSelect('faulty.integration', 'integration')
             .leftJoinAndSelect('faulty.store', 'store')
             .orderBy('faulty.createdAt', 'DESC');
 
         if (filters?.barcode) {
-            // Simple text search in the JSON string for now
             query.andWhere('faulty.missingBarcodes LIKE :barcode', { barcode: `%${filters.barcode}%` });
         }
 
@@ -1619,9 +1412,6 @@ export class OrdersService {
         await this.faultyOrderRepository.delete(id);
     }
 
-    /**
-     * Fetch and save Aras Kargo ZPL Label for an order
-     */
     async fetchCargoLabel(orderId: string): Promise<string | null> {
         const order = await this.orderRepository.findOne({ where: { id: orderId } });
         if (!order) throw new Error(`Order #${orderId} not found`);
@@ -1648,14 +1438,14 @@ export class OrdersService {
     ): Promise<{ success: boolean; message: string }> {
         const order = await this.orderRepository.findOne({
             where: { id: orderId },
-            relations: ['items', 'integration'],
+            relations: ['items', 'store'],
         });
 
         if (!order) {
             return { success: false, message: 'Sipariş bulunamadı.' };
         }
 
-        if (order.integration?.type !== IntegrationType.TRENDYOL) {
+        if (!order.store || order.store.type !== StoreType.TRENDYOL) {
             return { success: false, message: 'Bu sipariş Trendyol siparişi değil.' };
         }
 
@@ -1663,22 +1453,7 @@ export class OrdersService {
             return { success: false, message: 'Fatura numarası gereklidir.' };
         }
 
-        if (!order.integrationId) {
-            return { success: false, message: 'Bu sipariş bir entegrasyona bağlı değil (manuel sipariş).' };
-        }
-
-        const integration = await this.integrationsService.findWithStores(order.integrationId);
-        if (!integration) {
-            return { success: false, message: 'Entegrasyon bulunamadı.' };
-        }
-
-        const storeConfig = integration.integrationStores.find(
-            (s) => s.storeId === order.storeId && s.isActive
-        );
-
-        if (!storeConfig) {
-            return { success: false, message: 'Mağaza yapılandırması bulunamadı.' };
-        }
+        const store = order.store;
 
         const lines = order.items
             .filter((item) => item.lineId)
@@ -1705,8 +1480,8 @@ export class OrdersService {
             requestBody.params.invoiceNumber = invoiceNumber;
         }
 
-        const url = `https://apigw.trendyol.com/integration/order/sellers/${storeConfig.sellerId}/shipment-packages/${order.packageId}`;
-        const auth = Buffer.from(`${storeConfig.apiKey}:${storeConfig.apiSecret}`).toString('base64');
+        const url = `https://apigw.trendyol.com/integration/order/sellers/${store.sellerId}/shipment-packages/${order.packageId}`;
+        const auth = Buffer.from(`${store.apiKey}:${store.apiSecret}`).toString('base64');
 
         try {
             const response = await fetch(url, {
@@ -1766,7 +1541,8 @@ export class OrdersService {
         const allSuccess = results.every((r) => r.success);
         return { success: allSuccess, results };
     }
-    async createShipmentForOrder(orderId: string, shipmentDetails?: any): Promise<{ success: boolean; message: string; data?: any }> {
+
+    async createShipmentForOrder(orderId: string): Promise<{ success: boolean; message: string; data?: any }> {
         try {
             const order = await this.orderRepository.findOne({
                 where: { id: orderId },
@@ -1777,15 +1553,9 @@ export class OrdersService {
                 return { success: false, message: 'Sipariş bulunamadı.' };
             }
 
-            const arasResult = await this.arasKargoService.createShipment(order, shipmentDetails);
+            const arasResult = await this.arasKargoService.createShipment(order);
 
             if (arasResult.ResultCode === '0') {
-                // Aras Kargo integration successful
-                // If a tracking number is returned in the future, we should map it here.
-                // For now, we update the order to reflect that shipment is created.
-                // order.cargoTrackingNumber = arasResult.OrgReceiverCustId; // Example if available
-                // await this.orderRepository.save(order);
-
                 return {
                     success: true,
                     message: `Aras Kargo kaydı başarılı. Mesaj: ${arasResult.ResultMsg}`,
@@ -1809,7 +1579,7 @@ export class OrdersService {
     async cancelOrder(orderId: string): Promise<CancelOrderResult> {
         const order = await this.orderRepository.findOne({
             where: { id: orderId },
-            relations: ['items', 'integration'],
+            relations: ['items', 'store'],
         });
 
         if (!order) {
@@ -1835,52 +1605,18 @@ export class OrdersService {
         this.logger.log(`Cancelling order ${order.orderNumber} (status: ${previousStatus})`);
 
         try {
-            // Handle status-specific actions based on order status
-            const statusesToHandleCargo = [OrderStatus.SHIPPED];
-            const statusesToHandleInvoice = [OrderStatus.SHIPPED, OrderStatus.INVOICED];
-            const statusesToRemoveFromRoute = [OrderStatus.SHIPPED, OrderStatus.INVOICED, OrderStatus.PICKING];
             const statusesToReleaseStock = [OrderStatus.SHIPPED, OrderStatus.INVOICED, OrderStatus.PICKING, OrderStatus.CREATED, OrderStatus.UNSUPPLIED];
 
-            // 1. Cancel cargo dispatch (only for SHIPPED)
-            if (statusesToHandleCargo.includes(previousStatus) && order.cargoTrackingNumber) {
-                try {
-                    await this.arasKargoService.cancelDispatch(order.cargoTrackingNumber);
-                    result.cargoReverted = true;
-                    this.logger.log(`Cargo cancelled for ${order.orderNumber}`);
-                } catch (error) {
-                    this.logger.warn(`Failed to cancel cargo: ${error.message}`);
-                }
-            }
-
-            // 2. Handle refund invoice if needed (for SHIPPED or INVOICED)
-            if (statusesToHandleInvoice.includes(previousStatus)) {
-                this.logger.log(`Order ${order.orderNumber} was invoiced - refund may be required`);
-
-                // 3. Notify integration about cancellation
-                if (order.integration?.type === IntegrationType.TRENDYOL && order.integrationId) {
-                    this.logger.log(`Trendyol order ${order.orderNumber} - manual cancellation required in seller panel`);
-                }
-            }
-
-            // 4. Remove from route (for SHIPPED, INVOICED, or PICKING)
-            if (statusesToRemoveFromRoute.includes(previousStatus)) {
-                const routeOrders = await this.routeOrderRepository.find({
-                    where: { orderId },
-                });
-
-                if (routeOrders.length > 0) {
-                    await this.routeOrderRepository.remove(routeOrders);
-                    this.logger.log(`Removed order ${order.orderNumber} from route`);
-                }
-            }
-
-            // 5. Release stock commitment (for most statuses)
             if (statusesToReleaseStock.includes(previousStatus)) {
                 await this.updateStockCommitment(order, 'release');
                 result.stockReleased = true;
             }
 
-            // Update order status
+            const routeOrders = await this.routeOrderRepository.find({ where: { orderId } });
+            if (routeOrders.length > 0) {
+                await this.routeOrderRepository.remove(routeOrders);
+            }
+
             order.status = OrderStatus.CANCELLED;
             order.lastModifiedDate = new Date();
             await this.orderRepository.save(order);
@@ -1896,5 +1632,77 @@ export class OrdersService {
 
         return result;
     }
-}
 
+    /**
+     * Check WAITING_STOCK orders and move them to WAITING_PICKING if stock is now available.
+     * Called when stock is added (purchase receipt, returns, manual stock add).
+     * Uses FIFO - orders are processed by orderDate (oldest first).
+     */
+    async processWaitingStockOrders(productId?: string): Promise<{
+        processed: number;
+        movedToWaitingPicking: string[];
+    }> {
+        const result = { processed: 0, movedToWaitingPicking: [] as string[] };
+
+        // Find all orders in WAITING_STOCK status
+        const queryBuilder = this.orderRepository
+            .createQueryBuilder('order')
+            .leftJoinAndSelect('order.items', 'items')
+            .where('order.status = :status', { status: OrderStatus.WAITING_STOCK })
+            .orderBy('order.orderDate', 'ASC'); // FIFO - oldest first
+
+        // If productId is specified, only check orders containing that product
+        if (productId) {
+            const product = await this.productRepository.findOne({ where: { id: productId } });
+            if (product?.barcode) {
+                queryBuilder.andWhere('items.barcode = :barcode', { barcode: product.barcode });
+            }
+        }
+
+        const waitingOrders = await queryBuilder.getMany();
+
+        for (const order of waitingOrders) {
+            result.processed++;
+
+            // Check if ALL items now have sufficient sellable stock
+            let allItemsHaveStock = true;
+
+            for (const item of order.items) {
+                const product = await this.productRepository.findOne({ 
+                    where: { barcode: item.barcode } 
+                });
+
+                if (!product) {
+                    allItemsHaveStock = false;
+                    break;
+                }
+
+                // ShelfStock'tan satılabilir raflardaki toplam stoğu hesapla
+                const sellableStock = await this.shelfStockRepository
+                    .createQueryBuilder('ss')
+                    .innerJoin('ss.shelf', 'shelf')
+                    .where('ss.productId = :productId', { productId: product.id })
+                    .andWhere('shelf.isSellable = :isSellable', { isSellable: true })
+                    .select('SUM(ss.quantity)', 'totalQuantity')
+                    .getRawOne();
+
+                const totalSellableQuantity = Number(sellableStock?.totalQuantity) || 0;
+
+                if (totalSellableQuantity < (item.quantity || 1)) {
+                    allItemsHaveStock = false;
+                    break;
+                }
+            }
+
+            if (allItemsHaveStock) {
+                // Move order to WAITING_PICKING
+                await this.orderRepository.update(order.id, { status: OrderStatus.WAITING_PICKING });
+                result.movedToWaitingPicking.push(order.orderNumber);
+                this.logger.log(`Order ${order.orderNumber} moved from WAITING_STOCK to WAITING_PICKING`);
+            }
+        }
+
+        this.logger.log(`Processed ${result.processed} WAITING_STOCK orders, moved ${result.movedToWaitingPicking.length} to WAITING_PICKING`);
+        return result;
+    }
+}

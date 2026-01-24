@@ -61,8 +61,9 @@ export class ProductsController {
     @Query('isActive') isActive?: string,
     @Query('brandId') brandId?: string,
     @Query('categoryId') categoryId?: string,
+    @Query('storeId') storeId?: string,
   ) {
-    return this.productsService.findAll(page, limit, { name, isActive, brandId, categoryId });
+    return this.productsService.findAll(page, limit, { name, isActive, brandId, categoryId, storeId });
   }
 
   @Get(':id')

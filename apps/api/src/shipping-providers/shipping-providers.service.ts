@@ -5,15 +5,15 @@ import { ShippingProvider } from './entities/shipping-provider.entity';
 import { CreateShippingProviderDto } from './dto/create-shipping-provider.dto';
 import { UpdateShippingProviderDto } from './dto/update-shipping-provider.dto';
 import { ShippingProviderResponseDto } from './dto/shipping-provider-response.dto';
-import { IntegrationStore } from '../integration-stores/entities/integration-store.entity';
+import { Store } from '../stores/entities/store.entity';
 
 @Injectable()
 export class ShippingProvidersService {
   constructor(
     @InjectRepository(ShippingProvider)
     private readonly shippingProviderRepository: Repository<ShippingProvider>,
-    @InjectRepository(IntegrationStore)
-    private readonly integrationStoreRepository: Repository<IntegrationStore>,
+    @InjectRepository(Store)
+    private readonly storeRepository: Repository<Store>,
   ) {}
 
   async findAll(): Promise<ShippingProviderResponseDto[]> {
@@ -21,10 +21,9 @@ export class ShippingProvidersService {
       order: { createdAt: 'ASC' },
     });
 
-    // Get integration counts for each provider
     const result = await Promise.all(
       providers.map(async (provider) => {
-        const count = await this.integrationStoreRepository.count({
+        const count = await this.storeRepository.count({
           where: { shippingProviderId: provider.id },
         });
         return ShippingProviderResponseDto.fromEntity(provider, count);
@@ -40,7 +39,7 @@ export class ShippingProvidersService {
       throw new NotFoundException('Shipping provider not found');
     }
 
-    const count = await this.integrationStoreRepository.count({
+    const count = await this.storeRepository.count({
       where: { shippingProviderId: provider.id },
     });
 
@@ -55,7 +54,6 @@ export class ShippingProvidersService {
   }
 
   async create(createShippingProviderDto: CreateShippingProviderDto): Promise<ShippingProviderResponseDto> {
-    // Check if provider with same name and type already exists
     const existing = await this.shippingProviderRepository.findOne({
       where: {
         name: createShippingProviderDto.name,
@@ -82,7 +80,6 @@ export class ShippingProvidersService {
       throw new NotFoundException('Shipping provider not found');
     }
 
-    // Check if name is being updated and conflicts with existing
     if (updateShippingProviderDto.name && updateShippingProviderDto.name !== provider.name) {
       const existing = await this.shippingProviderRepository.findOne({
         where: {
@@ -99,7 +96,7 @@ export class ShippingProvidersService {
     Object.assign(provider, updateShippingProviderDto);
     const updated = await this.shippingProviderRepository.save(provider);
 
-    const count = await this.integrationStoreRepository.count({
+    const count = await this.storeRepository.count({
       where: { shippingProviderId: provider.id },
     });
 
@@ -112,13 +109,12 @@ export class ShippingProvidersService {
       throw new NotFoundException('Shipping provider not found');
     }
 
-    // Check if provider is used by any integration
-    const count = await this.integrationStoreRepository.count({
+    const count = await this.storeRepository.count({
       where: { shippingProviderId: provider.id },
     });
 
     if (count > 0) {
-      throw new BadRequestException('Cannot delete shipping provider that is in use by integrations');
+      throw new BadRequestException('Cannot delete shipping provider that is in use by stores');
     }
 
     await this.shippingProviderRepository.softDelete(id);

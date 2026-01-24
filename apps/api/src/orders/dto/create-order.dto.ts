@@ -68,6 +68,10 @@ export class CreateOrderDto {
     @IsNotEmpty()
     orderType: OrderType;
 
+    @IsOptional()
+    @IsString()
+    documentType?: string; // 'WAYBILL_ONLY' | 'WAYBILL_AND_INVOICE'
+
     @IsArray()
     @ValidateNested({ each: true })
     @Type(() => OrderItemDto)

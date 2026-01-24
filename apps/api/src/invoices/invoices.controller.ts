@@ -89,6 +89,7 @@ export class InvoicesController {
         @Query('page') page = 1,
         @Query('limit') limit = 10,
         @Query('status') status?: string,
+        @Query('documentType') documentType?: string,
         @Query('startDate') startDate?: string,
         @Query('endDate') endDate?: string,
         @Query('customerName') customerName?: string,
@@ -98,6 +99,7 @@ export class InvoicesController {
     ) {
         return this.invoicesService.findAll(+page, +limit, {
             status,
+            documentType,
             startDate,
             endDate,
             customerName,

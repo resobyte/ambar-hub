@@ -53,7 +53,7 @@ import {
 
 import { useToast } from "@/components/ui/use-toast";
 
-import { apiPost, getCustomers, getProducts, Customer, Product } from '@/lib/api';
+import { apiPost, getCustomers, getProducts, getStores, Customer, Product, Store } from '@/lib/api';
 import { cn } from "@/lib/utils"
 
 // -----------------------------------------------------------------------------
@@ -80,6 +80,8 @@ const itemSchema = z.object({
     productName: z.string().optional(),
 });
 
+const documentTypeSchema = z.enum(['WAYBILL', 'INVOICE']);
+
 const createOrderBaseSchema = z.object({
     customerId: z.string().optional(),
     isNewCustomer: z.boolean(),
@@ -105,13 +107,14 @@ const createOrderBaseSchema = z.object({
     }).optional(),
 
     orderType: orderTypeSchema,
+    documentType: documentTypeSchema, // İrsaliye mi, Fatura mı?
     shippingAddress: addressSchema,
     invoiceAddress: addressSchema,
 
     items: z.array(itemSchema).min(1, 'En az bir ürün eklemelisiniz'),
 
     paymentMethod: z.string(), // Hidden or simple select
-    storeId: z.string().optional(), // Could be selected or defaulted
+    storeId: z.string().min(1, 'Mağaza seçilmelidir'), // Required for manual orders
 });
 
 const createOrderSchema = createOrderBaseSchema.refine((data) => {
@@ -145,7 +148,10 @@ export function CreateOrderClient() {
     // Product Search State (Global or per row? Implementing global helper for row usage)
     const [products, setProducts] = useState<Product[]>([]);
 
-    // Initial fetch of some data
+    // Store State
+    const [stores, setStores] = useState<Store[]>([]);
+
+    // Initial fetch - only MANUAL stores
     useEffect(() => {
         getCustomers(1, 50)
             .then((res: any) => {
@@ -154,10 +160,11 @@ export function CreateOrderClient() {
             })
             .catch(console.error);
 
-        getProducts(1, 100, { isActive: 'true' })
+        // Sadece MANUAL tipli mağazaları getir
+        getStores(1, 100, 'MANUAL')
             .then((res: any) => {
-                const list = res.data?.products || res.products || res.data || [];
-                setProducts(Array.isArray(list) ? list : []);
+                const list = res.data || [];
+                setStores(Array.isArray(list) ? list : []);
             })
             .catch(console.error);
     }, []);
@@ -184,9 +191,11 @@ export function CreateOrderClient() {
         resolver: zodResolver(createOrderSchema),
         defaultValues: {
             orderType: 'Perakende',
+            documentType: 'WAYBILL',
             isNewCustomer: false,
             items: [],
             paymentMethod: 'CASH',
+            storeId: '',
             shippingAddress: {
                 firstName: '', lastName: '', city: '', district: '', postalCode: '', addressDetail: ''
             },
@@ -204,6 +213,24 @@ export function CreateOrderClient() {
     const isNewCustomer = useWatch({ control: form.control, name: "isNewCustomer" });
     const selectedCustomerId = useWatch({ control: form.control, name: "customerId" });
     const orderItems = useWatch({ control: form.control, name: "items" });
+    const selectedStoreId = useWatch({ control: form.control, name: "storeId" });
+
+    // Mağaza seçilince o mağazanın ürünlerini getir
+    useEffect(() => {
+        if (selectedStoreId) {
+            getProducts(1, 500, { isActive: 'true', storeId: selectedStoreId })
+                .then((res: any) => {
+                    const list = res.data?.products || res.products || res.data || [];
+                    setProducts(Array.isArray(list) ? list : []);
+                })
+                .catch(console.error);
+        } else {
+            setProducts([]);
+        }
+        // Mağaza değiştiğinde ürün seçimlerini temizle
+        form.setValue('items', []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedStoreId]);
 
     // Sync Order Addresses if "Same" is checked
     useEffect(() => {
@@ -263,9 +290,10 @@ export function CreateOrderClient() {
             // Clean up: if isNewCustomer is false, remove newCustomerData to avoid confusion (though schema handles it)
             // If isNewCustomer is true, remove customerId
 
-            const payload = {
+                            const payload = {
                 customerId: data.isNewCustomer ? undefined : data.customerId,
                 orderType: data.orderType,
+                documentType: data.documentType, // İrsaliye mi, Fatura mı?
                 newCustomerData: data.isNewCustomer ? {
                     ...data.newCustomerData,
                     // If same address, map shipping to invoice fields for backend
@@ -701,30 +729,83 @@ export function CreateOrderClient() {
                             <CardTitle className="text-xl">Sipariş Detayları</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            <FormField
-                                control={form.control}
-                                name="orderType"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <FormLabel>Sipariş Tipi</FormLabel>
-                                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                            <FormControl>
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Tip seçin" />
-                                                </SelectTrigger>
-                                            </FormControl>
-                                            <SelectContent>
-                                                <SelectItem value="Perakende">Perakende</SelectItem>
-                                                <SelectItem value="Personel">Personel</SelectItem>
-                                                <SelectItem value="Pazarlama">Pazarlama</SelectItem>
-                                                <SelectItem value="B2B">B2B</SelectItem>
-                                                <SelectItem value="Pazaryeri">Pazaryeri</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <FormField
+                                    control={form.control}
+                                    name="storeId"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Mağaza *</FormLabel>
+                                            <Select onValueChange={field.onChange} value={field.value}>
+                                                <FormControl>
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Mağaza seçin" />
+                                                    </SelectTrigger>
+                                                </FormControl>
+                                                <SelectContent>
+                                                    {stores.map((store) => (
+                                                        <SelectItem key={store.id} value={store.id}>
+                                                            {store.name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <FormDescription>
+                                                Siparişin ait olduğu mağaza
+                                            </FormDescription>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                                <FormField
+                                    control={form.control}
+                                    name="orderType"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Sipariş Tipi</FormLabel>
+                                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                                <FormControl>
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Tip seçin" />
+                                                    </SelectTrigger>
+                                                </FormControl>
+                                                <SelectContent>
+                                                    <SelectItem value="Perakende">Perakende</SelectItem>
+                                                    <SelectItem value="Personel">Personel</SelectItem>
+                                                    <SelectItem value="Pazarlama">Pazarlama</SelectItem>
+                                                    <SelectItem value="B2B">B2B</SelectItem>
+                                                    <SelectItem value="Pazaryeri">Pazaryeri</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                                <FormField
+                                    control={form.control}
+                                    name="documentType"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Belge Tipi</FormLabel>
+                                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                                <FormControl>
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Belge tipi seçin" />
+                                                    </SelectTrigger>
+                                                </FormControl>
+                                                <SelectContent>
+                                                    <SelectItem value="WAYBILL">İrsaliye</SelectItem>
+                                                    <SelectItem value="INVOICE">Fatura</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                            <FormDescription>
+                                                Paketleme sonrası kesilecek belge türü
+                                            </FormDescription>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                            </div>
                         </CardContent>
                     </Card>
 
@@ -816,7 +897,7 @@ export function CreateOrderClient() {
                                         name={`items.${index}.price`}
                                         render={({ field: priceField }) => (
                                             <FormItem className="w-32">
-                                                <FormLabel>Alış Fiyatı</FormLabel>
+                                                <FormLabel>Satış Fiyatı</FormLabel>
                                                 <FormControl>
                                                     <Input type="number" min={0} step="0.01" {...priceField} onChange={e => priceField.onChange(Number(e.target.value))} />
                                                 </FormControl>
