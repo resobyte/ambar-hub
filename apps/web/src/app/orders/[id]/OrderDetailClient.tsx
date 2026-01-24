@@ -427,9 +427,9 @@ export function OrderDetailClient({ orderId }: Props) {
                                                 <div className="flex items-start justify-between gap-2">
                                                     <p className="font-medium text-sm text-emerald-800">
                                                         Sipariş Geldi
-                                                        {order.storeName && (
+                                                        {order.store?.name && (
                                                             <span className="ml-2 text-xs font-normal text-emerald-600">
-                                                                ({order.storeName})
+                                                                ({order.store.name})
                                                             </span>
                                                         )}
                                                     </p>
