@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Package, Check, X, AlertTriangle, Box, MessageSquare } from 'lucide-react';
@@ -112,7 +112,7 @@ export function ReturnDetailClient({ id, userId }: Props) {
         quantity: number;
     }>>({});
 
-    const fetchReturn = async () => {
+    const fetchReturn = useCallback(async () => {
         setLoading(true);
         try {
             const res = await getReturn(id);
@@ -133,9 +133,9 @@ export function ReturnDetailClient({ id, userId }: Props) {
         } finally {
             setLoading(false);
         }
-    };
+    }, [id]);
 
-    const fetchShelves = async () => {
+    const fetchShelves = useCallback(async () => {
         try {
             // Sadece RETURN ve RETURN_DAMAGED tipindeki rafları getir
             const returnShelves: Shelf[] = [];
@@ -161,22 +161,22 @@ export function ReturnDetailClient({ id, userId }: Props) {
                 variant: 'destructive',
             });
         }
-    };
+    }, [toast]);
 
-    const fetchRejectReasons = async () => {
+    const fetchRejectReasons = useCallback(async () => {
         try {
             const res = await getReturnRejectReasons();
             setRejectReasons(res.data || []);
         } catch (error) {
             console.error('Failed to fetch reject reasons:', error);
         }
-    };
+    }, []);
 
     useEffect(() => {
         fetchReturn();
         fetchShelves();
         fetchRejectReasons();
-    }, [id]);
+    }, [fetchReturn, fetchShelves, fetchRejectReasons]);
 
     const handleApprove = async () => {
         setProcessing(true);
@@ -520,7 +520,7 @@ export function ReturnDetailClient({ id, userId }: Props) {
                             İade Ret Talebi
                         </DialogTitle>
                         <DialogDescription>
-                            Trendyol'da bu iade için ret talebi oluşturulacak.
+                            Trendyol&apos;da bu iade için ret talebi oluşturulacak.
                         </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4">

@@ -272,7 +272,7 @@ export function StoreDetailClient({ storeId }: StoreDetailClientProps) {
     setSaving(true);
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const submitData: any = {
+      const submitData: Record<string, any> = {
         name: formData.name,
         brandName: formData.brandName,
         type: formData.type,
