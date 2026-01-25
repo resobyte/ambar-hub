@@ -209,8 +209,6 @@ export interface ProductStore {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
-  product?: ProductIntegrationProduct;
-  store?: ProductIntegrationStore;
 }
 
 export interface ShippingProvider {
@@ -219,6 +217,7 @@ export interface ShippingProvider {
   type: 'ARAS';
   isActive: boolean;
   integrationCount: number;
+  storeCount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -326,60 +325,7 @@ export async function deleteStore(id: string): Promise<{ message: string }> {
   return res.json();
 }
 
-// Integration API
-export async function getIntegrations(page = 1, limit = 10): Promise<PaginationResponse<Integration>> {
-  const res = await fetch(`${API_URL}/integrations?page=${page}&limit=${limit}`, {
-    cache: 'no-store',
-    credentials: 'include',
-  });
-  return res.json();
-}
-
-export async function getIntegration(id: string): Promise<ApiResponse<Integration>> {
-  const res = await fetch(`${API_URL}/integrations/${id}`, {
-    cache: 'no-store',
-    credentials: 'include',
-  });
-  return res.json();
-}
-
-export async function createIntegration(data: {
-  name: string;
-  type: 'TRENDYOL' | 'HEPSIBURADA' | 'IKAS';
-  apiUrl: string;
-  isActive?: boolean;
-}): Promise<ApiResponse<Integration>> {
-  const res = await fetch(`${API_URL}/integrations`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(data),
-  });
-  return res.json();
-}
-
-export async function updateIntegration(id: string, data: {
-  name?: string;
-  type?: 'TRENDYOL' | 'HEPSIBURADA' | 'IKAS';
-  apiUrl?: string;
-  isActive?: boolean;
-}): Promise<ApiResponse<Integration>> {
-  const res = await fetch(`${API_URL}/integrations/${id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(data),
-  });
-  return res.json();
-}
-
-export async function deleteIntegration(id: string): Promise<{ message: string }> {
-  const res = await fetch(`${API_URL}/integrations/${id}`, {
-    method: 'DELETE',
-    credentials: 'include',
-  });
-  return res.json();
-}
+// Integration API - Removed (module deleted)
 
 // Trendyol Price & Inventory API
 export interface TrendyolPriceInventoryResponse {
@@ -876,86 +822,7 @@ export async function deleteProductStore(id: string): Promise<{ message: string 
   return res.json();
 }
 
-export async function deleteIntegrationStore(id: string): Promise<{ message: string }> {
-  const res = await fetch(`${API_URL}/integration-stores/${id}`, {
-    method: 'DELETE',
-    credentials: 'include',
-  });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.message || 'Request failed');
-  }
-  return res.json();
-}
-
-// ProductIntegration API
-export async function getProductIntegrations(params?: { productStoreId?: string; integrationId?: string }): Promise<ProductIntegration[]> {
-  const url = new URL(`${API_URL}/product-integrations`, BASE_URL);
-  if (params?.productStoreId) {
-    url.searchParams.append('productStoreId', params.productStoreId);
-  }
-  if (params?.integrationId) {
-    url.searchParams.append('integrationId', params.integrationId);
-  }
-  const res = await fetch(url.toString(), {
-    cache: 'no-store',
-    credentials: 'include',
-  });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.message || 'Request failed');
-  }
-  const data = await res.json();
-  return Array.isArray(data) ? data : (data?.data || []);
-}
-
-export async function createProductIntegration(data: {
-  productStoreId: string;
-  integrationId: string;
-  integrationSalePrice?: number;
-  isActive?: boolean;
-}): Promise<ApiResponse<ProductIntegration>> {
-  const res = await fetch(`${API_URL}/product-integrations`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.message || 'Request failed');
-  }
-  return res.json();
-}
-
-export async function updateProductIntegration(id: string, data: {
-  integrationSalePrice?: number;
-  isActive?: boolean;
-}): Promise<ApiResponse<ProductIntegration>> {
-  const res = await fetch(`${API_URL}/product-integrations/${id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.message || 'Request failed');
-  }
-  return res.json();
-}
-
-export async function deleteProductIntegration(id: string): Promise<{ message: string }> {
-  const res = await fetch(`${API_URL}/product-integrations/${id}`, {
-    method: 'DELETE',
-    credentials: 'include',
-  });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.message || 'Request failed');
-  }
-  return res.json();
-}
+// IntegrationStore and ProductIntegration API - Removed (modules deleted)
 
 // ShippingProvider API
 export async function getShippingProviders(): Promise<ShippingProvider[]> {

@@ -434,7 +434,7 @@ export function OrderDetailClient({ orderId }: Props) {
                                                         )}
                                                     </p>
                                                     <time className="text-xs text-emerald-600 whitespace-nowrap font-medium">
-                                                        {formatDate(order.createdAt)}
+                                                        {order.orderDate ? formatDate(order.orderDate) : '-'}
                                                     </time>
                                                 </div>
                                                 <p className="text-sm text-emerald-700 mt-1">
