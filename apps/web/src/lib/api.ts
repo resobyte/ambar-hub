@@ -2004,3 +2004,25 @@ export async function getShelves(page?: number, limit?: number, type?: string): 
   }
   return { success: true, data: [], meta: { page: 1, limit: 100, total: 0, totalPages: 1 } };
 }
+
+// Reshipment
+export async function reshipOrder(
+  orderId: string,
+  data: {
+    items: { itemId: string; quantity: number }[];
+    cargoTrackingNumber: string;
+    needsInvoice: boolean;
+  }
+): Promise<ApiResponse<Order>> {
+  const res = await fetch(`${API_URL}/orders/${orderId}/reship`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Yeniden gönderim başarısız');
+  }
+  return res.json();
+}

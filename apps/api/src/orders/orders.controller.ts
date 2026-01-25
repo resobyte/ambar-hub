@@ -3,6 +3,8 @@ import { Response } from 'express';
 import { OrdersService } from './orders.service';
 import { OrderHistoryService } from './order-history.service';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { ReshipmentDto } from './dto/reshipment.dto';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('orders')
 export class OrdersController {
@@ -28,6 +30,20 @@ export class OrdersController {
             return { success: false, message: 'Order number is required' };
         }
         return this.ordersService.fetchSingleTrendyolOrder(orderNumber);
+    }
+
+    @Post(':id/reship')
+    async reshipOrder(
+        @Param('id') id: string,
+        @Body() dto: ReshipmentDto,
+        @CurrentUser('sub') userId?: string,
+    ) {
+        const order = await this.ordersService.reshipOrder(id, dto, userId);
+        return {
+            success: true,
+            message: `Yeniden gönderim siparişi oluşturuldu: ${order.orderNumber}`,
+            data: order,
+        };
     }
 
     @Post(':id/label')

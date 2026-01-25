@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Order } from './entities/order.entity';
@@ -20,7 +20,10 @@ import axios from 'axios';
 
 import { InvoicesService } from '../invoices/invoices.service';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { ReshipmentDto } from './dto/reshipment.dto';
 import { Customer, CustomerType } from '../customers/entities/customer.entity';
+import { OrderHistoryService } from './order-history.service';
+import { OrderHistoryAction } from './entities/order-history.entity';
 
 export interface CancelOrderResult {
     success: boolean;
@@ -78,6 +81,7 @@ export class OrdersService {
         private readonly storesService: StoresService,
         private readonly arasKargoService: ArasKargoService,
         private readonly invoicesService: InvoicesService,
+        private readonly orderHistoryService: OrderHistoryService,
     ) { }
 
     private mapStatus(status: string): OrderStatus {
@@ -1703,6 +1707,176 @@ export class OrdersService {
         }
 
         this.logger.log(`Processed ${result.processed} WAITING_STOCK orders, moved ${result.movedToWaitingPicking.length} to WAITING_PICKING`);
+        return result;
+    }
+
+    async reshipOrder(orderId: string, dto: ReshipmentDto, userId?: string): Promise<Order> {
+        // 1. Siparişi bul ve ilişkilerle beraber getir
+        const originalOrder = await this.orderRepository.findOne({
+            where: { id: orderId },
+            relations: ['items', 'customer', 'store'],
+        });
+
+        if (!originalOrder) {
+            throw new NotFoundException(`Sipariş bulunamadı: ${orderId}`);
+        }
+
+        // 2. Durum kontrolü (sadece DELIVERED)
+        if (originalOrder.status !== OrderStatus.DELIVERED) {
+            throw new BadRequestException(
+                'Sadece teslim edilmiş siparişler yeniden gönderilebilir'
+            );
+        }
+
+        // 3. Item'ları validate et
+        const validItemIds = originalOrder.items.map(i => i.id);
+        const itemMap = new Map(originalOrder.items.map(i => [i.id, i]));
+        
+        // Validate all items and quantities
+        for (const dtoItem of dto.items) {
+            const originalItem = itemMap.get(dtoItem.itemId);
+            if (!originalItem) {
+                throw new BadRequestException(`Geçersiz ürün ID: ${dtoItem.itemId}`);
+            }
+            if (dtoItem.quantity <= 0) {
+                throw new BadRequestException(`Geçersiz miktar: ${dtoItem.quantity}`);
+            }
+            if (dtoItem.quantity > originalItem.quantity) {
+                throw new BadRequestException(
+                    `${originalItem.productName} için maksimum ${originalItem.quantity} adet gönderilebilir`
+                );
+            }
+        }
+
+        // 4. Yeni sipariş numarası oluştur (sonuna R ekleyerek)
+        const newOrderNumber = `${originalOrder.orderNumber}R`;
+        const newPackageId = `${originalOrder.packageId}R`;
+
+        // Check if reshipment already exists
+        const existing = await this.orderRepository.findOne({
+            where: { orderNumber: newOrderNumber },
+        });
+
+        if (existing) {
+            throw new BadRequestException(`Bu sipariş için zaten bir yeniden gönderim mevcut: ${newOrderNumber}`);
+        }
+
+        // 5. Seçilen item'ları ve miktarlarını hesapla
+        let totalPrice = 0;
+        const itemsWithQuantities = dto.items.map(dtoItem => {
+            const originalItem = itemMap.get(dtoItem.itemId)!;
+            const itemTotal = (originalItem.unitPrice || 0) * dtoItem.quantity;
+            totalPrice += itemTotal;
+            return { originalItem, quantity: dtoItem.quantity };
+        });
+
+        // 6. Yeni sipariş oluştur
+        const newOrder = this.orderRepository.create({
+            orderNumber: newOrderNumber,
+            packageId: newPackageId,
+            storeId: originalOrder.storeId,
+            customerId: originalOrder.customerId,
+            status: OrderStatus.WAITING_PICKING,
+            type: originalOrder.type, // Aynı type'ı koru
+            totalPrice,
+            grossAmount: totalPrice,
+            orderDate: new Date(),
+            cargoTrackingNumber: dto.cargoTrackingNumber,
+            agreedDeliveryDate: originalOrder.agreedDeliveryDate,
+            currencyCode: originalOrder.currencyCode || 'TRY',
+            shippingAddress: originalOrder.shippingAddress,
+            invoiceAddress: originalOrder.invoiceAddress,
+            commercial: originalOrder.commercial,
+            micro: originalOrder.micro,
+        });
+
+        const savedOrder = await this.orderRepository.save(newOrder);
+
+        // 7. Seçilen item'ları kısmi miktarlarıyla kopyala
+        const newItems = itemsWithQuantities.map(({ originalItem, quantity }) =>
+            this.orderItemRepository.create({
+                orderId: savedOrder.id,
+                lineId: originalItem.lineId,
+                productName: originalItem.productName,
+                barcode: originalItem.barcode,
+                sku: originalItem.sku,
+                merchantSku: originalItem.merchantSku,
+                stockCode: originalItem.stockCode,
+                productCode: originalItem.productCode,
+                contentId: originalItem.contentId,
+                productColor: originalItem.productColor,
+                productSize: originalItem.productSize,
+                productOrigin: originalItem.productOrigin,
+                productCategoryId: originalItem.productCategoryId,
+                quantity, // Kullanıcının seçtiği miktar
+                unitPrice: originalItem.unitPrice,
+                grossAmount: (originalItem.unitPrice || 0) * quantity,
+                discount: originalItem.discount,
+                sellerDiscount: originalItem.sellerDiscount,
+                tyDiscount: originalItem.tyDiscount,
+                currencyCode: originalItem.currencyCode,
+                vatBaseAmount: originalItem.vatBaseAmount,
+                vatRate: originalItem.vatRate,
+                commission: originalItem.commission,
+                setProductId: originalItem.setProductId,
+                isSetComponent: originalItem.isSetComponent,
+                setBarcode: originalItem.setBarcode,
+            })
+        );
+
+        await this.orderItemRepository.save(newItems);
+
+        // 8. Faturalama gerekli mi?
+        if (dto.needsInvoice) {
+            // TODO: Fatura oluştur (eğer invoicesService.createForOrder metodu varsa)
+            // await this.invoicesService.createForOrder(savedOrder.id);
+            this.logger.log(`Reshipment order ${newOrderNumber} needs invoice`);
+        }
+
+        // 9. OrderHistory'e kaydet - Yeni sipariş için
+        await this.orderHistoryService.logEvent({
+            orderId: savedOrder.id,
+            action: OrderHistoryAction.CREATED,
+            userId,
+            previousStatus: null,
+            newStatus: OrderStatus.CREATED,
+            description: `Yeniden gönderim: ${originalOrder.orderNumber} siparişinden oluşturuldu`,
+            metadata: {
+                originalOrderId: originalOrder.id,
+                originalOrderNumber: originalOrder.orderNumber,
+                reshippedItems: dto.items.length,
+                itemDetails: dto.items,
+                cargoTrackingNumber: dto.cargoTrackingNumber,
+            },
+        });
+
+        // 10. Orijinal siparişe de kaydet
+        await this.orderHistoryService.logEvent({
+            orderId: originalOrder.id,
+            action: OrderHistoryAction.NOTE_ADDED,
+            userId,
+            previousStatus: OrderStatus.DELIVERED,
+            newStatus: OrderStatus.DELIVERED,
+            description: `Yeniden gönderim oluşturuldu: ${newOrderNumber}`,
+            metadata: {
+                newOrderId: savedOrder.id,
+                newOrderNumber: savedOrder.orderNumber,
+                reshippedItemCount: dto.items.length,
+                itemDetails: dto.items,
+            },
+        });
+
+        this.logger.log(`Created reshipment order ${newOrderNumber} from ${originalOrder.orderNumber}`);
+
+        const result = await this.orderRepository.findOne({
+            where: { id: savedOrder.id },
+            relations: ['items', 'customer', 'store'],
+        });
+
+        if (!result) {
+            throw new NotFoundException('Oluşturulan sipariş bulunamadı');
+        }
+
         return result;
     }
 }

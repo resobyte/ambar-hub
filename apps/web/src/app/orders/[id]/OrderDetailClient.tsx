@@ -54,6 +54,7 @@ import {
     ArrowUpRight,
     ArrowLeftRight,
 } from 'lucide-react';
+import { ReshipmentModal } from '@/components/orders/ReshipmentModal';
 
 interface Props {
     orderId: string;
@@ -211,6 +212,7 @@ export function OrderDetailClient({ orderId }: Props) {
     const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [reshipModalOpen, setReshipModalOpen] = useState(false);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -280,9 +282,21 @@ export function OrderDetailClient({ orderId }: Props) {
                         <h1 className="text-2xl font-bold">{order.orderNumber}</h1>
                     </div>
                 </div>
-                <Badge className={statusColors[order.status] || statusColors.UNKNOWN}>
-                    {statusLabels[order.status] || order.status}
-                </Badge>
+                <div className="flex items-center gap-2">
+                    {order.status === 'DELIVERED' && (
+                        <Button
+                            variant="outline"
+                            onClick={() => setReshipModalOpen(true)}
+                            className="flex items-center gap-2"
+                        >
+                            <Package className="h-4 w-4" />
+                            Yeniden Gönder
+                        </Button>
+                    )}
+                    <Badge className={statusColors[order.status] || statusColors.UNKNOWN}>
+                        {statusLabels[order.status] || order.status}
+                    </Badge>
+                </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -557,6 +571,15 @@ export function OrderDetailClient({ orderId }: Props) {
                     </Card>
                 </div>
             </div>
+
+            {/* Reshipment Modal */}
+            {order && (
+                <ReshipmentModal
+                    isOpen={reshipModalOpen}
+                    onClose={() => setReshipModalOpen(false)}
+                    order={order}
+                />
+            )}
         </div>
     );
 }
