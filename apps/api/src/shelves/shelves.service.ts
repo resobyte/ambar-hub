@@ -906,13 +906,39 @@ export class ShelvesService {
             throw new BadRequestException(`Yetersiz stok. Mevcut: ${fromQuantityBefore}, İstenen: ${quantity}`);
         }
 
-        const toStock = await this.shelfStockRepository.findOne({
+        let toStock = await this.shelfStockRepository.findOne({
             where: { shelfId: toShelfId, productId },
         });
         const toQuantityBefore = toStock?.quantity || 0;
 
-        const from = await this.removeStock(fromShelfId, productId, quantity);
-        const to = await this.addStock(toShelfId, productId, quantity);
+        // Remove from source shelf (without sync - we'll sync after both operations)
+        if (!fromStock) {
+            throw new BadRequestException('Kaynak rafta stok bulunamadı');
+        }
+        fromStock.quantity = Math.max(0, fromStock.quantity - quantity);
+        if (fromStock.quantity === 0 && fromStock.reservedQuantity === 0) {
+            await this.shelfStockRepository.remove(fromStock);
+        } else {
+            await this.shelfStockRepository.save(fromStock);
+        }
+
+        // Add to target shelf (without sync - we'll sync after both operations)
+        if (toStock) {
+            toStock.quantity += quantity;
+        } else {
+            toStock = this.shelfStockRepository.create({
+                shelfId: toShelfId,
+                productId,
+                quantity,
+            });
+        }
+        const savedToStock = await this.shelfStockRepository.save(toStock);
+
+        // Sync product stock once after both operations (only once, not twice)
+        await this.syncProductStock(productId, toShelfId);
+
+        const from = fromStock.quantity === 0 ? null : fromStock;
+        const to = savedToStock;
 
         const movements: ShelfStockMovement[] = [];
 
