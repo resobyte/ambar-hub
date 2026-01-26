@@ -55,6 +55,21 @@ export class CreateStoreDto {
   @IsOptional()
   shippingProviderId?: string;
 
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  cargoCustomerCode?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  cargoUsername?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  cargoPassword?: string;
+
   // Senkronizasyon Ayarları
   @IsNumber()
   @IsOptional()

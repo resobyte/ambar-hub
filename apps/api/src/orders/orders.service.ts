@@ -25,6 +25,8 @@ import { Customer, CustomerType } from '../customers/entities/customer.entity';
 import { OrderHistoryService } from './order-history.service';
 import { OrderHistoryAction } from './entities/order-history.entity';
 import { ZplTemplateService } from './zpl-template.service';
+import { OrderApiLogService } from './order-api-log.service';
+import { ApiLogProvider, ApiLogType } from './entities/order-api-log.entity';
 
 export interface CancelOrderResult {
     success: boolean;
@@ -84,6 +86,7 @@ export class OrdersService {
         private readonly invoicesService: InvoicesService,
         private readonly orderHistoryService: OrderHistoryService,
         private readonly zplTemplateService: ZplTemplateService,
+        private readonly orderApiLogService: OrderApiLogService,
     ) { }
 
     private mapStatus(status: string): OrderStatus {
@@ -1535,14 +1538,33 @@ export class OrdersService {
         try {
             const order = await this.orderRepository.findOne({
                 where: { id: orderId },
-                relations: ['items'],
+                relations: ['items', 'store'],
             });
 
             if (!order) {
                 return { success: false, message: 'Sipariş bulunamadı.' };
             }
 
-            const arasResult = await this.arasKargoService.createShipment(order);
+            const credentials = order.store?.cargoUsername ? {
+                customerCode: order.store.cargoCustomerCode,
+                username: order.store.cargoUsername,
+                password: order.store.cargoPassword,
+            } : undefined;
+
+            const arasResult = await this.arasKargoService.createShipment(order, credentials);
+
+            await this.orderApiLogService.log({
+                orderId: order.id,
+                provider: ApiLogProvider.ARAS_KARGO,
+                logType: ApiLogType.SET_ORDER,
+                endpoint: arasResult._request?.endpoint,
+                method: 'POST',
+                requestPayload: arasResult._request,
+                responsePayload: arasResult._response,
+                isSuccess: arasResult.ResultCode === '0',
+                errorMessage: arasResult.ResultCode !== '0' ? arasResult.ResultMsg : undefined,
+                durationMs: arasResult._durationMs,
+            });
 
             if (arasResult.ResultCode === '0') {
                 return {
@@ -1556,8 +1578,24 @@ export class OrdersService {
                     message: `Aras Kargo hatası: ${arasResult.ResultMsg} (Kodu: ${arasResult.ResultCode})`,
                 };
             }
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`Aras Kargo createShipment failed: ${error.message}`, error);
+            
+            if (orderId && error._request) {
+                await this.orderApiLogService.log({
+                    orderId,
+                    provider: ApiLogProvider.ARAS_KARGO,
+                    logType: ApiLogType.SET_ORDER,
+                    endpoint: error._request?.endpoint,
+                    method: 'POST',
+                    requestPayload: error._request,
+                    responsePayload: error._response,
+                    isSuccess: false,
+                    errorMessage: error.message,
+                    durationMs: error._durationMs,
+                });
+            }
+
             return {
                 success: false,
                 message: `Entegrasyon hatası: ${error.message}`,
@@ -1910,11 +1948,31 @@ export class OrdersService {
         // Try to fetch from Aras Kargo first if we have a tracking number
         if (order.cargoTrackingNumber) {
             try {
-                const arasZpl = await this.arasKargoService.getBarcode(order.cargoTrackingNumber);
-                if (arasZpl) {
-                    order.cargoLabelZpl = arasZpl;
+                const credentials = order.store?.cargoUsername ? {
+                    customerCode: order.store.cargoCustomerCode,
+                    username: order.store.cargoUsername,
+                    password: order.store.cargoPassword,
+                } : undefined;
+
+                const arasResult = await this.arasKargoService.getBarcode(order.cargoTrackingNumber, credentials);
+                
+                await this.orderApiLogService.log({
+                    orderId: order.id,
+                    provider: ApiLogProvider.ARAS_KARGO,
+                    logType: ApiLogType.GET_BARCODE,
+                    endpoint: arasResult._request?.endpoint,
+                    method: 'POST',
+                    requestPayload: arasResult._request,
+                    responsePayload: arasResult._response,
+                    isSuccess: !!arasResult.zpl,
+                    errorMessage: !arasResult.zpl ? arasResult.resultMsg : undefined,
+                    durationMs: arasResult._durationMs,
+                });
+
+                if (arasResult.zpl) {
+                    order.cargoLabelZpl = arasResult.zpl;
                     await this.orderRepository.save(order);
-                    return { success: true, zpl: arasZpl };
+                    return { success: true, zpl: arasResult.zpl };
                 }
             } catch (error) {
                 this.logger.warn(`Failed to fetch ZPL from Aras Kargo for ${order.cargoTrackingNumber}: ${error.message}`);

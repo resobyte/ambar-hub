@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, Not } from 'typeorm';
@@ -11,6 +11,7 @@ import { Route } from '../routes/entities/route.entity';
 import { RouteStatus } from '../routes/enums/route-status.enum';
 import { OrderHistoryService } from './order-history.service';
 import { OrderHistoryAction } from './entities/order-history.entity';
+import { OrdersService } from './orders.service';
 
 /**
  * Order Sync Service
@@ -34,6 +35,8 @@ export class OrderSyncService {
         @InjectRepository(Route)
         private readonly routeRepository: Repository<Route>,
         private readonly orderHistoryService: OrderHistoryService,
+        @Inject(forwardRef(() => OrdersService))
+        private readonly ordersService: OrdersService,
     ) {}
 
     // ─────────────────────────────────────────────────────────────
@@ -74,74 +77,83 @@ export class OrderSyncService {
     }
 
     private async syncStoreOrders(store: Store): Promise<void> {
+        // 1. Yeni siparişleri çek (mevcut syncOrders metodunu kullan)
+        this.logger.log(`[${store.name}] Syncing new orders...`);
+        try {
+            await this.ordersService.syncOrders(store.id);
+        } catch (error: any) {
+            this.logger.error(`[${store.name}] Failed to sync new orders: ${error.message}`);
+        }
+
+        // 2. İptal edilen siparişleri kontrol et
+        this.logger.log(`[${store.name}] Checking cancelled orders...`);
         switch (store.type) {
             case StoreType.TRENDYOL:
-                await this.syncTrendyolNewAndCancelled(store);
+                await this.syncTrendyolCancelled(store);
                 break;
             case StoreType.HEPSIBURADA:
-                await this.syncHepsiburadaNewAndCancelled(store);
+                await this.syncHepsiburadaCancelled(store);
                 break;
             case StoreType.IKAS:
-                await this.syncIkasNewAndCancelled(store);
+                await this.syncIkasCancelled(store);
                 break;
         }
     }
 
-    private async syncTrendyolNewAndCancelled(store: Store): Promise<void> {
+    private async syncTrendyolCancelled(store: Store): Promise<void> {
         const auth = Buffer.from(`${store.apiKey}:${store.apiSecret}`).toString('base64');
         const baseUrl = `https://apigw.trendyol.com/integration/order/sellers/${store.sellerId}/orders`;
 
-        // Son 24 saat içindeki siparişleri çek (CREATED ve CANCELLED)
-        const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
+        // Son 7 gün içindeki iptal siparişlerini çek
+        const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
 
-        const statuses = ['Created', 'Cancelled'];
+        let page = 0;
+        let totalPages = 1;
+        let cancelledCount = 0;
 
-        for (const status of statuses) {
-            let page = 0;
-            let totalPages = 1;
+        do {
+            try {
+                const params = new URLSearchParams({
+                    page: page.toString(),
+                    size: '200',
+                    status: 'Cancelled',
+                    orderByField: 'PackageLastModifiedDate',
+                    orderByDirection: 'DESC',
+                });
 
-            do {
-                try {
-                    const params = new URLSearchParams({
-                        page: page.toString(),
-                        size: '200',
-                        status,
-                        orderByField: 'PackageLastModifiedDate',
-                        orderByDirection: 'DESC',
-                    });
+                const response = await fetch(`${baseUrl}?${params}`, {
+                    headers: { Authorization: `Basic ${auth}` },
+                });
 
-                    const response = await fetch(`${baseUrl}?${params}`, {
-                        headers: { Authorization: `Basic ${auth}` },
-                    });
-
-                    if (!response.ok) {
-                        this.logger.error(`Trendyol API error: ${response.statusText}`);
-                        break;
-                    }
-
-                    const data: any = await response.json();
-                    totalPages = data.totalPages || 1;
-
-                    for (const pkg of data.content || []) {
-                        if (status === 'Cancelled') {
-                            await this.handleCancelledOrder(pkg.orderNumber, store.id, 'Trendyol');
-                        }
-                        // CREATED siparişler mevcut syncOrders ile işleniyor
-                    }
-
-                    page++;
-                } catch (error: any) {
-                    this.logger.error(`Trendyol sync error: ${error.message}`);
+                if (!response.ok) {
+                    this.logger.error(`Trendyol API error: ${response.statusText}`);
                     break;
                 }
-            } while (page < totalPages && page < 5); // Max 5 sayfa
+
+                const data: any = await response.json();
+                totalPages = data.totalPages || 1;
+
+                for (const pkg of data.content || []) {
+                    const updated = await this.handleCancelledOrder(pkg.orderNumber, store.id, 'Trendyol');
+                    if (updated) cancelledCount++;
+                }
+
+                page++;
+            } catch (error: any) {
+                this.logger.error(`Trendyol cancelled sync error: ${error.message}`);
+                break;
+            }
+        } while (page < totalPages && page < 5); // Max 5 sayfa
+
+        if (cancelledCount > 0) {
+            this.logger.log(`[${store.name}] ${cancelledCount} orders marked as cancelled`);
         }
     }
 
-    private async syncHepsiburadaNewAndCancelled(store: Store): Promise<void> {
+    private async syncHepsiburadaCancelled(store: Store): Promise<void> {
         const auth = Buffer.from(`${store.sellerId}:${store.apiSecret}`).toString('base64');
+        let cancelledCount = 0;
 
-        // Cancelled siparişleri çek
         try {
             const cancelledUrl = `https://oms-external.hepsiburada.com/orders/merchantid/${store.sellerId}/cancelled`;
             
@@ -151,7 +163,7 @@ export class OrderSyncService {
                     'User-Agent': 'hamurlabs_dev',
                     'Accept': 'application/json',
                 },
-                params: { limit: 100, offset: 0 },
+                params: { limit: 200, offset: 0 },
             });
 
             const orders = response.data?.data?.orders || response.data || [];
@@ -159,16 +171,22 @@ export class OrderSyncService {
             for (const order of orders) {
                 const orderNumber = order.orderNumber || order.OrderNumber;
                 if (orderNumber) {
-                    await this.handleCancelledOrder(orderNumber, store.id, 'Hepsiburada');
+                    const updated = await this.handleCancelledOrder(orderNumber, store.id, 'Hepsiburada');
+                    if (updated) cancelledCount++;
                 }
+            }
+
+            if (cancelledCount > 0) {
+                this.logger.log(`[${store.name}] ${cancelledCount} orders marked as cancelled`);
             }
         } catch (error: any) {
             this.logger.error(`Hepsiburada cancelled sync error: ${error.message}`);
         }
     }
 
-    private async syncIkasNewAndCancelled(store: Store): Promise<void> {
-        // ikas GraphQL API ile iptal edilen siparişleri çek
+    private async syncIkasCancelled(store: Store): Promise<void> {
+        let cancelledCount = 0;
+
         try {
             const tokenResponse = await axios.post(
                 `https://${store.sellerId}.myikas.com/api/admin/oauth/token`,
@@ -183,11 +201,10 @@ export class OrderSyncService {
             const accessToken = tokenResponse.data?.access_token;
             if (!accessToken) return;
 
-            // Son 24 saatteki cancelled siparişleri çek
             const query = `
                 query {
                     listOrder(
-                        pagination: { page: 1, limit: 100 }
+                        pagination: { page: 1, limit: 200 }
                         orderStatuses: [CANCELLED]
                     ) {
                         data {
@@ -214,23 +231,28 @@ export class OrderSyncService {
 
             for (const order of orders) {
                 if (order.orderNumber) {
-                    await this.handleCancelledOrder(order.orderNumber, store.id, 'ikas');
+                    const updated = await this.handleCancelledOrder(order.orderNumber, store.id, 'ikas');
+                    if (updated) cancelledCount++;
                 }
+            }
+
+            if (cancelledCount > 0) {
+                this.logger.log(`[${store.name}] ${cancelledCount} orders marked as cancelled`);
             }
         } catch (error: any) {
             this.logger.error(`ikas cancelled sync error: ${error.message}`);
         }
     }
 
-    private async handleCancelledOrder(orderNumber: string, storeId: string, source: string): Promise<void> {
+    private async handleCancelledOrder(orderNumber: string, storeId: string, source: string): Promise<boolean> {
         const order = await this.orderRepository.findOne({
             where: { orderNumber, storeId },
         });
 
-        if (!order) return;
+        if (!order) return false;
 
         // Zaten iptal edilmişse skip
-        if (order.status === OrderStatus.CANCELLED) return;
+        if (order.status === OrderStatus.CANCELLED) return false;
 
         const previousStatus = order.status;
 
@@ -270,6 +292,7 @@ export class OrderSyncService {
         });
 
         this.logger.log(`Order ${orderNumber} cancelled from ${source}`);
+        return true;
     }
 
     // ─────────────────────────────────────────────────────────────

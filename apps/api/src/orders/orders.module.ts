@@ -2,12 +2,14 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { OrdersService } from './orders.service';
 import { OrderHistoryService } from './order-history.service';
+import { OrderApiLogService } from './order-api-log.service';
 import { ZplTemplateService } from './zpl-template.service';
 import { OrderSyncService } from './order-sync.service';
 import { OrdersController } from './orders.controller';
 import { Order } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { OrderHistory } from './entities/order-history.entity';
+import { OrderApiLog } from './entities/order-api-log.entity';
 import { FaultyOrder } from './entities/faulty-order.entity';
 import { CustomersModule } from '../customers/customers.module';
 import { StoresModule } from '../stores/stores.module';
@@ -23,13 +25,13 @@ import { ShelfStock } from '../shelves/entities/shelf-stock.entity';
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([Order, OrderItem, OrderHistory, FaultyOrder, Product, ProductSetItem, ProductStore, RouteOrder, Route, User, Store, ShelfStock]),
+        TypeOrmModule.forFeature([Order, OrderItem, OrderHistory, OrderApiLog, FaultyOrder, Product, ProductSetItem, ProductStore, RouteOrder, Route, User, Store, ShelfStock]),
         CustomersModule,
         StoresModule,
         InvoicesModule,
     ],
     controllers: [OrdersController],
-    providers: [OrdersService, OrderHistoryService, ZplTemplateService, OrderSyncService],
-    exports: [OrdersService, OrderHistoryService, ZplTemplateService, OrderSyncService],
+    providers: [OrdersService, OrderHistoryService, OrderApiLogService, ZplTemplateService, OrderSyncService],
+    exports: [OrdersService, OrderHistoryService, OrderApiLogService, ZplTemplateService, OrderSyncService],
 })
 export class OrdersModule { }

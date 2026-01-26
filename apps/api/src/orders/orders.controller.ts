@@ -2,6 +2,7 @@ import { Controller, Post, Param, Get, Query, Delete, Res, Put, Body } from '@ne
 import { Response } from 'express';
 import { OrdersService } from './orders.service';
 import { OrderHistoryService } from './order-history.service';
+import { OrderApiLogService } from './order-api-log.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { ReshipmentDto } from './dto/reshipment.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -11,6 +12,7 @@ export class OrdersController {
     constructor(
         private readonly ordersService: OrdersService,
         private readonly orderHistoryService: OrderHistoryService,
+        private readonly orderApiLogService: OrderApiLogService,
     ) { }
 
     @Post()
@@ -260,6 +262,15 @@ export class OrdersController {
         return {
             success: true,
             data: history,
+        };
+    }
+
+    @Get(':id/api-logs')
+    async getOrderApiLogs(@Param('id') id: string) {
+        const logs = await this.orderApiLogService.getLogsByOrderId(id);
+        return {
+            success: true,
+            data: logs,
         };
     }
 }

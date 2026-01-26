@@ -63,6 +63,9 @@ interface StoreFormData {
   apiSecret: string;
   // Kargo
   shippingProviderId: string;
+  cargoCustomerCode: string;
+  cargoUsername: string;
+  cargoPassword: string;
   // Senkronizasyon
   crawlIntervalMinutes: number;
   sendStock: boolean;
@@ -132,6 +135,9 @@ const defaultFormData: StoreFormData = {
   apiKey: '',
   apiSecret: '',
   shippingProviderId: '',
+  cargoCustomerCode: '',
+  cargoUsername: '',
+  cargoPassword: '',
   crawlIntervalMinutes: 15,
   sendStock: true,
   sendPrice: true,
@@ -219,6 +225,9 @@ export function StoreDetailClient({ storeId }: StoreDetailClientProps) {
             apiKey: '',
             apiSecret: '',
             shippingProviderId: store.shippingProviderId || '',
+            cargoCustomerCode: store.cargoCustomerCode || '',
+            cargoUsername: '',
+            cargoPassword: '',
             crawlIntervalMinutes: store.crawlIntervalMinutes || 15,
             sendStock: store.sendStock ?? true,
             sendPrice: store.sendPrice ?? true,
@@ -295,7 +304,11 @@ export function StoreDetailClient({ storeId }: StoreDetailClientProps) {
         warehouseId: formData.warehouseId,
         isActive: formData.isActive,
         shippingProviderId: formData.shippingProviderId || null,
+        cargoCustomerCode: formData.cargoCustomerCode || null,
       };
+      
+      if (formData.cargoUsername) submitData.cargoUsername = formData.cargoUsername;
+      if (formData.cargoPassword) submitData.cargoPassword = formData.cargoPassword;
 
       // API & Senkronizasyon (sadece marketplace için)
       if (formData.type !== 'MANUAL') {
@@ -537,6 +550,39 @@ export function StoreDetailClient({ storeId }: StoreDetailClientProps) {
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+
+              {/* Kargo API Bilgileri */}
+              <div className="space-y-4 pt-4 border-t">
+                <h4 className="text-sm font-medium text-muted-foreground">Kargo API Bilgileri (Aras Kargo)</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Müşteri Kodu</Label>
+                    <Input
+                      placeholder="12345678"
+                      value={formData.cargoCustomerCode}
+                      onChange={(e) => setFormData({ ...formData, cargoCustomerCode: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Kullanıcı Adı {existingStore?.hasCargoUsername && <span className="text-xs text-muted-foreground">(kayıtlı)</span>}</Label>
+                    <Input
+                      placeholder={existingStore?.hasCargoUsername ? '••••••••' : 'Kullanıcı adı girin'}
+                      value={formData.cargoUsername}
+                      onChange={(e) => setFormData({ ...formData, cargoUsername: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Şifre {existingStore?.hasCargoPassword && <span className="text-xs text-muted-foreground">(kayıtlı)</span>}</Label>
+                    <Input
+                      type="password"
+                      placeholder={existingStore?.hasCargoPassword ? '••••••••' : 'Şifre girin'}
+                      value={formData.cargoPassword}
+                      onChange={(e) => setFormData({ ...formData, cargoPassword: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">Bu bilgiler boş bırakılırsa sistem varsayılan kargo ayarlarını kullanır.</p>
               </div>
             </CardContent>
           </Card>

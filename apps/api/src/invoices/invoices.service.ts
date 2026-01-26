@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -12,6 +12,8 @@ import { DocumentType } from './enums/document-type.enum';
 import { OrderHistoryService } from '../orders/order-history.service';
 import { OrderHistoryAction } from '../orders/entities/order-history.entity';
 import { OrderStatus } from '../orders/enums/order-status.enum';
+import { OrderApiLogService } from '../orders/order-api-log.service';
+import { ApiLogProvider, ApiLogType } from '../orders/entities/order-api-log.entity';
 
 @Injectable()
 export class InvoicesService {
@@ -30,6 +32,8 @@ export class InvoicesService {
         private readonly storeRepository: Repository<Store>,
         private readonly configService: ConfigService,
         private readonly orderHistoryService: OrderHistoryService,
+        @Inject(forwardRef(() => OrderApiLogService))
+        private readonly orderApiLogService: OrderApiLogService,
     ) { }
 
     /**
@@ -48,14 +52,37 @@ export class InvoicesService {
             throw new NotFoundException(`Order ${orderId} not found`);
         }
 
-        // Check if invoice already exists (any status)
+        // Check if invoice already exists by orderId
         const existingInvoice = await this.invoiceRepository.findOne({
             where: { orderId },
+            order: { createdAt: 'DESC' },
         });
 
         if (existingInvoice) {
-            this.logger.log(`Invoice already exists for order ${orderId} with status ${existingInvoice.status}`);
-            return existingInvoice;
+            if (existingInvoice.status === InvoiceStatus.SUCCESS) {
+                this.logger.log(`Invoice already exists for order ${orderId}: ${existingInvoice.invoiceNumber}`);
+                return existingInvoice;
+            }
+            if (existingInvoice.status === InvoiceStatus.PENDING) {
+                this.logger.log(`Invoice already pending for order ${orderId}`);
+                return existingInvoice;
+            }
+            // ERROR status - delete and recreate
+            this.logger.log(`Deleting failed invoice for order ${orderId} before recreating`);
+            await this.invoiceRepository.remove(existingInvoice);
+        }
+
+        // Also check by orderNumber to prevent duplicates (via order relation)
+        const existingByOrderNumber = await this.invoiceRepository
+            .createQueryBuilder('invoice')
+            .innerJoin('invoice.order', 'order')
+            .where('order.orderNumber = :orderNumber', { orderNumber: order.orderNumber })
+            .andWhere('invoice.status = :status', { status: InvoiceStatus.SUCCESS })
+            .getOne();
+
+        if (existingByOrderNumber && existingByOrderNumber.orderId !== orderId) {
+            this.logger.warn(`Invoice already exists for orderNumber ${order.orderNumber} from different order`);
+            throw new BadRequestException(`Bu sipariş numarası için fatura zaten mevcut: ${existingByOrderNumber.invoiceNumber}`);
         }
 
         // Get Store settings to determine invoice rules
@@ -293,13 +320,25 @@ export class InvoicesService {
             throw new NotFoundException(`Order ${orderId} not found`);
         }
 
-        // Check if invoice already exists with SUCCESS status
+        // Check if invoice already exists with SUCCESS status by orderId
         const existingSuccessInvoice = await this.invoiceRepository.findOne({
             where: { orderId, status: InvoiceStatus.SUCCESS },
         });
 
         if (existingSuccessInvoice) {
             throw new BadRequestException(`Bu sipariş için zaten başarıyla oluşturulmuş bir fatura mevcut! (Fatura No: ${existingSuccessInvoice.invoiceNumber})`);
+        }
+
+        // Also check by orderNumber to prevent duplicates from different sources (via order relation)
+        const existingByOrderNumber = await this.invoiceRepository
+            .createQueryBuilder('invoice')
+            .innerJoin('invoice.order', 'order')
+            .where('order.orderNumber = :orderNumber', { orderNumber: order.orderNumber })
+            .andWhere('invoice.status = :status', { status: InvoiceStatus.SUCCESS })
+            .getOne();
+
+        if (existingByOrderNumber && existingByOrderNumber.orderId !== orderId) {
+            throw new BadRequestException(`Bu sipariş numarası için başka bir kayıttan fatura zaten kesilmiş: ${existingByOrderNumber.invoiceNumber}`);
         }
 
         // Check for PENDING invoice to update
@@ -579,7 +618,7 @@ export class InvoicesService {
 
         // 7. Send to Uyumsoft
         try {
-            const response = await this.sendToUyumsoft(requestPayload);
+            const response = await this.sendToUyumsoft(requestPayload, orderId);
 
             savedInvoice.status = InvoiceStatus.SUCCESS;
             savedInvoice.responsePayload = response;
@@ -713,13 +752,38 @@ export class InvoicesService {
 
         for (const order of orders) {
             try {
-                // Check if invoice already exists
-                const existingInvoice = await this.invoiceRepository.findOne({
+                // Check if invoice already exists for this order (by orderId)
+                const existingInvoiceByOrderId = await this.invoiceRepository.findOne({
                     where: { orderId: order.id },
+                    order: { createdAt: 'DESC' },
                 });
 
-                if (existingInvoice && existingInvoice.status === InvoiceStatus.SUCCESS) {
-                    results.failed.push({ orderId: order.id, error: 'Invoice already exists' });
+                if (existingInvoiceByOrderId) {
+                    if (existingInvoiceByOrderId.status === InvoiceStatus.SUCCESS) {
+                        results.failed.push({ orderId: order.id, error: `Fatura zaten kesilmiş: ${existingInvoiceByOrderId.invoiceNumber}` });
+                        continue;
+                    }
+                    if (existingInvoiceByOrderId.status === InvoiceStatus.PENDING) {
+                        results.failed.push({ orderId: order.id, error: 'Fatura zaten kuyrukta bekliyor' });
+                        continue;
+                    }
+                    // ERROR status can be retried - delete old record first
+                    if (existingInvoiceByOrderId.status === InvoiceStatus.ERROR) {
+                        this.logger.log(`Deleting failed invoice for order ${order.id} before retry`);
+                        await this.invoiceRepository.remove(existingInvoiceByOrderId);
+                    }
+                }
+
+                // Also check by orderNumber to prevent duplicates from different sources (via order relation)
+                const existingInvoiceByOrderNumber = await this.invoiceRepository
+                    .createQueryBuilder('invoice')
+                    .innerJoin('invoice.order', 'o')
+                    .where('o.orderNumber = :orderNumber', { orderNumber: order.orderNumber })
+                    .andWhere('invoice.status = :status', { status: InvoiceStatus.SUCCESS })
+                    .getOne();
+
+                if (existingInvoiceByOrderNumber && existingInvoiceByOrderNumber.orderId !== order.id) {
+                    results.failed.push({ orderId: order.id, error: `Bu sipariş numarası için fatura zaten mevcut: ${existingInvoiceByOrderNumber.invoiceNumber}` });
                     continue;
                 }
 
@@ -897,7 +961,8 @@ export class InvoicesService {
                 value: invoicePayloads.map(p => p.payload.value),
             };
 
-            const response = await this.sendToUyumsoftMulti(bulkPayload);
+            const bulkOrderIds = invoicePayloads.map(p => p.order.id);
+            const response = await this.sendToUyumsoftMulti(bulkPayload, bulkOrderIds);
 
             // Process responses
             if (response?.value && Array.isArray(response.value)) {
@@ -911,6 +976,16 @@ export class InvoicesService {
                         invoiceData.invoice.uyumsoftInvoiceId = responseItem?.invoiceId || responseItem?.id;
                         invoiceData.invoice.ettn = responseItem?.ettn;
                         await this.invoiceRepository.save(invoiceData.invoice);
+
+                        // Update order status to INVOICED
+                        try {
+                            await this.orderRepository.update(invoiceData.order.id, { status: OrderStatus.INVOICED });
+                        } catch (statusErr) {
+                            this.logger.warn(`Failed to update order ${invoiceData.order.id} status: ${statusErr.message}`);
+                        }
+
+                        // Send Invoiced status to marketplace
+                        await this.sendInvoicedStatusAfterBulk(invoiceData.order, invoiceData.invoice);
                     } else {
                         invoiceData.invoice.status = InvoiceStatus.ERROR;
                         invoiceData.invoice.errorMessage = responseItem?.exceptionMessage || 'Unknown error';
@@ -928,6 +1003,16 @@ export class InvoicesService {
                     invoiceData.invoice.status = InvoiceStatus.SUCCESS;
                     invoiceData.invoice.responsePayload = response;
                     await this.invoiceRepository.save(invoiceData.invoice);
+
+                    // Update order status to INVOICED
+                    try {
+                        await this.orderRepository.update(invoiceData.order.id, { status: OrderStatus.INVOICED });
+                    } catch (statusErr) {
+                        this.logger.warn(`Failed to update order ${invoiceData.order.id} status: ${statusErr.message}`);
+                    }
+
+                    // Send Invoiced status to marketplace
+                    await this.sendInvoicedStatusAfterBulk(invoiceData.order, invoiceData.invoice);
                 }
             }
 
@@ -954,9 +1039,12 @@ export class InvoicesService {
     /**
      * Send bulk invoices to Uyumsoft API using InsertInvoiceMulti
      */
-    private async sendToUyumsoftMulti(payload: object): Promise<any> {
+    private async sendToUyumsoftMulti(payload: object, orderIds?: string[]): Promise<any> {
         const apiUrl = this.configService.get<string>('UYUMSOFT_API_URL')
             || 'http://api-embeauty.eko.uyumcloud.com';
+
+        const endpoint = `${apiUrl}/UyumApi/v1/PSM/InsertInvoiceMulti`;
+        const startTime = Date.now();
 
         const { token, secretKey } = await this.getAccessToken();
 
@@ -964,7 +1052,7 @@ export class InvoicesService {
             this.logger.log(`[Uyumsoft Multi Request] Payload: ${JSON.stringify(payload)}`);
 
             const response = await axios.post(
-                `${apiUrl}/UyumApi/v1/PSM/InsertInvoiceMulti`,
+                endpoint,
                 payload,
                 {
                     headers: {
@@ -975,10 +1063,50 @@ export class InvoicesService {
                 }
             );
 
+            const durationMs = Date.now() - startTime;
             this.logger.log(`[Uyumsoft Multi Response] Success: ${JSON.stringify(response.data)}`);
+
+            if (orderIds && orderIds.length > 0) {
+                for (const orderId of orderIds) {
+                    await this.orderApiLogService.log({
+                        orderId,
+                        provider: ApiLogProvider.UYUMSOFT,
+                        logType: ApiLogType.CREATE_INVOICE,
+                        endpoint,
+                        method: 'POST',
+                        requestPayload: { bulk: true, totalCount: orderIds.length },
+                        responsePayload: response.data,
+                        statusCode: response.status,
+                        isSuccess: true,
+                        durationMs,
+                    });
+                }
+            }
+
             return response.data;
-        } catch (error) {
-            this.logger.error(`[Uyumsoft Multi Response] Error: ${JSON.stringify(error.response?.data || error.message)}`);
+        } catch (error: any) {
+            const durationMs = Date.now() - startTime;
+            const errorResponse = error.response?.data || error.message;
+            this.logger.error(`[Uyumsoft Multi Response] Error: ${JSON.stringify(errorResponse)}`);
+
+            if (orderIds && orderIds.length > 0) {
+                for (const orderId of orderIds) {
+                    await this.orderApiLogService.log({
+                        orderId,
+                        provider: ApiLogProvider.UYUMSOFT,
+                        logType: ApiLogType.CREATE_INVOICE,
+                        endpoint,
+                        method: 'POST',
+                        requestPayload: { bulk: true, totalCount: orderIds.length },
+                        responsePayload: errorResponse,
+                        statusCode: error.response?.status,
+                        isSuccess: false,
+                        errorMessage: error.message,
+                        durationMs,
+                    });
+                }
+            }
+
             throw error;
         }
     }
@@ -1230,9 +1358,12 @@ export class InvoicesService {
     /**
      * Send invoice to Uyumsoft API
      */
-    private async sendToUyumsoft(payload: object): Promise<any> {
+    private async sendToUyumsoft(payload: object, orderId?: string): Promise<any> {
         const apiUrl = this.configService.get<string>('UYUMSOFT_API_URL')
             || 'http://api-embeauty.eko.uyumcloud.com';
+
+        const endpoint = `${apiUrl}/UyumApi/v1/PSM/InsertInvoice`;
+        const startTime = Date.now();
 
         // Get fresh token and secret key
         const { token, secretKey } = await this.getAccessToken();
@@ -1241,7 +1372,7 @@ export class InvoicesService {
             this.logger.log(`[Uyumsoft Request] Payload: ${JSON.stringify(payload)}`);
 
             const response = await axios.post(
-                `${apiUrl}/UyumApi/v1/PSM/InsertInvoice`,
+                endpoint,
                 payload,
                 {
                     headers: {
@@ -1252,10 +1383,46 @@ export class InvoicesService {
                 }
             );
 
+            const durationMs = Date.now() - startTime;
             this.logger.log(`[Uyumsoft Response] Success: ${JSON.stringify(response.data)}`);
+
+            if (orderId) {
+                await this.orderApiLogService.log({
+                    orderId,
+                    provider: ApiLogProvider.UYUMSOFT,
+                    logType: ApiLogType.CREATE_INVOICE,
+                    endpoint,
+                    method: 'POST',
+                    requestPayload: payload,
+                    responsePayload: response.data,
+                    statusCode: response.status,
+                    isSuccess: true,
+                    durationMs,
+                });
+            }
+
             return response.data;
-        } catch (error) {
-            this.logger.error(`[Uyumsoft Response] Error: ${JSON.stringify(error.response?.data || error.message)}`);
+        } catch (error: any) {
+            const durationMs = Date.now() - startTime;
+            const errorResponse = error.response?.data || error.message;
+            this.logger.error(`[Uyumsoft Response] Error: ${JSON.stringify(errorResponse)}`);
+
+            if (orderId) {
+                await this.orderApiLogService.log({
+                    orderId,
+                    provider: ApiLogProvider.UYUMSOFT,
+                    logType: ApiLogType.CREATE_INVOICE,
+                    endpoint,
+                    method: 'POST',
+                    requestPayload: payload,
+                    responsePayload: errorResponse,
+                    statusCode: error.response?.status,
+                    isSuccess: false,
+                    errorMessage: error.message,
+                    durationMs,
+                });
+            }
+
             throw error;
         }
     }
@@ -1480,7 +1647,7 @@ export class InvoicesService {
 
         // Retry sending to Uyumsoft
         try {
-            const response = await this.sendToUyumsoft(newPayload);
+            const response = await this.sendToUyumsoft(newPayload, invoice.orderId || undefined);
 
             invoice.status = InvoiceStatus.SUCCESS;
             invoice.responsePayload = response;
@@ -1876,6 +2043,29 @@ export class InvoicesService {
     }
 
     /**
+     * Send Invoiced status after bulk invoice - fetches store and calls main method
+     */
+    private async sendInvoicedStatusAfterBulk(order: Order, invoice: Invoice): Promise<void> {
+        if (!order.storeId) {
+            return;
+        }
+
+        try {
+            const storeConfig = await this.storeRepository.findOne({
+                where: { id: order.storeId },
+            });
+
+            if (!storeConfig || storeConfig.type === StoreType.MANUAL) {
+                return;
+            }
+
+            await this.sendInvoicedStatusToIntegration(order, invoice, storeConfig);
+        } catch (error: any) {
+            this.logger.warn(`Failed to send Invoiced status for bulk order ${order.id}: ${error.message}`);
+        }
+    }
+
+    /**
      * Update Trendyol order status to Invoiced
      */
     private async updateTrendyolInvoicedStatus(
@@ -1917,6 +2107,7 @@ export class InvoicesService {
 
         const url = `https://apigw.trendyol.com/integration/order/sellers/${storeConfig.sellerId}/shipment-packages/${order.packageId}`;
         const auth = Buffer.from(`${storeConfig.apiKey}:${storeConfig.apiSecret}`).toString('base64');
+        const startTime = Date.now();
 
         const response = await fetch(url, {
             method: 'PUT',
@@ -1927,9 +2118,32 @@ export class InvoicesService {
             body: JSON.stringify(requestBody),
         });
 
+        const durationMs = Date.now() - startTime;
+        const responseText = await response.text();
+        let responseData: object | string = responseText;
+        try {
+            responseData = JSON.parse(responseText);
+        } catch {
+            // Keep as string if not valid JSON
+        }
+
+        // Log API call
+        await this.orderApiLogService.log({
+            orderId: order.id,
+            provider: ApiLogProvider.TRENDYOL,
+            logType: ApiLogType.UPDATE_STATUS,
+            endpoint: url,
+            method: 'PUT',
+            requestPayload: requestBody,
+            responsePayload: responseData,
+            statusCode: response.status,
+            isSuccess: response.ok,
+            errorMessage: !response.ok ? `Trendyol API error: ${response.status}` : undefined,
+            durationMs,
+        });
+
         if (!response.ok) {
-            const errorData = await response.text();
-            throw new Error(`Trendyol API error: ${response.status} - ${errorData}`);
+            throw new Error(`Trendyol API error: ${response.status} - ${responseText}`);
         }
 
         this.logger.log(`Trendyol status updated to Invoiced for package ${order.packageId}`);
@@ -2194,7 +2408,7 @@ export class InvoicesService {
 
         // Send to Uyumsoft
         try {
-            const response = await this.sendToUyumsoft(requestPayload);
+            const response = await this.sendToUyumsoft(requestPayload, data.orderId);
 
             if (response && !response.isError) {
                 savedInvoice.status = InvoiceStatus.SUCCESS;

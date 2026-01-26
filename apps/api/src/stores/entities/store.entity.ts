@@ -60,6 +60,15 @@ export class Store extends BaseEntity {
   @JoinColumn({ name: 'shipping_provider_id' })
   shippingProvider: ShippingProvider;
 
+  @Column({ name: 'cargo_customer_code', type: 'varchar', length: 100, nullable: true })
+  cargoCustomerCode: string;
+
+  @Column({ name: 'cargo_username', type: 'varchar', length: 255, nullable: true })
+  cargoUsername: string;
+
+  @Column({ name: 'cargo_password', type: 'varchar', length: 255, nullable: true })
+  cargoPassword: string;
+
   // ─────────────────────────────────────────────────────────────
   // Senkronizasyon Ayarları
   // ─────────────────────────────────────────────────────────────

@@ -16,6 +16,9 @@ export class StoreResponseDto {
   
   shippingProviderId?: string;
   shippingProviderName?: string;
+  cargoCustomerCode?: string;
+  hasCargoUsername: boolean;
+  hasCargoPassword: boolean;
   
   crawlIntervalMinutes: number;
   sendStock: boolean;
@@ -71,6 +74,13 @@ export class StoreResponseDto {
   microExportBulkSequenceNo?: string;
   microExportRefundSerialNo?: string;
   microExportRefundSequenceNo?: string;
+
+  // Fatura Gönderen Bilgileri
+  senderCompanyName?: string;
+  senderAddress?: string;
+  senderTaxOffice?: string;
+  senderTaxNumber?: string;
+  senderPhone?: string;
   
   createdAt: Date;
   updatedAt: Date;
@@ -92,6 +102,9 @@ export class StoreResponseDto {
       
       shippingProviderId: entity.shippingProviderId,
       shippingProviderName: entity.shippingProvider?.name,
+      cargoCustomerCode: entity.cargoCustomerCode,
+      hasCargoUsername: !!entity.cargoUsername,
+      hasCargoPassword: !!entity.cargoPassword,
       
       crawlIntervalMinutes: entity.crawlIntervalMinutes,
       sendStock: entity.sendStock,
@@ -147,6 +160,13 @@ export class StoreResponseDto {
       microExportBulkSequenceNo: entity.microExportBulkSequenceNo,
       microExportRefundSerialNo: entity.microExportRefundSerialNo,
       microExportRefundSequenceNo: entity.microExportRefundSequenceNo,
+
+      // Fatura Gönderen Bilgileri
+      senderCompanyName: entity.senderCompanyName,
+      senderAddress: entity.senderAddress,
+      senderTaxOffice: entity.senderTaxOffice,
+      senderTaxNumber: entity.senderTaxNumber,
+      senderPhone: entity.senderPhone,
       
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,

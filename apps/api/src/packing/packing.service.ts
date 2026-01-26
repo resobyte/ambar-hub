@@ -30,6 +30,8 @@ import { Product } from '../products/entities/product.entity';
 import { ProductStore } from '../product-stores/entities/product-store.entity';
 import { OrderHistoryService } from '../orders/order-history.service';
 import { OrderHistoryAction } from '../orders/entities/order-history.entity';
+import { OrderApiLogService } from '../orders/order-api-log.service';
+import { ApiLogProvider, ApiLogType } from '../orders/entities/order-api-log.entity';
 
 export interface ShipmentResult {
     success: boolean;
@@ -75,6 +77,8 @@ export class PackingService {
         private readonly shelvesService: ShelvesService,
         @Inject(forwardRef(() => OrderHistoryService))
         private readonly orderHistoryService: OrderHistoryService,
+        @Inject(forwardRef(() => OrderApiLogService))
+        private readonly orderApiLogService: OrderApiLogService,
     ) { }
 
     async startSession(dto: StartPackingDto, userId?: string): Promise<PackingSession> {
@@ -734,7 +738,27 @@ export class PackingService {
         }
 
         try {
-            const arasResult = await this.arasKargoService.createShipment(order);
+            const credentials = order.store?.cargoUsername ? {
+                customerCode: order.store.cargoCustomerCode,
+                username: order.store.cargoUsername,
+                password: order.store.cargoPassword,
+            } : undefined;
+
+            const arasResult = await this.arasKargoService.createShipment(order, credentials);
+            
+            await this.orderApiLogService.log({
+                orderId: order.id,
+                provider: ApiLogProvider.ARAS_KARGO,
+                logType: ApiLogType.SET_ORDER,
+                endpoint: arasResult._request?.endpoint,
+                method: 'POST',
+                requestPayload: arasResult._request,
+                responsePayload: arasResult._response,
+                isSuccess: arasResult.ResultCode === '0',
+                errorMessage: arasResult.ResultCode !== '0' ? arasResult.ResultMsg : undefined,
+                durationMs: arasResult._durationMs,
+            });
+
             if (arasResult.ResultCode === '0') {
                 this.logger.log(`Aras Kargo shipment created for order ${order.orderNumber}`);
 
@@ -769,8 +793,23 @@ export class PackingService {
             } else {
                 this.logger.warn(`Aras Kargo failed: ${arasResult.ResultMsg}`);
             }
-        } catch (error) {
+        } catch (error: any) {
             this.logger.error(`Aras Kargo error: ${error.message}`);
+            
+            if (error._request) {
+                await this.orderApiLogService.log({
+                    orderId: order.id,
+                    provider: ApiLogProvider.ARAS_KARGO,
+                    logType: ApiLogType.SET_ORDER,
+                    endpoint: error._request?.endpoint,
+                    method: 'POST',
+                    requestPayload: error._request,
+                    responsePayload: error._response,
+                    isSuccess: false,
+                    errorMessage: error.message,
+                    durationMs: error._durationMs,
+                });
+            }
         }
 
         await this.orderRepository.update(order.id, { status: OrderStatus.SHIPPED });
@@ -805,6 +844,7 @@ export class PackingService {
 
         const url = `https://apigw.trendyol.com/integration/order/sellers/${store.sellerId}/shipment-packages/${order.packageId}`;
         const auth = Buffer.from(`${store.apiKey}:${store.apiSecret}`).toString('base64');
+        const startTime = Date.now();
 
         const response = await fetch(url, {
             method: 'PUT',
@@ -815,9 +855,31 @@ export class PackingService {
             body: JSON.stringify(requestBody),
         });
 
+        const durationMs = Date.now() - startTime;
+        const responseText = await response.text();
+        let responseData: any;
+        try {
+            responseData = JSON.parse(responseText);
+        } catch {
+            responseData = responseText;
+        }
+
+        await this.orderApiLogService.log({
+            orderId: order.id,
+            provider: ApiLogProvider.TRENDYOL,
+            logType: ApiLogType.UPDATE_STATUS,
+            endpoint: url,
+            method: 'PUT',
+            requestPayload: requestBody,
+            responsePayload: responseData,
+            statusCode: response.status,
+            isSuccess: response.ok,
+            errorMessage: !response.ok ? `HTTP ${response.status}: ${responseText}` : undefined,
+            durationMs,
+        });
+
         if (!response.ok) {
-            const errorData = await response.text();
-            throw new Error(`Trendyol API error: ${response.status} - ${errorData}`);
+            throw new Error(`Trendyol API error: ${response.status} - ${responseText}`);
         }
 
         this.logger.log(`Trendyol status updated to ${status} for package ${order.packageId}`);
@@ -841,12 +903,32 @@ export class PackingService {
 
         if (!zpl && (order.cargoTrackingNumber || order.cargoSenderNumber)) {
             try {
-                const arasZpl = await this.arasKargoService.getBarcode(
-                    order.cargoTrackingNumber || order.cargoSenderNumber || ''
+                const credentials = order.store?.cargoUsername ? {
+                    customerCode: order.store.cargoCustomerCode,
+                    username: order.store.cargoUsername,
+                    password: order.store.cargoPassword,
+                } : undefined;
+
+                const arasResult = await this.arasKargoService.getBarcode(
+                    order.cargoTrackingNumber || order.cargoSenderNumber || '',
+                    credentials
                 );
 
-                if (arasZpl) {
-                    zpl = arasZpl;
+                await this.orderApiLogService.log({
+                    orderId: order.id,
+                    provider: ApiLogProvider.ARAS_KARGO,
+                    logType: ApiLogType.GET_BARCODE,
+                    endpoint: arasResult._request?.endpoint,
+                    method: 'POST',
+                    requestPayload: arasResult._request,
+                    responsePayload: arasResult._response,
+                    isSuccess: !!arasResult.zpl,
+                    errorMessage: !arasResult.zpl ? arasResult.resultMsg : undefined,
+                    durationMs: arasResult._durationMs,
+                });
+
+                if (arasResult.zpl) {
+                    zpl = arasResult.zpl;
                     await this.orderRepository.update(order.id, { cargoLabelZpl: zpl });
                     labelType = 'aras';
                 }
@@ -875,6 +957,16 @@ export class PackingService {
         const phone = shippingAddress.phone || order.customer?.phone || '';
         const senderNumber = order.cargoSenderNumber || order.packageId || order.orderNumber;
 
+        // Store info for sender
+        const store = order.store;
+        const senderName = store?.senderCompanyName || store?.brandName || 'Gönderen';
+        const senderAddress = store?.senderAddress || '';
+
+        // Items list (max 5)
+        const itemsList = (order.items || []).slice(0, 5).map(item =>
+            `${item.sku || item.barcode || 'N/A'} x${item.quantity || 1} - ${item.productName || 'Ürün'}`
+        ).join('<br>');
+
         return `
 <!DOCTYPE html>
 <html lang="tr">
@@ -889,7 +981,9 @@ export class PackingService {
     .sender-number { font-size: 16pt; font-weight: bold; text-align: center; margin: 3mm 0; letter-spacing: 2px; }
     .recipient { margin-top: 5mm; font-size: 11pt; line-height: 1.4; }
     .recipient strong { font-size: 12pt; }
-    .order-info { margin-top: 5mm; font-size: 9pt; color: #333; border-top: 1px dashed #999; padding-top: 3mm; }
+    .sender { margin-top: 3mm; font-size: 9pt; color: #333; }
+    .items { margin-top: 3mm; font-size: 8pt; color: #555; border-top: 1px dashed #999; padding-top: 2mm; }
+    .order-info { margin-top: 3mm; font-size: 9pt; color: #333; border-top: 1px dashed #999; padding-top: 2mm; }
     @media print { @page { size: 100mm 100mm; margin: 0; } body { margin: 0; } }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
@@ -905,6 +999,11 @@ export class PackingService {
       ${address}<br>
       ${phone ? `Tel: ${phone}` : ''}
     </div>
+    <div class="sender">
+      <strong>GÖNDERİCİ:</strong> ${senderName}<br>
+      ${senderAddress}
+    </div>
+    ${itemsList ? `<div class="items"><strong>Ürünler:</strong><br>${itemsList}</div>` : ''}
     <div class="order-info">
       Sipariş No: ${order.orderNumber}<br>
       Tarih: ${new Date().toLocaleDateString('tr-TR')}

@@ -28,6 +28,8 @@ import { OrderHistoryAction } from '../orders/entities/order-history.entity';
 import { InvoicesService } from '../invoices/invoices.service';
 import { ArasKargoService } from '../stores/providers/aras-kargo.service';
 import { Store } from '../stores/entities/store.entity';
+import { OrderApiLogService } from '../orders/order-api-log.service';
+import { ApiLogProvider, ApiLogType } from '../orders/entities/order-api-log.entity';
 
 interface ProductInfo {
     barcode: string;
@@ -98,6 +100,8 @@ export class RoutesService {
         @Inject(forwardRef(() => InvoicesService))
         private readonly invoicesService: InvoicesService,
         private readonly arasKargoService: ArasKargoService,
+        @Inject(forwardRef(() => OrderApiLogService))
+        private readonly orderApiLogService: OrderApiLogService,
     ) { }
 
     async create(dto: CreateRouteDto, userId?: string): Promise<RouteResponseDto> {
@@ -870,10 +874,45 @@ export class RoutesService {
      */
     private async fetchArasLabel(order: Order): Promise<string | null> {
         try {
-            const integrationCode = order.cargoTrackingNumber || order.orderNumber;
-            return await this.arasKargoService.getBarcode(integrationCode);
-        } catch (error) {
+            const integrationCode = order.cargoTrackingNumber || order.cargoSenderNumber || order.orderNumber;
+            
+            const credentials = order.store?.cargoUsername ? {
+                customerCode: order.store.cargoCustomerCode,
+                username: order.store.cargoUsername,
+                password: order.store.cargoPassword,
+            } : undefined;
+
+            const result = await this.arasKargoService.getBarcode(integrationCode, credentials);
+
+            // Log API call
+            await this.orderApiLogService.log({
+                orderId: order.id,
+                provider: ApiLogProvider.ARAS_KARGO,
+                logType: ApiLogType.GET_BARCODE,
+                endpoint: result._request?.endpoint,
+                method: 'POST',
+                requestPayload: result._request,
+                responsePayload: result._response,
+                isSuccess: !!result.zpl,
+                errorMessage: !result.zpl ? result.resultMsg : undefined,
+                durationMs: result._durationMs,
+            });
+
+            return result.zpl;
+        } catch (error: any) {
             this.logger.warn(`Aras label fetch failed for ${order.orderNumber}: ${error.message}`);
+
+            // Log failed attempt
+            await this.orderApiLogService.log({
+                orderId: order.id,
+                provider: ApiLogProvider.ARAS_KARGO,
+                logType: ApiLogType.GET_BARCODE,
+                method: 'POST',
+                requestPayload: { integrationCode: order.cargoTrackingNumber || order.cargoSenderNumber || order.orderNumber },
+                isSuccess: false,
+                errorMessage: error.message,
+            });
+
             return null;
         }
     }

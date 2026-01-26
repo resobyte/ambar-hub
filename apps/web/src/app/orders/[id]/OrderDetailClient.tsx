@@ -12,6 +12,8 @@ import {
     getOrderStockMovements,
     StockMovement,
     getOrderCargoLabel,
+    getOrderApiLogs,
+    OrderApiLog,
 } from '@/lib/api';
 
 import {
@@ -35,6 +37,12 @@ import {
 } from '@/components/ui/table';
 import { Separator } from '@/components/ui/separator';
 import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
+import {
     Loader2,
     ArrowLeft,
     Package,
@@ -55,6 +63,8 @@ import {
     ArrowUpRight,
     ArrowLeftRight,
     Printer,
+    Code2,
+    Eye,
 } from 'lucide-react';
 import { ReshipmentModal } from '@/components/orders/ReshipmentModal';
 
@@ -212,10 +222,12 @@ export function OrderDetailClient({ orderId }: Props) {
     const [order, setOrder] = useState<Order | null>(null);
     const [timeline, setTimeline] = useState<OrderHistoryEvent[]>([]);
     const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
+    const [apiLogs, setApiLogs] = useState<OrderApiLog[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [reshipModalOpen, setReshipModalOpen] = useState(false);
     const [labelLoading, setLabelLoading] = useState(false);
+    const [selectedLog, setSelectedLog] = useState<OrderApiLog | null>(null);
 
     // Etiket görüntülenebilir statüler
     const labelVisibleStatuses = [
@@ -248,20 +260,32 @@ export function OrderDetailClient({ orderId }: Props) {
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const [orderRes, timelineRes, movementsRes] = await Promise.all([
+            const [orderRes, timelineRes, movementsRes, apiLogsRes] = await Promise.all([
                 getOrder(orderId),
                 getOrderTimeline(orderId),
                 getOrderStockMovements(orderId),
+                getOrderApiLogs(orderId),
             ]);
             setOrder(orderRes.data);
             setTimeline(timelineRes.data);
             setStockMovements(movementsRes.data || []);
+            setApiLogs(apiLogsRes.data || []);
         } catch (err: any) {
             setError(err.message || 'Sipariş yüklenemedi');
         } finally {
             setLoading(false);
         }
     }, [orderId]);
+
+    const formatJson = (jsonString: string | null): string => {
+        if (!jsonString) return '-';
+        try {
+            const parsed = JSON.parse(jsonString);
+            return JSON.stringify(parsed, null, 2);
+        } catch {
+            return jsonString;
+        }
+    };
 
     useEffect(() => {
         fetchData();
@@ -619,8 +643,179 @@ export function OrderDetailClient({ orderId }: Props) {
                             )}
                         </CardContent>
                     </Card>
+
+                    {/* API Logları */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <Code2 className="h-5 w-5" />
+                                API Logları
+                                {apiLogs.length > 0 && (
+                                    <Badge variant="secondary" className="ml-2">{apiLogs.length}</Badge>
+                                )}
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                            {apiLogs.length === 0 ? (
+                                <p className="text-muted-foreground text-sm text-center py-6">
+                                    API logu bulunamadı
+                                </p>
+                            ) : (
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead className="w-[100px]">Sağlayıcı</TableHead>
+                                            <TableHead>İşlem</TableHead>
+                                            <TableHead className="w-[70px] text-center">Durum</TableHead>
+                                            <TableHead className="w-[70px] text-right">Süre</TableHead>
+                                            <TableHead className="w-[130px]">Tarih</TableHead>
+                                            <TableHead className="w-[50px]"></TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {apiLogs.map((log) => (
+                                            <TableRow key={log.id} className={log.isSuccess ? '' : 'bg-red-50/50'}>
+                                                <TableCell>
+                                                    <Badge 
+                                                        variant={log.provider === 'UYUMSOFT' ? 'outline' : 'secondary'} 
+                                                        className="text-xs font-normal"
+                                                    >
+                                                        {log.provider === 'ARAS_KARGO' ? 'Aras' : 
+                                                         log.provider === 'TRENDYOL' ? 'Trendyol' :
+                                                         log.provider === 'HEPSIBURADA' ? 'HB' :
+                                                         log.provider === 'UYUMSOFT' ? 'Uyumsoft' : log.provider}
+                                                    </Badge>
+                                                </TableCell>
+                                                <TableCell className="font-medium text-sm">
+                                                    {log.logType === 'SET_ORDER' ? 'Kargo Kaydı' :
+                                                     log.logType === 'GET_BARCODE' ? 'Etiket' :
+                                                     log.logType === 'UPDATE_STATUS' ? 'Statü Güncelle' :
+                                                     log.logType === 'CREATE_INVOICE' ? 'Fatura' :
+                                                     log.logType === 'GET_ORDER' ? 'Sipariş Çek' : log.logType}
+                                                </TableCell>
+                                                <TableCell className="text-center">
+                                                    {log.isSuccess ? (
+                                                        <CheckCircle2 className="h-4 w-4 text-green-600 mx-auto" />
+                                                    ) : (
+                                                        <XCircle className="h-4 w-4 text-red-600 mx-auto" />
+                                                    )}
+                                                </TableCell>
+                                                <TableCell className="text-right text-xs text-muted-foreground">
+                                                    {log.durationMs ? `${log.durationMs}ms` : '-'}
+                                                </TableCell>
+                                                <TableCell className="text-xs text-muted-foreground">
+                                                    {formatDate(log.createdAt)}
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-7 w-7"
+                                                        onClick={() => setSelectedLog(log)}
+                                                    >
+                                                        <Eye className="h-4 w-4" />
+                                                    </Button>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            )}
+                        </CardContent>
+                    </Card>
                 </div>
             </div>
+
+            {/* API Log Detail Modal */}
+            <Dialog open={!!selectedLog} onOpenChange={(open) => !open && setSelectedLog(null)}>
+                <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-3">
+                            <Code2 className="h-5 w-5" />
+                            API Log Detayı
+                            {selectedLog && (
+                                <Badge variant={selectedLog.isSuccess ? 'default' : 'destructive'}>
+                                    {selectedLog.isSuccess ? 'Başarılı' : 'Hata'}
+                                </Badge>
+                            )}
+                        </DialogTitle>
+                    </DialogHeader>
+                    
+                    {selectedLog && (
+                        <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+                            {/* Summary */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-3 bg-muted/50 rounded-lg">
+                                <div>
+                                    <p className="text-xs text-muted-foreground">Sağlayıcı</p>
+                                    <p className="font-medium text-sm">{selectedLog.provider}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-muted-foreground">İşlem</p>
+                                    <p className="font-medium text-sm">{selectedLog.logType}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-muted-foreground">HTTP Status</p>
+                                    <p className="font-medium text-sm">{selectedLog.statusCode || '-'}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-muted-foreground">Süre</p>
+                                    <p className="font-medium text-sm">{selectedLog.durationMs ? `${selectedLog.durationMs}ms` : '-'}</p>
+                                </div>
+                            </div>
+
+                            {/* Endpoint */}
+                            {selectedLog.endpoint && (
+                                <div>
+                                    <p className="text-xs font-medium text-muted-foreground mb-1.5">Endpoint</p>
+                                    <code className="text-xs bg-muted p-2.5 rounded-lg block overflow-x-auto">
+                                        <span className="text-blue-600 font-semibold">{selectedLog.method}</span>{' '}
+                                        {selectedLog.endpoint}
+                                    </code>
+                                </div>
+                            )}
+
+                            {/* Request Payload */}
+                            {selectedLog.requestPayload && (
+                                <div>
+                                    <p className="text-xs font-medium text-muted-foreground mb-1.5">Request Payload</p>
+                                    <pre className="text-xs bg-slate-900 text-slate-100 p-3 rounded-lg overflow-x-auto max-h-56">
+                                        {formatJson(selectedLog.requestPayload)}
+                                    </pre>
+                                </div>
+                            )}
+
+                            {/* Response Payload */}
+                            {selectedLog.responsePayload && (
+                                <div>
+                                    <p className="text-xs font-medium text-muted-foreground mb-1.5">Response Payload</p>
+                                    <pre className={`text-xs p-3 rounded-lg overflow-x-auto max-h-56 ${
+                                        selectedLog.isSuccess 
+                                            ? 'bg-green-950 text-green-100' 
+                                            : 'bg-red-950 text-red-100'
+                                    }`}>
+                                        {formatJson(selectedLog.responsePayload)}
+                                    </pre>
+                                </div>
+                            )}
+
+                            {/* Error Message */}
+                            {selectedLog.errorMessage && (
+                                <div>
+                                    <p className="text-xs font-medium text-red-600 mb-1.5">Hata Mesajı</p>
+                                    <p className="text-sm text-red-700 bg-red-100 p-3 rounded-lg">
+                                        {selectedLog.errorMessage}
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Timestamp */}
+                            <div className="text-xs text-muted-foreground pt-2 border-t">
+                                Tarih: {formatDate(selectedLog.createdAt)}
+                            </div>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
 
             {/* Reshipment Modal */}
             {order && (

@@ -140,6 +140,9 @@ export interface Store {
   // Kargo Ayarları
   shippingProviderId?: string | null;
   shippingProviderName?: string;
+  cargoCustomerCode?: string;
+  hasCargoUsername?: boolean;
+  hasCargoPassword?: boolean;
 
   // Senkronizasyon Ayarları
   crawlIntervalMinutes?: number;
@@ -1115,6 +1118,33 @@ export interface StockMovement {
 
 export async function getOrderStockMovements(orderId: string): Promise<{ success: boolean; data: StockMovement[] }> {
   const res = await fetch(`${API_URL}/shelves/movements/history?orderId=${orderId}&limit=100`, {
+    cache: 'no-store',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    return { success: false, data: [] };
+  }
+  return res.json();
+}
+
+export interface OrderApiLog {
+  id: string;
+  orderId: string;
+  provider: 'ARAS_KARGO' | 'TRENDYOL' | 'HEPSIBURADA' | 'IKAS' | 'UYUMSOFT';
+  logType: 'SET_ORDER' | 'GET_BARCODE' | 'UPDATE_STATUS' | 'GET_ORDER' | 'CREATE_INVOICE' | 'OTHER';
+  endpoint: string | null;
+  method: string | null;
+  requestPayload: string | null;
+  responsePayload: string | null;
+  statusCode: number | null;
+  isSuccess: boolean;
+  errorMessage: string | null;
+  durationMs: number | null;
+  createdAt: string;
+}
+
+export async function getOrderApiLogs(orderId: string): Promise<{ success: boolean; data: OrderApiLog[] }> {
+  const res = await fetch(`${API_URL}/orders/${orderId}/api-logs`, {
     cache: 'no-store',
     credentials: 'include',
   });

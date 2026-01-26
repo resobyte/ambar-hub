@@ -28,23 +28,40 @@ export interface ArasSetOrderResponse {
     ResultCode: string;
     ResultMsg: string;
     OrgReceiverCustId?: string;
+    _request?: any;
+    _response?: any;
+    _durationMs?: number;
+}
+
+export interface ArasGetBarcodeResponse {
+    zpl: string | null;
+    resultCode?: string;
+    resultMsg?: string;
+    _request?: any;
+    _response?: any;
+    _durationMs?: number;
+}
+
+export interface ArasCargoCredentials {
+    customerCode?: string;
+    username: string;
+    password: string;
 }
 
 @Injectable()
 export class ArasKargoService {
     private readonly logger = new Logger(ArasKargoService.name);
-    private readonly serviceUrl = process.env.ARAS_SERVICE_URL || 'https://customerservicestest.araskargo.com.tr/arascargoservice/arascargoservice.asmx';
+    private readonly serviceUrl = process.env.ARAS_SERVICE_URL || 'https://customerws.araskargo.com.tr/arascargoservice.asmx';
     private readonly testServiceUrl = 'https://customerservicestest.araskargo.com.tr/arascargoservice/arascargoservice.asmx';
-    private readonly isTest = process.env.ARAS_TEST_MODE !== 'false';
 
-    private getCredentials() {
-        const isTest = this.isTest;
-        const username = isTest ? "neodyum" : process.env.ARAS_USERNAME;
-        const password = isTest ? "nd2580" : process.env.ARAS_PASSWORD;
-        return { username, password };
+    private getDefaultCredentials(): ArasCargoCredentials {
+        const username = process.env.ARAS_USERNAME || '';
+        const password = process.env.ARAS_PASSWORD || '';
+        const customerCode = process.env.ARAS_CUSTOMER_CODE || '';
+        return { username, password, customerCode };
     }
 
-    async createShipment(order: any): Promise<ArasSetOrderResponse> {
+    async createShipment(order: any, credentials?: ArasCargoCredentials): Promise<ArasSetOrderResponse> {
         const shippingAddress = order.shippingAddress || {};
 
         const volumetricWeight = Number(order.cargoDeci) || 1;
@@ -69,11 +86,11 @@ export class ArasKargoService {
             PayorTypeCode: order.whoPays === 2 ? 2 : 1,
         };
 
-        return this.setOrder(arasOrder);
+        return this.setOrder(arasOrder, credentials);
     }
 
-    async setOrder(orderInfo: ArasOrderInfo): Promise<ArasSetOrderResponse> {
-        const { username, password } = this.getCredentials();
+    async setOrder(orderInfo: ArasOrderInfo, credentials?: ArasCargoCredentials): Promise<ArasSetOrderResponse> {
+        const { username, password } = credentials || this.getDefaultCredentials();
 
         const pieceDetailsXml = orderInfo.Pieces.map(piece => `
                 <PieceDetail>
@@ -114,16 +131,26 @@ export class ArasKargoService {
   </soap:Body>
 </soap:Envelope>`;
 
+        const startTime = Date.now();
+        const endpoint = this.serviceUrl;
+        const requestPayload = {
+            endpoint,
+            method: 'SetOrder',
+            orderInfo: { ...orderInfo },
+        };
+
         try {
             this.logger.log(`Sending SetOrder to Aras for IntegrationCode: ${orderInfo.IntegrationCode}`);
 
-            const response = await axios.post(this.isTest ? this.testServiceUrl : this.serviceUrl, soapBody, {
+            const response = await axios.post(endpoint, soapBody, {
                 headers: {
                     'Content-Type': 'text/xml; charset=utf-8',
                     'SOAPAction': 'http://tempuri.org/SetOrder'
                 },
                 timeout: 30000
             });
+
+            const durationMs = Date.now() - startTime;
 
             const xmlResult = await parseStringPromise(response.data, {
                 explicitArray: false,
@@ -142,29 +169,40 @@ export class ArasKargoService {
             return {
                 ResultCode: resultBody.ResultCode,
                 ResultMsg: resultBody.ResultMsg,
-                OrgReceiverCustId: resultBody.OrgReceiverCustId
+                OrgReceiverCustId: resultBody.OrgReceiverCustId,
+                _request: requestPayload,
+                _response: resultBody,
+                _durationMs: durationMs,
             };
 
         } catch (error) {
+            const durationMs = Date.now() - startTime;
             this.logger.error(`SetOrder failed for ${orderInfo.IntegrationCode}: ${error.message}`);
+            
+            const errorResponse = axios.isAxiosError(error) ? error.response?.data : error.message;
             if (axios.isAxiosError(error)) {
                 this.logger.error(`Aras Error Response: ${JSON.stringify(error.response?.data)}`);
             }
-            throw error;
+
+            const err = error as Error & { _request?: any; _response?: any; _durationMs?: number };
+            err._request = requestPayload;
+            err._response = errorResponse;
+            err._durationMs = durationMs;
+            throw err;
         }
     }
 
-    async getBarcode(integrationCode: string): Promise<string | null> {
+    async getBarcode(integrationCode: string, credentials?: ArasCargoCredentials): Promise<ArasGetBarcodeResponse> {
         if (!integrationCode) {
             this.logger.warn('No integration code provided for Aras Kargo barcode fetch');
-            return null;
+            return { zpl: null };
         }
 
-        const { username, password } = this.getCredentials();
+        const { username, password } = credentials || this.getDefaultCredentials();
 
         if (!username || !password) {
             this.logger.error('Aras Kargo credentials missing');
-            return null;
+            return { zpl: null };
         }
 
         const soapBody = `<?xml version="1.0" encoding="utf-8"?>
@@ -179,13 +217,23 @@ export class ArasKargoService {
    </soapenv:Body>
 </soapenv:Envelope>`;
 
+        const startTime = Date.now();
+        const endpoint = this.serviceUrl;
+        const requestPayload = {
+            endpoint,
+            method: 'GetBarcode',
+            integrationCode,
+        };
+
         try {
-            const response = await axios.post(this.serviceUrl, soapBody, {
+            const response = await axios.post(endpoint, soapBody, {
                 headers: {
                     'Content-Type': 'text/xml; charset=utf-8',
                     'SOAPAction': 'http://tempuri.org/GetBarcode'
                 }
             });
+
+            const durationMs = Date.now() - startTime;
 
             const xmlResult = await parseStringPromise(response.data, {
                 explicitArray: false,
@@ -197,12 +245,24 @@ export class ArasKargoService {
 
             if (!resultData) {
                 this.logger.error('Empty response from Aras Kargo GetBarcode');
-                return null;
+                return {
+                    zpl: null,
+                    _request: requestPayload,
+                    _response: { error: 'Empty response' },
+                    _durationMs: durationMs,
+                };
             }
 
             if (resultData.ResultCode !== '0') {
                 this.logger.warn(`Aras Kargo Error (${resultData.ResultCode}): ${resultData.Message}`);
-                return null;
+                return {
+                    zpl: null,
+                    resultCode: resultData.ResultCode,
+                    resultMsg: resultData.Message,
+                    _request: requestPayload,
+                    _response: resultData,
+                    _durationMs: durationMs,
+                };
             }
 
             const zplData = resultData.ZebraZpl;
@@ -218,14 +278,26 @@ export class ArasKargoService {
 
             if (!zplString) {
                 this.logger.warn(`Aras Kargo returned success (0) but no ZPL data found.`);
-                return null;
             }
 
-            return zplString;
+            return {
+                zpl: zplString || null,
+                resultCode: resultData.ResultCode,
+                resultMsg: resultData.Message,
+                _request: requestPayload,
+                _response: { ResultCode: resultData.ResultCode, Message: resultData.Message, hasZpl: !!zplString },
+                _durationMs: durationMs,
+            };
 
         } catch (error) {
+            const durationMs = Date.now() - startTime;
             this.logger.error(`Failed to fetch Aras Kargo barcode for ${integrationCode}: ${error.message}`);
-            return null;
+            return {
+                zpl: null,
+                _request: requestPayload,
+                _response: { error: error.message },
+                _durationMs: durationMs,
+            };
         }
     }
 
