@@ -36,7 +36,9 @@ export class InvoicesService {
      * Queue an invoice for later processing (creates PENDING record)
      * The actual invoice payload will be built when processing
      */
-    async queueInvoiceForOrder(orderId: string): Promise<Invoice> {
+    async queueInvoiceForOrder(orderId: string, options?: { isBulk?: boolean }): Promise<Invoice> {
+        const isBulk = options?.isBulk ?? false;
+
         const order = await this.orderRepository.findOne({
             where: { id: orderId },
             relations: ['items', 'customer', 'store'],
@@ -69,9 +71,12 @@ export class InvoicesService {
         let serialNo = '';
 
         // Determine serialNo based on invoice type
+        // isBulk: true -> use bulk serial numbers, false -> use normal serial numbers
         if (integrationType === 'TRENDYOL' && isMicroExport && storeConfig.hasMicroExport) {
-            // Mikro İhracat → MEA prefix
-            serialNo = storeConfig.microExportEArchiveSerialNo || '';
+            // Mikro İhracat
+            serialNo = isBulk
+                ? (storeConfig.microExportBulkSerialNo || storeConfig.microExportEArchiveSerialNo || '')
+                : (storeConfig.microExportEArchiveSerialNo || '');
         } else {
             // Check E-Invoice User
             const tckn = order.customer?.tcIdentityNumber;
@@ -93,11 +98,15 @@ export class InvoicesService {
                 : false;
 
             if (isEInvoiceUser) {
-                // E-Fatura → TEF prefix
-                serialNo = storeConfig.eInvoiceSerialNo || '';
+                // E-Fatura
+                serialNo = isBulk
+                    ? (storeConfig.bulkEInvoiceSerialNo || storeConfig.eInvoiceSerialNo || '')
+                    : (storeConfig.eInvoiceSerialNo || '');
             } else {
-                // E-Arşiv → EMA prefix
-                serialNo = storeConfig.eArchiveSerialNo || '';
+                // E-Arşiv
+                serialNo = isBulk
+                    ? (storeConfig.bulkEArchiveSerialNo || storeConfig.eArchiveSerialNo || '')
+                    : (storeConfig.eArchiveSerialNo || '');
             }
         }
 
@@ -631,14 +640,21 @@ export class InvoicesService {
     /**
      * Create and send bulk invoices to Uyumsoft using InsertInvoiceMulti
      */
+    /**
+     * Toplu fatura kuyruğa ekleme - sadece PENDING kayıtlar oluşturur
+     * Asıl fatura kesimi job tarafından yapılır
+     * @param sendImmediately - true ise direkt Uyumsoft'a gönderir, false ise sadece kuyruğa ekler
+     */
     async createBulkInvoices(orderIds: string[], options?: {
         branchCode?: string;
         docTraCode?: string;
         costCenterCode?: string;
         whouseCode?: string;
-    }): Promise<{ success: Invoice[]; failed: { orderId: string; error: string }[] }> {
+        sendImmediately?: boolean; // default: false - sadece kuyruğa ekle
+    }): Promise<{ success: Array<{ orderId: string; invoiceNumber: string }>; failed: { orderId: string; error: string }[] }> {
+        const sendImmediately = options?.sendImmediately ?? false;
         const results = {
-            success: [] as Invoice[],
+            success: [] as Array<{ orderId: string; invoiceNumber: string }>,
             failed: [] as { orderId: string; error: string }[],
         };
 
@@ -851,17 +867,31 @@ export class InvoicesService {
                     invoiceSettings,
                 });
 
+                // Kuyruğa eklendi - success'e ekle
+                results.success.push({
+                    orderId: order.id,
+                    invoiceNumber: savedInvoice.invoiceNumber,
+                });
+
             } catch (error) {
                 results.failed.push({ orderId: order.id, error: error.message });
             }
         }
 
         if (invoicePayloads.length === 0) {
-            this.logger.warn('No valid invoices to send');
+            this.logger.warn('No valid invoices to queue');
             return results;
         }
 
-        // 3. Send all payloads to InsertInvoiceMulti
+        // 3. sendImmediately: true ise direkt Uyumsoft'a gönder, false ise job işlesin
+        if (!sendImmediately) {
+            this.logger.log(`Bulk invoice queued: ${invoicePayloads.length} invoices added to queue (PENDING status)`);
+            return results;
+        }
+
+        // --- sendImmediately: true - Direkt gönder ---
+        this.logger.log(`Sending ${invoicePayloads.length} invoices immediately to Uyumsoft...`);
+
         try {
             const bulkPayload = {
                 value: invoicePayloads.map(p => p.payload.value),
@@ -881,22 +911,23 @@ export class InvoicesService {
                         invoiceData.invoice.uyumsoftInvoiceId = responseItem?.invoiceId || responseItem?.id;
                         invoiceData.invoice.ettn = responseItem?.ettn;
                         await this.invoiceRepository.save(invoiceData.invoice);
-                        results.success.push(invoiceData.invoice);
                     } else {
                         invoiceData.invoice.status = InvoiceStatus.ERROR;
                         invoiceData.invoice.errorMessage = responseItem?.exceptionMessage || 'Unknown error';
                         invoiceData.invoice.responsePayload = responseItem;
                         await this.invoiceRepository.save(invoiceData.invoice);
+                        // Already in success from queue step, update to failed
+                        const idx = results.success.findIndex(s => s.orderId === invoiceData.order.id);
+                        if (idx > -1) results.success.splice(idx, 1);
                         results.failed.push({ orderId: invoiceData.order.id, error: invoiceData.invoice.errorMessage });
                     }
                 }
             } else {
-                // If response is not array, mark all as success or handle differently
+                // If response is not array, mark all as success
                 for (const invoiceData of invoicePayloads) {
                     invoiceData.invoice.status = InvoiceStatus.SUCCESS;
                     invoiceData.invoice.responsePayload = response;
                     await this.invoiceRepository.save(invoiceData.invoice);
-                    results.success.push(invoiceData.invoice);
                 }
             }
 
@@ -910,6 +941,9 @@ export class InvoicesService {
                 invoiceData.invoice.errorMessage = error.message || 'Bulk send failed';
                 invoiceData.invoice.responsePayload = error.response?.data;
                 await this.invoiceRepository.save(invoiceData.invoice);
+                // Update results
+                const idx = results.success.findIndex(s => s.orderId === invoiceData.order.id);
+                if (idx > -1) results.success.splice(idx, 1);
                 results.failed.push({ orderId: invoiceData.order.id, error: invoiceData.invoice.errorMessage });
             }
         }
@@ -1918,19 +1952,28 @@ export class InvoicesService {
     }
 
     /**
-     * İade için Gider Pusulası oluştur
+     * İade için fatura kes (Uyumsoft'a gönder) ve Gider Pusulası oluştur
+     * - Uyumsoft'a iade faturası gönderir
+     * - Gider pusulası kaydı oluşturur (PDF için)
      */
-    async createExpenseVoucherForReturn(data: {
+    async createRefundInvoiceForReturn(data: {
         returnId: string;
         storeId: string;
+        orderId?: string;
+        orderNumber: string;
         customerFirstName: string;
         customerLastName: string;
+        customerAddress: string;
+        cargoTrackingNumber?: string;
+        cargoProviderName?: string;
         totalAmount: number;
         items: Array<{
             productName: string;
             barcode: string;
             quantity: number;
             price: number;
+            vatRate?: number;
+            shelfType?: 'NORMAL' | 'DAMAGED'; // Sağlam veya Hasarlı
         }>;
     }): Promise<Invoice> {
         const store = await this.storeRepository.findOne({ where: { id: data.storeId } });
@@ -1938,36 +1981,436 @@ export class InvoicesService {
             throw new NotFoundException('Mağaza bulunamadı');
         }
 
-        // Gider pusulası seri/sıra numarasını belirle
-        const serialNo = store.refundExpenseVoucherEArchiveSerialNo || 'GP';
-        const sequenceNo = await this.getNextSequenceNumber(serialNo);
-        const voucherNumber = `${serialNo}${new Date().getFullYear()}${sequenceNo.toString().padStart(9, '0')}`;
+        // Check if invoice already exists for this return
+        const existingInvoice = await this.invoiceRepository.findOne({
+            where: { returnId: data.returnId },
+        });
 
+        if (existingInvoice) {
+            this.logger.log(`Refund invoice already exists for return ${data.returnId}`);
+            return existingInvoice;
+        }
+
+        // Orijinal siparişi bul - cardCode kuralını oradan al
+        let originalOrder: Order | null = null;
+        if (data.orderId) {
+            originalOrder = await this.orderRepository.findOne({
+                where: { id: data.orderId },
+                relations: ['customer'],
+            });
+        }
+
+        // cardCode belirle - orijinal siparişteki fatura kuralına göre
+        let cardCode = store.eArchiveCardCode || 'TRENDYOL';
+
+        if (originalOrder) {
+            // Orijinal siparişin faturasını bul ve cardCode'u oradan al
+            const originalInvoice = await this.invoiceRepository.findOne({
+                where: { orderId: originalOrder.id, status: InvoiceStatus.SUCCESS },
+            });
+
+            if (originalInvoice?.cardCode) {
+                cardCode = originalInvoice.cardCode;
+                this.logger.log(`Using cardCode from original invoice: ${cardCode}`);
+            } else {
+                // Fatura yoksa, normal fatura kurallarını uygula
+                const integrationType = store.type as string;
+                const isMicroExport = originalOrder.micro === true;
+                const paymentMethod = originalOrder.paymentMethod?.toUpperCase() || '';
+                const isHavale = paymentMethod.includes('HAVALE') || paymentMethod.includes('EFT') || paymentMethod.includes('TRANSFER');
+
+                if (integrationType === StoreType.TRENDYOL && isMicroExport && store.hasMicroExport) {
+                    // Mikro İhracat
+                    const countryCode = this.getCountryCode(originalOrder);
+                    cardCode = `TRENDYOL ${countryCode}`;
+                } else {
+                    // E-Arşiv / E-Fatura kuralı
+                    const tckn = originalOrder.customer?.tcIdentityNumber;
+                    const taxNo = originalOrder.customer?.taxNumber;
+                    let idToCheck = tckn;
+                    const isDummy = (id: string) => !id || id === '11111111111' || id.length < 10;
+
+                    if (isDummy(tckn) && !isDummy(taxNo)) {
+                        idToCheck = taxNo;
+                    } else if (!isDummy(tckn)) {
+                        idToCheck = tckn;
+                    } else {
+                        idToCheck = taxNo || tckn;
+                    }
+
+                    const cleanTaxId = idToCheck?.replace(/\D/g, '');
+                    const isEInvoiceUser = cleanTaxId && cleanTaxId.length >= 10
+                        ? await this.checkEInvoiceUser(cleanTaxId)
+                        : false;
+
+                    if (isEInvoiceUser) {
+                        cardCode = store.eInvoiceCardCode || store.eArchiveCardCode || 'TRENDYOL';
+                    } else {
+                        if (integrationType === StoreType.IKAS && isHavale && store.eArchiveHavaleCardCode) {
+                            cardCode = store.eArchiveHavaleCardCode;
+                        } else {
+                            cardCode = store.eArchiveCardCode || 'TRENDYOL';
+                        }
+                    }
+                }
+                this.logger.log(`Determined cardCode from order rules: ${cardCode}`);
+            }
+        }
+
+        // E-Fatura mı kontrol et (cardCode kuralından çıkarıyoruz)
+        // E-Fatura kullanıcıları için seri numarası gerekmiyor
+        const isEInvoice = cardCode === store.eInvoiceCardCode;
+
+        // İade faturası seri numarası: E-Arşiv için GPL, E-Fatura için seri yok
+        let serialNo = '';
+        let invoiceNumber = '';
+        let voucherNo = '';
+
+        if (isEInvoice) {
+            // E-Fatura: Seri numarası gerek yok
+            invoiceNumber = `EFATURA-${data.orderNumber}-${Date.now()}`;
+            voucherNo = invoiceNumber;
+            this.logger.log(`E-Fatura refund - no serial number needed`);
+        } else {
+            // E-Arşiv: GPL serisi kullan
+            serialNo = store.refundExpenseVoucherEArchiveSerialNo || 'GPL';
+            const sequenceNo = await this.getNextSequenceNumber(serialNo);
+            invoiceNumber = `${serialNo}${new Date().getFullYear()}${sequenceNo.toString().padStart(9, '0')}`;
+            voucherNo = invoiceNumber.replace(serialNo, '');
+            this.logger.log(`E-Arşiv refund - using serial: ${serialNo}, number: ${invoiceNumber}`);
+        }
+
+        // Build line items for Uyumsoft
+        const details = await Promise.all(data.items.map(async (item, index) => {
+            let dcardCode = '1000010001'; // Default fallback
+
+            // Find product by barcode to get the correct SKU for Uyumsoft
+            if (item.barcode) {
+                const product = await this.productRepository.findOne({
+                    where: { barcode: item.barcode }
+                });
+                if (product && product.sku) {
+                    dcardCode = product.sku;
+                }
+            }
+
+            // whouseCode: Sağlam (NORMAL) → MERKEZ, Hasarlı (DAMAGED) → İADE DEPO
+            const whouseCode = item.shelfType === 'DAMAGED' ? 'İADE DEPO' : 'MERKEZ';
+
+            return {
+                curRateTypeCode: '',
+                qty: item.quantity,
+                curCode: 'TRY',
+                lineNo: index + 1,
+                unitCode: 'ADET',
+                dcardCode,
+                note1: '',
+                note2: '',
+                note3: '',
+                sourceApp: 'Fatura',
+                lineType: 'S',
+                vatRate: item.vatRate ?? 20,
+                priceListCode: '',
+                curRateTra: 0,
+                costCenterCode: store.companyCode || 'FARMAKOZMETIKA',
+                whouseCode, // Sağlam: MERKEZ, Hasarlı: İADE DEPO
+                sourceApp2: 'Fatura',
+                vatCode: item.vatRate ?? 20,
+                unitPrice: item.price,
+                itemNameManual: item.productName?.substring(0, 100) || '',
+                qtyPrm: item.quantity,
+                amtVat: '',
+                vatStatus: 'Dahil',
+                sourceApp3: 'Fatura',
+            };
+        }));
+
+        // Build Uyumsoft payload for refund invoice
+        const requestPayload = {
+            value: {
+                curRateTypeCode: '',
+                transportTypeId: '31', // İade için farklı transport type
+                familyName: data.customerLastName?.substring(0, 100) || '',
+                GnlNote5: data.cargoTrackingNumber || '',
+                address1: data.customerAddress?.substring(0, 100) || '',
+                address2: '',
+                address3: '',
+                voucherNo,
+                sourceApp: 'Fatura',
+                gnlNote3: '',
+                cardType: 'Cari',
+                voucherSerial: serialNo, // "D"
+                sourceApp2: 'Fatura',
+                sourceApp3: 'Fatura',
+                edocNo: invoiceNumber,
+                cardCode, // Orijinal siparişin kuralına göre
+                gnlNote4: data.cargoProviderName || 'ARAS KARGO YURT İÇİ YURT DIŞI TAŞIMACILIK ANONİM ŞİRKETİ',
+                currencyOption: 'Sevk_Tarihindeki_Kur',
+                branchCode: store.branchCode || 'FK2020',
+                gnlNote1: data.orderNumber || '',
+                docTraCode: 'GIDPSL', // Gider Pusulası işlem kodu
+                firstName: data.customerFirstName?.substring(0, 100) || '',
+                curTra: 1,
+                note1: invoiceNumber,
+                docDate: new Date().toISOString(),
+                note2: '',
+                curCode: 'TRY',
+                gnlNote2: new Date().toISOString().replace('T', ' ').substring(0, 19),
+                shippingDate: new Date().toISOString(),
+                coCode: store.coCode || store.branchCode || 'FK2020',
+                details,
+                GnlNote6: new Date().toISOString(),
+                email: '',
+            },
+        };
+
+        // Create invoice record (PENDING)
         const invoice = this.invoiceRepository.create({
             documentType: DocumentType.EXPENSE_VOUCHER,
             returnId: data.returnId,
             storeId: data.storeId,
-            invoiceNumber: voucherNumber,
+            orderId: data.orderId, // Orijinal sipariş ID'si
+            invoiceNumber,
             invoiceSerial: serialNo,
-            status: InvoiceStatus.SUCCESS, // Gider pusulası için hemen SUCCESS
+            edocNo: invoiceNumber,
+            status: InvoiceStatus.PENDING,
             totalAmount: data.totalAmount,
             currencyCode: 'TRY',
             invoiceDate: new Date(),
             customerFirstName: data.customerFirstName,
             customerLastName: data.customerLastName,
-            cardCode: store.eArchiveCardCode || store.eInvoiceCardCode,
+            customerAddress: data.customerAddress,
+            cardCode,
             branchCode: store.branchCode,
             docTraCode: 'GIDPSL',
+            // whouseCode: Tüm itemlar aynı depoya mı gidiyor kontrol et
+            whouseCode: data.items.every(i => i.shelfType === 'DAMAGED') ? 'İADE DEPO' : 
+                        data.items.every(i => i.shelfType !== 'DAMAGED') ? 'MERKEZ' : 'KARMA',
+            requestPayload,
         } as any);
 
-        const saved = await this.invoiceRepository.save(invoice) as unknown as Invoice;
-        this.logger.log(`Expense voucher created for return ${data.returnId} - Voucher: ${voucherNumber}`);
+        const savedInvoice = await this.invoiceRepository.save(invoice) as unknown as Invoice;
+        this.logger.log(`Refund invoice created for return ${data.returnId} - Invoice: ${invoiceNumber}, cardCode: ${cardCode}`);
 
-        return saved;
+        // Send to Uyumsoft
+        try {
+            const response = await this.sendToUyumsoft(requestPayload);
+
+            if (response && !response.isError) {
+                savedInvoice.status = InvoiceStatus.SUCCESS;
+                savedInvoice.responsePayload = response;
+                savedInvoice.uyumsoftInvoiceId = response.invoiceId || response.id;
+                savedInvoice.ettn = response.ettn;
+                this.logger.log(`Refund invoice sent to Uyumsoft successfully: ${invoiceNumber}`);
+            } else {
+                savedInvoice.status = InvoiceStatus.ERROR;
+                savedInvoice.errorMessage = response?.exceptionMessage || 'Uyumsoft error';
+                savedInvoice.responsePayload = response;
+                this.logger.error(`Refund invoice failed: ${savedInvoice.errorMessage}`);
+            }
+        } catch (error: any) {
+            savedInvoice.status = InvoiceStatus.ERROR;
+            savedInvoice.errorMessage = error.message || 'Unknown error';
+            this.logger.error(`Refund invoice error: ${error.message}`);
+        }
+
+        await this.invoiceRepository.save(savedInvoice);
+        return savedInvoice;
     }
 
     /**
-     * Bir sonraki sıra numarasını al
+     * İade için Gider Pusulası bul
+     */
+    async findExpenseVoucherByReturnId(returnId: string): Promise<Invoice | null> {
+        return this.invoiceRepository.findOne({
+            where: { 
+                returnId,
+                documentType: DocumentType.EXPENSE_VOUCHER,
+            },
+        });
+    }
+
+    /**
+     * Gider Pusulası PDF verisi oluştur
+     * PDF formatı:
+     * - İSİM SOYİSİM / ÜNVAN
+     * - FATURA ADRESİ
+     * - TCKN / VKN
+     * - TARİH / SAAT
+     * - SİPARİŞ NO
+     * - Ürün tablosu (Barkod, Adet, KDV, Birim Fiyat, Tutar)
+     * - Ara Toplam, KDV, Toplam
+     * - Yazıyla toplam
+     */
+    async getExpenseVoucherData(returnId: string): Promise<{
+        // Header bilgileri
+        invoiceNumber: string;
+        invoiceDate: Date;
+        invoiceDateFormatted: string; // "24.01.2026"
+        invoiceTimeFormatted: string; // "14:30"
+        
+        // Müşteri bilgileri
+        customerName: string;
+        customerAddress: string;
+        tckn: string;
+        
+        // Sipariş bilgileri
+        orderNumber: string;
+        
+        // Ürün listesi
+        items: Array<{
+            barcode: string;
+            productName: string;
+            quantity: number;
+            vatRate: number;
+            vatRateFormatted: string; // "20%"
+            unitPrice: number;
+            unitPriceFormatted: string; // "253.27"
+            totalPrice: number;
+            totalPriceFormatted: string; // "253.27"
+        }>;
+        
+        // Toplamlar
+        subtotal: number;
+        subtotalFormatted: string; // "211.06 TRY"
+        vatAmount: number;
+        vatAmountFormatted: string; // "42.21 TRY"
+        vatRate: number;
+        total: number;
+        totalFormatted: string; // "253.27 TRY"
+        totalInWords: string; // "IKIYUZELLIUC TRY YIRMIYEDI KURUS"
+        
+        // Fatura durumu
+        status: string;
+        whouseCode: string;
+    } | null> {
+        const invoice = await this.findExpenseVoucherByReturnId(returnId);
+        if (!invoice) {
+            return null;
+        }
+
+        // Request payload'dan item bilgilerini çıkar
+        const payload = invoice.requestPayload as any;
+        const details = payload?.value?.details || [];
+
+        // Format helpers
+        const formatPrice = (price: number) => price.toFixed(2);
+        const formatDate = (date: Date) => {
+            const d = new Date(date);
+            return `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}.${d.getFullYear()}`;
+        };
+        const formatTime = (date: Date) => {
+            const d = new Date(date);
+            return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+        };
+
+        const items = details.map((d: any) => {
+            const qty = d.qty || 1;
+            const unitPrice = d.unitPrice || 0;
+            const totalPrice = unitPrice * qty;
+            const vatRate = d.vatRate || 20;
+
+            return {
+                barcode: d.dcardCode || '',
+                productName: d.itemNameManual || '',
+                quantity: qty,
+                vatRate,
+                vatRateFormatted: `${vatRate}%`,
+                unitPrice,
+                unitPriceFormatted: formatPrice(unitPrice),
+                totalPrice,
+                totalPriceFormatted: formatPrice(totalPrice),
+            };
+        });
+
+        const total = Number(invoice.totalAmount) || 0;
+        const vatRate = items[0]?.vatRate || 20;
+        const subtotal = total / (1 + vatRate / 100);
+        const vatAmount = total - subtotal;
+
+        return {
+            invoiceNumber: invoice.invoiceNumber,
+            invoiceDate: invoice.invoiceDate,
+            invoiceDateFormatted: formatDate(invoice.invoiceDate),
+            invoiceTimeFormatted: formatTime(invoice.invoiceDate),
+            
+            customerName: `${invoice.customerFirstName || ''} ${invoice.customerLastName || ''}`.trim().toUpperCase(),
+            customerAddress: (invoice.customerAddress || '').toUpperCase(),
+            tckn: '11111111111',
+            
+            orderNumber: payload?.value?.gnlNote1 || '',
+            
+            items,
+            
+            subtotal: Math.round(subtotal * 100) / 100,
+            subtotalFormatted: `${formatPrice(Math.round(subtotal * 100) / 100)} TRY`,
+            vatAmount: Math.round(vatAmount * 100) / 100,
+            vatAmountFormatted: `${formatPrice(Math.round(vatAmount * 100) / 100)} TRY`,
+            vatRate,
+            total,
+            totalFormatted: `${formatPrice(total)} TRY`,
+            totalInWords: this.numberToWords(total),
+            
+            status: invoice.status,
+            whouseCode: invoice.whouseCode || '',
+        };
+    }
+
+    /**
+     * Sayıyı yazıya çevir (Türkçe)
+     */
+    private numberToWords(amount: number): string {
+        const ones = ['', 'BİR', 'İKİ', 'ÜÇ', 'DÖRT', 'BEŞ', 'ALTI', 'YEDİ', 'SEKİZ', 'DOKUZ'];
+        const tens = ['', 'ON', 'YİRMİ', 'OTUZ', 'KIRK', 'ELLİ', 'ALTMIŞ', 'YETMİŞ', 'SEKSEN', 'DOKSAN'];
+        const hundreds = ['', 'YÜZ', 'İKİYÜZ', 'ÜÇYÜZ', 'DÖRTYÜZ', 'BEŞYÜZ', 'ALTIYÜZ', 'YEDİYÜZ', 'SEKİZYÜZ', 'DOKUZYÜZ'];
+
+        const intPart = Math.floor(amount);
+        const decPart = Math.round((amount - intPart) * 100);
+
+        let result = '';
+
+        if (intPart >= 1000) {
+            const thousands = Math.floor(intPart / 1000);
+            if (thousands === 1) {
+                result += 'BİN';
+            } else {
+                result += this.numberToWords(thousands) + 'BİN';
+            }
+        }
+
+        const remainder = intPart % 1000;
+        if (remainder >= 100) {
+            result += hundreds[Math.floor(remainder / 100)];
+        }
+        const tensRemainder = remainder % 100;
+        if (tensRemainder >= 10) {
+            result += tens[Math.floor(tensRemainder / 10)];
+        }
+        const onesRemainder = tensRemainder % 10;
+        if (onesRemainder > 0) {
+            result += ones[onesRemainder];
+        }
+
+        if (result === '') result = 'SIFIR';
+
+        result += ' TRY';
+
+        if (decPart > 0) {
+            result += ' ';
+            if (decPart >= 10) {
+                result += tens[Math.floor(decPart / 10)];
+            }
+            if (decPart % 10 > 0) {
+                result += ones[decPart % 10];
+            }
+            result += ' KURUŞ';
+        }
+
+        return result;
+    }
+
+    /**
+     * Bir sonraki sıra numarasını al (lock ile)
      */
     private async getNextSequenceNumber(serialNo: string): Promise<number> {
         const year = new Date().getFullYear();

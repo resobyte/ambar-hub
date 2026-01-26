@@ -31,7 +31,7 @@ export class InvoiceProcessorService {
         this.logger.log('Starting pending invoice processing job...');
 
         try {
-            const result = await this.invoicesService.processAllPendingInvoices(50);
+            const result = await this.invoicesService.processAllPendingInvoices(1000);
 
             if (result.processed > 0) {
                 this.logger.log(

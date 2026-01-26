@@ -8,13 +8,18 @@ import {
     Body,
     DefaultValuePipe,
     ParseIntPipe,
+    NotFoundException,
 } from '@nestjs/common';
 import { ReturnsService } from './returns.service';
+import { InvoicesService } from '../invoices/invoices.service';
 import { ReturnShelfType } from './enums/return-status.enum';
 
 @Controller('returns')
 export class ReturnsController {
-    constructor(private readonly returnsService: ReturnsService) {}
+    constructor(
+        private readonly returnsService: ReturnsService,
+        private readonly invoicesService: InvoicesService,
+    ) {}
 
     @Get()
     findAll(
@@ -95,6 +100,30 @@ export class ReturnsController {
             success: true,
             message: 'İade işlendi ve stok eklendi',
             data: result,
+        };
+    }
+
+    @Get(':id/expense-voucher')
+    async getExpenseVoucher(@Param('id') id: string) {
+        const data = await this.invoicesService.getExpenseVoucherData(id);
+        if (!data) {
+            throw new NotFoundException('Bu iade için gider pusulası bulunamadı');
+        }
+        return {
+            success: true,
+            data,
+        };
+    }
+
+    @Get(':id/invoice')
+    async getRefundInvoice(@Param('id') id: string) {
+        const invoice = await this.invoicesService.findExpenseVoucherByReturnId(id);
+        if (!invoice) {
+            throw new NotFoundException('Bu iade için fatura bulunamadı');
+        }
+        return {
+            success: true,
+            data: invoice,
         };
     }
 }

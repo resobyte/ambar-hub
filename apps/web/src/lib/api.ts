@@ -21,6 +21,20 @@ export interface PaginationResponse<T> {
   };
 }
 
+// Safe JSON parse helper - handles non-JSON responses
+async function safeParseJson(res: Response): Promise<any> {
+  const text = await res.text();
+  if (!text) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Response is not JSON - could be "Internal Server Error" etc.
+    throw new Error(text || `HTTP ${res.status}: ${res.statusText}`);
+  }
+}
+
 // Generic API functions
 export async function apiGetPaginated<T>(endpoint: string, options?: { params?: Record<string, any> }): Promise<PaginationResponse<T>> {
   const url = new URL(`${API_URL}${endpoint}`, BASE_URL);
@@ -36,10 +50,10 @@ export async function apiGetPaginated<T>(endpoint: string, options?: { params?: 
     credentials: 'include',
   });
   if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.message || 'Request failed');
+    const error = await safeParseJson(res);
+    throw new Error(error?.message || `HTTP ${res.status}: ${res.statusText}`);
   }
-  return res.json();
+  return safeParseJson(res);
 }
 
 export async function apiPost<T>(endpoint: string, data: any): Promise<ApiResponse<T>> {
@@ -50,10 +64,10 @@ export async function apiPost<T>(endpoint: string, data: any): Promise<ApiRespon
     body: JSON.stringify(data),
   });
   if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.message || 'Request failed');
+    const error = await safeParseJson(res);
+    throw new Error(error?.message || `HTTP ${res.status}: ${res.statusText}`);
   }
-  return res.json();
+  return safeParseJson(res);
 }
 
 export async function apiPatch<T>(endpoint: string, data: any): Promise<ApiResponse<T>> {
@@ -64,10 +78,10 @@ export async function apiPatch<T>(endpoint: string, data: any): Promise<ApiRespo
     body: JSON.stringify(data),
   });
   if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.message || 'Request failed');
+    const error = await safeParseJson(res);
+    throw new Error(error?.message || `HTTP ${res.status}: ${res.statusText}`);
   }
-  return res.json();
+  return safeParseJson(res);
 }
 
 export async function apiDelete(endpoint: string): Promise<{ message: string }> {
@@ -76,10 +90,22 @@ export async function apiDelete(endpoint: string): Promise<{ message: string }> 
     credentials: 'include',
   });
   if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.message || 'Request failed');
+    const error = await safeParseJson(res);
+    throw new Error(error?.message || `HTTP ${res.status}: ${res.statusText}`);
   }
-  return res.json();
+  return safeParseJson(res);
+}
+
+export async function apiGet<T>(endpoint: string): Promise<T> {
+  const res = await fetch(`${API_URL}${endpoint}`, {
+    cache: 'no-store',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const error = await safeParseJson(res);
+    throw new Error(error?.message || `HTTP ${res.status}: ${res.statusText}`);
+  }
+  return safeParseJson(res);
 }
 
 export interface Warehouse {

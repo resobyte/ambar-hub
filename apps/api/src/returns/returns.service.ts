@@ -371,28 +371,47 @@ export class ReturnsService {
             }
         }
 
-        // Gider Pusulası oluştur
+        // İade Faturası (Gider Pusulası) kes - Uyumsoft'a gönder
         try {
             const totalAmount = returnEntity.items.reduce((sum, item) => {
                 return sum + (Number(item.price) || 0) * (item.processedQuantity || item.quantity || 1);
             }, 0);
 
-            await this.invoicesService.createExpenseVoucherForReturn({
+            // Müşteri adresi oluştur
+            let customerAddress = '';
+            if (returnEntity.order?.shippingAddress) {
+                const addr = returnEntity.order.shippingAddress as any;
+                customerAddress = [
+                    addr.address1 || addr.addressLine1,
+                    addr.address2 || addr.addressLine2,
+                    addr.district,
+                    addr.city,
+                ].filter(Boolean).join(' ');
+            }
+
+            await this.invoicesService.createRefundInvoiceForReturn({
                 returnId: returnEntity.id,
                 storeId: returnEntity.storeId,
+                orderId: returnEntity.orderId || undefined, // Orijinal sipariş ID - cardCode kuralı için
+                orderNumber: returnEntity.orderNumber,
                 customerFirstName: returnEntity.customerFirstName,
                 customerLastName: returnEntity.customerLastName,
+                customerAddress,
+                cargoTrackingNumber: returnEntity.cargoTrackingNumber,
+                cargoProviderName: returnEntity.cargoProviderName,
                 totalAmount,
                 items: returnEntity.items.map(item => ({
                     productName: item.productName,
                     barcode: item.barcode,
                     quantity: item.processedQuantity || item.quantity || 1,
                     price: Number(item.price) || 0,
+                    vatRate: 20,
+                    shelfType: item.shelfType as 'NORMAL' | 'DAMAGED', // Sağlam veya Hasarlı
                 })),
             });
-            this.logger.log(`Expense voucher created for return ${returnEntity.id}`);
+            this.logger.log(`Refund invoice created for return ${returnEntity.id}`);
         } catch (error) {
-            this.logger.error(`Failed to create expense voucher for return ${returnEntity.id}:`, error.message);
+            this.logger.error(`Failed to create refund invoice for return ${returnEntity.id}:`, error.message);
         }
 
         return this.findOne(id);

@@ -31,6 +31,7 @@ export interface PickingItem {
     shelfBarcode?: string;
     shelfLocation?: string;
     shelfPath?: string;
+    shelfGlobalSlot?: number;
     totalQuantity: number;
     pickedQuantity: number;
     isComplete: boolean;
@@ -127,12 +128,20 @@ export class PickingService {
                 }
 
                 const pickingItem = itemMap.get(item.barcode)!;
-                pickingItem.totalQuantity += item.quantity || 1;
-                pickingItem.orders.push({
-                    orderId: ro.orderId,
-                    orderNumber: ro.order.orderNumber,
-                    quantity: item.quantity || 1,
-                });
+                const itemQty = item.quantity || 1;
+                pickingItem.totalQuantity += itemQty;
+
+                // Check if this order already has this product (merge quantities)
+                const existingOrderEntry = pickingItem.orders.find(o => o.orderId === ro.orderId);
+                if (existingOrderEntry) {
+                    existingOrderEntry.quantity += itemQty;
+                } else {
+                    pickingItem.orders.push({
+                        orderId: ro.orderId,
+                        orderNumber: ro.order.orderNumber,
+                        quantity: itemQty,
+                    });
+                }
             }
         }
 
@@ -199,11 +208,17 @@ export class PickingService {
                 // Update items with shelf info
                 const productShelfIdMap = new Map<string, string>();
                 const productShelfBarcodeMap = new Map<string, string>();
+                const productShelfNameMap = new Map<string, string>(); // Just the shelf name (e.g., "A9-2-1")
+                const productShelfGlobalSlotMap = new Map<string, number>(); // Global slot for sorting
 
                 for (const [productId, stocks] of stocksByProduct) {
                     if (stocks.length > 0 && stocks[0].shelf) {
                         productShelfIdMap.set(productId, stocks[0].shelfId);
                         productShelfBarcodeMap.set(productId, stocks[0].shelf.barcode);
+                        productShelfNameMap.set(productId, stocks[0].shelf.name);
+                        if (stocks[0].shelf.globalSlot) {
+                            productShelfGlobalSlotMap.set(productId, stocks[0].shelf.globalSlot);
+                        }
                     }
                 }
 
@@ -213,8 +228,10 @@ export class PickingService {
                         const shelfLoc = productShelfMap.get(product.id);
                         if (shelfLoc) {
                             item.shelfLocation = shelfLoc;
+                            item.shelfPath = productShelfNameMap.get(product.id); // Just the leaf shelf name
                             item.shelfId = productShelfIdMap.get(product.id);
                             item.shelfBarcode = productShelfBarcodeMap.get(product.id);
+                            item.shelfGlobalSlot = productShelfGlobalSlotMap.get(product.id);
                         }
                     }
                 }
@@ -231,7 +248,34 @@ export class PickingService {
             }
         }
 
-        const items = Array.from(itemMap.values());
+        // Convert to array and sort for optimal picking
+        // 1. Incomplete items first
+        // 2. Sort by globalSlot ASC (smallest first)
+        // 3. Items without globalSlot go to the end
+        // 4. Complete items at the very end
+        const items = Array.from(itemMap.values()).sort((a, b) => {
+            // Complete items go to the end
+            if (a.isComplete !== b.isComplete) {
+                return a.isComplete ? 1 : -1;
+            }
+
+            // Sort by globalSlot ASC (smaller slot first)
+            const aSlot = a.shelfGlobalSlot ?? Infinity;
+            const bSlot = b.shelfGlobalSlot ?? Infinity;
+
+            // Items without globalSlot go to the end (among incomplete)
+            if (aSlot === Infinity && bSlot !== Infinity) return 1;
+            if (aSlot !== Infinity && bSlot === Infinity) return -1;
+
+            // Both have globalSlot - sort ASC (smaller first)
+            if (aSlot !== bSlot) {
+                return aSlot - bSlot; // ASC
+            }
+
+            // Same globalSlot - sort by product name
+            return (a.productName || '').localeCompare(b.productName || '', 'tr');
+        });
+
         const totalItems = items.reduce((sum, i) => sum + i.totalQuantity, 0);
         const pickedItems = items.reduce((sum, i) => sum + Math.min(i.pickedQuantity, i.totalQuantity), 0);
         const isComplete = pickedItems >= totalItems;

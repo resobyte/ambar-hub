@@ -757,28 +757,36 @@ export class RoutesService {
         const errors: string[] = [];
         let processed = 0;
 
-        // 2. Fatura kesilecek siparişleri ayır
+        // 2. Toplu fatura kuyruğa ekle
         const ordersToInvoice = orders.filter(order => order.documentType !== 'WAYBILL');
         const orderIdsToInvoice = ordersToInvoice.map(o => o.id);
 
-        // 3. Toplu fatura kes (lock mekanizması ile)
-        let bulkInvoiceResults: { success: Array<{ orderId: string; invoiceNumber: string }>; failed: Array<{ orderId: string; error: string }> } = {
-            success: [],
-            failed: [],
-        };
+        // Fatura sonuçlarını tut
+        const invoiceResults: Map<string, { success: boolean; invoiceNumber?: string; error?: string }> = new Map();
 
         if (orderIdsToInvoice.length > 0) {
             try {
-                this.logger.log(`Starting bulk invoice for ${orderIdsToInvoice.length} orders in route ${routeId}`);
-                bulkInvoiceResults = await this.invoicesService.createBulkInvoices(orderIdsToInvoice);
-                this.logger.log(`Bulk invoice completed: ${bulkInvoiceResults.success.length} success, ${bulkInvoiceResults.failed.length} failed`);
+                this.logger.log(`Queueing bulk invoices for ${orderIdsToInvoice.length} orders in route ${routeId}`);
+                // sendImmediately: false -> sadece kuyruğa ekle, job işlesin
+                const bulkResult = await this.invoicesService.createBulkInvoices(orderIdsToInvoice, { sendImmediately: false });
+
+                // Sonuçları map'e ekle
+                for (const s of bulkResult.success) {
+                    invoiceResults.set(s.orderId, { success: true, invoiceNumber: s.invoiceNumber });
+                }
+                for (const f of bulkResult.failed) {
+                    invoiceResults.set(f.orderId, { success: false, error: f.error });
+                    errors.push(`Fatura kuyruğa eklenemedi (${orders.find(o => o.id === f.orderId)?.orderNumber}): ${f.error}`);
+                }
+
+                this.logger.log(`Bulk invoice queue completed: ${bulkResult.success.length} queued, ${bulkResult.failed.length} failed`);
             } catch (error: any) {
-                this.logger.error(`Bulk invoice failed for route ${routeId}: ${error.message}`);
-                errors.push(`Toplu fatura hatası: ${error.message}`);
+                this.logger.error(`Bulk invoice queue failed for route ${routeId}: ${error.message}`);
+                errors.push(`Toplu fatura kuyruğa ekleme hatası: ${error.message}`);
             }
         }
 
-        // 4. Her sipariş için etiket oluştur ve sonuçları derle
+        // 3. Her sipariş için etiket oluştur ve sonuçları derle
         for (const order of orders) {
             const orderResult: {
                 orderId: string;
@@ -797,14 +805,13 @@ export class RoutesService {
 
             try {
                 // A. Fatura sonucunu kontrol et
-                const invoiceSuccess = bulkInvoiceResults.success.find(s => s.orderId === order.id);
-                const invoiceFailed = bulkInvoiceResults.failed.find(f => f.orderId === order.id);
-
-                if (invoiceSuccess) {
-                    orderResult.invoiceCreated = true;
-                    orderResult.invoiceNumber = invoiceSuccess.invoiceNumber;
-                } else if (invoiceFailed) {
-                    errors.push(`Fatura hatası (${order.orderNumber}): ${invoiceFailed.error}`);
+                const invoiceResult = invoiceResults.get(order.id);
+                if (invoiceResult) {
+                    if (invoiceResult.success) {
+                        orderResult.invoiceCreated = true;
+                        orderResult.invoiceNumber = invoiceResult.invoiceNumber;
+                    }
+                    // Error zaten yukarıda errors'a eklendi
                 }
 
                 // B. Etiket oluştur - Önce Aras'tan ZPL çek, başarısızsa dummy oluştur
