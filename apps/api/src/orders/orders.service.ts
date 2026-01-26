@@ -24,6 +24,7 @@ import { ReshipmentDto } from './dto/reshipment.dto';
 import { Customer, CustomerType } from '../customers/entities/customer.entity';
 import { OrderHistoryService } from './order-history.service';
 import { OrderHistoryAction } from './entities/order-history.entity';
+import { ZplTemplateService } from './zpl-template.service';
 
 export interface CancelOrderResult {
     success: boolean;
@@ -82,6 +83,7 @@ export class OrdersService {
         private readonly arasKargoService: ArasKargoService,
         private readonly invoicesService: InvoicesService,
         private readonly orderHistoryService: OrderHistoryService,
+        private readonly zplTemplateService: ZplTemplateService,
     ) { }
 
     private mapStatus(status: string): OrderStatus {
@@ -270,7 +272,9 @@ export class OrdersService {
             commercial: isCommercial,
             isEInvoiceUser: isCommercial,
             createdBy: 'MANUAL_USER',
-            documentType: dto.documentType || 'WAYBILL',
+            // Manuel siparişte documentType belirtilmemişse default INVOICE olacak
+            // Sadece WAYBILL seçilmişse WAYBILL kullanılır
+            documentType: dto.documentType || 'INVOICE',
         });
 
         const savedOrder = await this.orderRepository.save(newOrder);
@@ -1416,25 +1420,6 @@ export class OrdersService {
         await this.faultyOrderRepository.delete(id);
     }
 
-    async fetchCargoLabel(orderId: string): Promise<string | null> {
-        const order = await this.orderRepository.findOne({ where: { id: orderId } });
-        if (!order) throw new Error(`Order #${orderId} not found`);
-
-        if (!order.cargoTrackingNumber) {
-            throw new Error(`Order #${order.orderNumber} does not have a cargo tracking number`);
-        }
-
-        const zpl = await this.arasKargoService.getBarcode(order.cargoTrackingNumber);
-
-        if (zpl) {
-            order.cargoLabelZpl = zpl;
-            await this.orderRepository.save(order);
-            return zpl;
-        }
-
-        return null;
-    }
-
     async updateTrendyolPackageStatus(
         orderId: string,
         status: 'Picking' | 'Invoiced',
@@ -1788,6 +1773,7 @@ export class OrdersService {
             invoiceAddress: originalOrder.invoiceAddress,
             commercial: originalOrder.commercial,
             micro: originalOrder.micro,
+            documentType: dto.needsInvoice ? 'INVOICE' : 'WAYBILL', // Fatura ihtiyacını belirt
         });
 
         const savedOrder = await this.orderRepository.save(newOrder);
@@ -1826,12 +1812,8 @@ export class OrdersService {
 
         await this.orderItemRepository.save(newItems);
 
-        // 8. Faturalama gerekli mi?
-        if (dto.needsInvoice) {
-            // TODO: Fatura oluştur (eğer invoicesService.createForOrder metodu varsa)
-            // await this.invoicesService.createForOrder(savedOrder.id);
-            this.logger.log(`Reshipment order ${newOrderNumber} needs invoice`);
-        }
+        // 8. NOT: needsInvoice = true ise documentType = 'INVOICE' olarak ayarlandı
+        // Paketleme sırasında normal sipariş akışındaki fatura kuralları uygulanacaktır
 
         // 9. OrderHistory'e kaydet - Yeni sipariş için
         await this.orderHistoryService.logEvent({
@@ -1878,5 +1860,73 @@ export class OrdersService {
         }
 
         return result;
+    }
+
+    /**
+     * Generate ZPL cargo label for an order
+     * Uses the ZplTemplateService to create a 100mm x 100mm thermal label
+     */
+    async generateCargoLabelZpl(orderId: string): Promise<{ success: boolean; zpl?: string; message?: string }> {
+        const order = await this.orderRepository.findOne({
+            where: { id: orderId },
+            relations: ['items', 'customer', 'store'],
+        });
+
+        if (!order) {
+            return { success: false, message: 'Sipariş bulunamadı' };
+        }
+
+        if (!order.store) {
+            return { success: false, message: 'Mağaza bilgisi bulunamadı' };
+        }
+
+        try {
+            const zpl = this.zplTemplateService.generateCargoLabel(order, order.store);
+
+            // Optionally save the ZPL to the order
+            order.cargoLabelZpl = zpl;
+            await this.orderRepository.save(order);
+
+            return { success: true, zpl };
+        } catch (error) {
+            this.logger.error(`Failed to generate ZPL for order ${orderId}: ${error.message}`);
+            return { success: false, message: 'ZPL oluşturma hatası: ' + error.message };
+        }
+    }
+
+    /**
+     * Fetch cargo label from Aras Kargo or generate ZPL locally
+     */
+    async fetchCargoLabel(orderId: string): Promise<{ success: boolean; zpl?: string; html?: string; message?: string }> {
+        const order = await this.orderRepository.findOne({
+            where: { id: orderId },
+            relations: ['store'],
+        });
+
+        if (!order) {
+            return { success: false, message: 'Sipariş bulunamadı' };
+        }
+
+        // Try to fetch from Aras Kargo first if we have a tracking number
+        if (order.cargoTrackingNumber) {
+            try {
+                const arasZpl = await this.arasKargoService.getBarcode(order.cargoTrackingNumber);
+                if (arasZpl) {
+                    order.cargoLabelZpl = arasZpl;
+                    await this.orderRepository.save(order);
+                    return { success: true, zpl: arasZpl };
+                }
+            } catch (error) {
+                this.logger.warn(`Failed to fetch ZPL from Aras Kargo for ${order.cargoTrackingNumber}: ${error.message}`);
+            }
+        }
+
+        // Fall back to local ZPL generation
+        const result = await this.generateCargoLabelZpl(orderId);
+        if (result.success && result.zpl) {
+            return { success: true, zpl: result.zpl };
+        }
+
+        return { success: false, message: result.message || 'Kargo etiketi oluşturulamadı' };
     }
 }

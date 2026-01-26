@@ -1408,6 +1408,51 @@ export async function printRouteLabel(routeId: string): Promise<string> {
   return res.text();
 }
 
+// Bulk Process API - Toplu Faturalama ve Etiketleme
+
+export interface BulkProcessResult {
+  processed: number;
+  total: number;
+  errors: string[];
+  results: Array<{
+    orderId: string;
+    orderNumber: string;
+    invoiceCreated: boolean;
+    invoiceNumber?: string;
+    labelFetched: boolean;
+    labelType?: 'aras' | 'dummy';
+    error?: string;
+  }>;
+}
+
+export async function bulkProcessRoute(routeId: string): Promise<ApiResponse<BulkProcessResult>> {
+  const res = await fetch(`${API_URL}/routes/${routeId}/bulk-process`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Toplu işlem başarısız');
+  }
+  return res.json();
+}
+
+export interface RouteLabelsResult {
+  zplContent: string;
+  orderCount: number;
+}
+
+export async function getRouteLabelsZpl(routeId: string): Promise<ApiResponse<RouteLabelsResult>> {
+  const res = await fetch(`${API_URL}/routes/${routeId}/labels/print`, {
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Etiketler alınamadı');
+  }
+  return res.json();
+}
+
 // Packing API
 
 export interface PackingSession {

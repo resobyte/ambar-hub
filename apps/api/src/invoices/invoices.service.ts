@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { Invoice } from './entities/invoice.entity';
@@ -18,6 +18,8 @@ export class InvoicesService {
     private readonly logger = new Logger(InvoicesService.name);
 
     constructor(
+        @InjectDataSource()
+        private readonly dataSource: DataSource,
         @InjectRepository(Invoice)
         private readonly invoiceRepository: Repository<Invoice>,
         @InjectRepository(Order)
@@ -54,16 +56,70 @@ export class InvoicesService {
             return existingInvoice;
         }
 
+        // Get Store settings to determine invoice rules
+        const storeConfig = await this.getStoreSettings(order.storeId);
+        if (!storeConfig) {
+            throw new BadRequestException('Store settings not found');
+        }
+
+        // Determine invoice logic (same as createInvoiceFromOrder)
+        const integrationType = storeConfig.type as string;
+        const isMicroExport = order.micro === true;
+
+        let serialNo = '';
+        let invoiceNumber = '';
+
+        // Determine serialNo based on invoice type
+        if (integrationType === 'TRENDYOL' && isMicroExport && storeConfig.hasMicroExport) {
+            // Mikro İhracat → MEA prefix
+            serialNo = storeConfig.microExportEArchiveSerialNo || '';
+        } else {
+            // Check E-Invoice User
+            const tckn = order.customer?.tcIdentityNumber;
+            const taxNo = order.customer?.taxNumber;
+            let idToCheck = tckn;
+            const isDummy = (id: string) => !id || id === '11111111111' || id.length < 10;
+
+            if (isDummy(tckn) && !isDummy(taxNo)) {
+                idToCheck = taxNo;
+            } else if (!isDummy(tckn)) {
+                idToCheck = tckn;
+            } else {
+                idToCheck = taxNo || tckn;
+            }
+
+            const cleanTaxId = idToCheck?.replace(/\D/g, '');
+            const isEInvoiceUser = cleanTaxId && cleanTaxId.length >= 10
+                ? await this.checkEInvoiceUser(cleanTaxId)
+                : false;
+
+            if (isEInvoiceUser) {
+                // E-Fatura → TEF prefix
+                serialNo = storeConfig.eInvoiceSerialNo || '';
+            } else {
+                // E-Arşiv → EMA prefix
+                serialNo = storeConfig.eArchiveSerialNo || '';
+            }
+        }
+
+        // Generate invoice number (with FOR UPDATE lock)
+        if (serialNo) {
+            invoiceNumber = await this.generateInvoiceNumber(serialNo);
+        } else {
+            invoiceNumber = `PENDING-${order.orderNumber}`;
+        }
+
         // Calculate total amount
         const totalAmount = order.items?.reduce((sum, item) => {
             return sum + (Number(item.unitPrice) || 0) * (item.quantity || 1);
         }, 0) || Number(order.totalPrice) || 0;
 
-        // Create pending invoice record (payload will be built when processing)
+        // Create pending invoice record with proper invoice number
         const invoice = this.invoiceRepository.create({
             orderId,
             storeId: order.storeId,
-            invoiceNumber: `PENDING-${order.orderNumber}`,
+            invoiceNumber,
+            invoiceSerial: serialNo,
             status: InvoiceStatus.PENDING,
             totalAmount,
             currencyCode: order.currencyCode || 'TRY',
@@ -71,11 +127,11 @@ export class InvoicesService {
             customerFirstName: order.customer?.firstName,
             customerLastName: order.customer?.lastName,
             customerEmail: order.customer?.email,
-            customerAddress: order.shippingAddress,
+            customerAddress: this.formatAddress(order.shippingAddress),
         } as any);
 
         const saved = await this.invoiceRepository.save(invoice) as unknown as Invoice;
-        this.logger.log(`Queued invoice for order ${orderId} - Invoice ID: ${saved.id}`);
+        this.logger.log(`Queued invoice for order ${order.orderNumber} - Invoice: ${invoiceNumber}, ID: ${saved.id}`);
 
         return saved;
     }
@@ -248,10 +304,16 @@ export class InvoicesService {
                 invoiceSettings.accountCode = storeConfig.microExportAccountCode;
             }
 
-            // Serial & Sequence - Generate from DB to share across all integrations
+            // Serial & Sequence
             invoiceSettings.serialNo = storeConfig.microExportEArchiveSerialNo;
-            invoiceSettings.edocNo = await this.generateInvoiceNumber(invoiceSettings.serialNo);
-            // No sequenceToIncrement needed - generateInvoiceNumber queries max from DB
+            // If pending invoice exists, reuse its number. Otherwise, generate new.
+            if (pendingInvoice && pendingInvoice.invoiceNumber) {
+                invoiceSettings.edocNo = pendingInvoice.invoiceNumber;
+                this.logger.log(`Reusing invoice number from pending invoice: ${invoiceSettings.edocNo}`);
+            } else {
+                invoiceSettings.edocNo = await this.generateInvoiceNumber(invoiceSettings.serialNo);
+                this.logger.log(`Generated new invoice number: ${invoiceSettings.edocNo}`);
+            }
 
             if (storeConfig.microExportTransactionCode) {
                 invoiceSettings.docTraCode = storeConfig.microExportTransactionCode;
@@ -301,10 +363,16 @@ export class InvoicesService {
                     invoiceSettings.accountCode = storeConfig.eInvoiceAccountCode;
                 }
 
-                // Serial & Sequence - Generate from DB to share across all integrations
+                // Serial & Sequence
                 invoiceSettings.serialNo = storeConfig.eInvoiceSerialNo;
-                invoiceSettings.edocNo = await this.generateInvoiceNumber(invoiceSettings.serialNo);
-                // No sequenceToIncrement needed - generateInvoiceNumber queries max from DB
+                // If pending invoice exists, reuse its number. Otherwise, generate new.
+                if (pendingInvoice && pendingInvoice.invoiceNumber) {
+                    invoiceSettings.edocNo = pendingInvoice.invoiceNumber;
+                    this.logger.log(`Reusing invoice number from pending invoice: ${invoiceSettings.edocNo}`);
+                } else {
+                    invoiceSettings.edocNo = await this.generateInvoiceNumber(invoiceSettings.serialNo);
+                    this.logger.log(`Generated new invoice number: ${invoiceSettings.edocNo}`);
+                }
 
             } else {
                 // --- E-ARŞİV ---
@@ -331,10 +399,16 @@ export class InvoicesService {
                     invoiceSettings.accountCode = storeConfig.eArchiveAccountCode;
                 }
 
-                // Serial & Sequence - Generate from DB to share across all integrations
+                // Serial & Sequence
                 invoiceSettings.serialNo = storeConfig.eArchiveSerialNo;
-                invoiceSettings.edocNo = await this.generateInvoiceNumber(invoiceSettings.serialNo);
-                // No sequenceToIncrement needed - generateInvoiceNumber queries max from DB
+                // If pending invoice exists, reuse its number. Otherwise, generate new.
+                if (pendingInvoice && pendingInvoice.invoiceNumber) {
+                    invoiceSettings.edocNo = pendingInvoice.invoiceNumber;
+                    this.logger.log(`Reusing invoice number from pending invoice: ${invoiceSettings.edocNo}`);
+                } else {
+                    invoiceSettings.edocNo = await this.generateInvoiceNumber(invoiceSettings.serialNo);
+                    this.logger.log(`Generated new invoice number: ${invoiceSettings.edocNo}`);
+                }
             }
 
             // Sync Entity with Uyumsoft (Cari Kart Açma/Güncelleme)
@@ -342,7 +416,7 @@ export class InvoicesService {
             if (isEInvoiceUser && cleanTaxId && cleanTaxId.length >= 10 && invoiceSettings.cardCode) {
                 const invAddr = (order.invoiceAddress as any) || (order.shippingAddress as any);
                 const customerPayload = {
-                    entityCode: options?.cardCode,
+                    entityCode: invoiceSettings.cardCode, // FIX: Use invoiceSettings.cardCode instead of options?.cardCode
                     entityName: order.customer?.company || `${order.customer?.firstName} ${order.customer?.lastName}`,
                     entityNameShort: order.customer?.company || `${order.customer?.firstName} ${order.customer?.lastName}`,
                     searchByEntityId: false,
@@ -557,11 +631,10 @@ export class InvoicesService {
             const prefixYear = `${serialNo}${year}`;
 
             if (!sequenceCounters.has(serialNo)) {
-                // First time for this serial - query DB for max
+                // First time for this serial - query DB for max (all statuses, not just SUCCESS)
                 const lastInvoice = await this.invoiceRepository
                     .createQueryBuilder('invoice')
                     .where('invoice.invoiceNumber LIKE :pattern', { pattern: `${prefixYear}%` })
-                    .andWhere('invoice.status = :status', { status: InvoiceStatus.SUCCESS })
                     .orderBy('invoice.invoiceNumber', 'DESC')
                     .getOne();
 
@@ -966,7 +1039,7 @@ export class InvoicesService {
             value: {
                 curRateTypeCode: '',
                 transportTypeId: '57',
-                transporterId: null,
+                transporterId: '31',
                 firstName: (() => {
                     if (order.micro) {
                         const invAddr = order.invoiceAddress as any;
@@ -1120,34 +1193,56 @@ export class InvoicesService {
      * Generate unique invoice number based on prefix and last record in DB
      * Format: {PREFIX}{YEAR}{SEQUENCE} (e.g. EMA2026000000001)
      * This queries ALL invoices regardless of integration to ensure shared sequence
+     * Uses pessimistic_write lock to prevent race conditions
      */
     private async generateInvoiceNumber(prefix: string): Promise<string> {
         const year = new Date().getFullYear();
         const prefixYear = `${prefix}${year}`;
 
-        // Look for the HIGHEST invoice number with this specific prefix and year
-        // across ALL integrations/stores to ensure shared sequence
-        // ONLY count SUCCESSFUL invoices to avoid skipping numbers on failed attempts
-        const lastInvoice = await this.invoiceRepository
-            .createQueryBuilder('invoice')
-            .where('invoice.invoiceNumber LIKE :pattern', { pattern: `${prefixYear}%` })
-            .andWhere('invoice.status = :status', { status: InvoiceStatus.SUCCESS })
-            .orderBy('invoice.invoiceNumber', 'DESC') // Order by number to get MAX
-            .getOne();
+        // Use QueryRunner for transaction with row-level lock
+        const queryRunner = this.dataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
 
-        if (lastInvoice && lastInvoice.invoiceNumber.startsWith(prefixYear)) {
-            const sequencePart = lastInvoice.invoiceNumber.substring(prefixYear.length);
-            const lastSequence = parseInt(sequencePart, 10);
+        try {
+            // Look for the HIGHEST invoice number with this specific prefix and year
+            // across ALL integrations/stores to ensure shared sequence
+            // Check ALL statuses (not just SUCCESS and PENDING) to avoid duplicate numbers
+            // FOR UPDATE lock prevents race conditions
+            const lastInvoice = await queryRunner.manager
+                .createQueryBuilder(Invoice, 'invoice')
+                .where('invoice.invoiceNumber LIKE :pattern', { pattern: `${prefixYear}%` })
+                .orderBy('invoice.invoiceNumber', 'DESC') // Order by number to get MAX
+                .setLock('pessimistic_write') // Postgres: FOR UPDATE
+                .getOne();
 
-            if (!isNaN(lastSequence)) {
-                this.logger.log(`Found last invoice ${lastInvoice.invoiceNumber}, next will be ${lastSequence + 1}`);
-                return `${prefixYear}${String(lastSequence + 1).padStart(9, '0')}`;
+            let invoiceNumber: string;
+
+            if (lastInvoice && lastInvoice.invoiceNumber.startsWith(prefixYear)) {
+                const sequencePart = lastInvoice.invoiceNumber.substring(prefixYear.length);
+                const lastSequence = parseInt(sequencePart, 10);
+
+                if (!isNaN(lastSequence)) {
+                    this.logger.log(`Found last invoice ${lastInvoice.invoiceNumber}, next will be ${lastSequence + 1}`);
+                    invoiceNumber = `${prefixYear}${String(lastSequence + 1).padStart(9, '0')}`;
+                } else {
+                    invoiceNumber = `${prefixYear}000000001`;
+                }
+            } else {
+                // Default start
+                this.logger.log(`No existing invoices with prefix ${prefixYear}, starting from 000000001`);
+                invoiceNumber = `${prefixYear}000000001`;
             }
-        }
 
-        // Default start
-        this.logger.log(`No existing invoices with prefix ${prefixYear}, starting from 000000001`);
-        return `${prefixYear}000000001`;
+            await queryRunner.commitTransaction();
+            return invoiceNumber;
+        } catch (error) {
+            await queryRunner.rollbackTransaction();
+            this.logger.error(`Failed to generate invoice number for prefix ${prefix}: ${error.message}`);
+            throw error;
+        } finally {
+            await queryRunner.release();
+        }
     }
 
     /**

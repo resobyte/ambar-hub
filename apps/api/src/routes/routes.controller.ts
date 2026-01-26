@@ -115,6 +115,27 @@ export class RoutesController {
         };
     }
 
+    @Post(':id/bulk-process')
+    async bulkProcess(
+        @Param('id', ParseUUIDPipe) id: string,
+        @CurrentUser() user: JwtPayload,
+    ) {
+        const result = await this.routesService.bulkProcessOrders(id, user?.sub);
+        return {
+            success: true,
+            data: result,
+        };
+    }
+
+    @Get(':id/labels/print')
+    async printAllLabels(@Param('id', ParseUUIDPipe) id: string) {
+        const labels = await this.routesService.getAllLabelsZpl(id);
+        return {
+            success: true,
+            data: labels,
+        };
+    }
+
     private generateRouteLabelHtml(route: any): string {
         const now = new Date();
         const formatDate = (date: Date | string | null) => {

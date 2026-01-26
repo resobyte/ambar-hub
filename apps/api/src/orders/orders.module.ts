@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { OrdersService } from './orders.service';
 import { OrderHistoryService } from './order-history.service';
+import { ZplTemplateService } from './zpl-template.service';
 import { OrdersController } from './orders.controller';
 import { Order } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
@@ -26,7 +27,7 @@ import { ShelfStock } from '../shelves/entities/shelf-stock.entity';
         InvoicesModule,
     ],
     controllers: [OrdersController],
-    providers: [OrdersService, OrderHistoryService],
-    exports: [OrdersService, OrderHistoryService],
+    providers: [OrdersService, OrderHistoryService, ZplTemplateService],
+    exports: [OrdersService, OrderHistoryService, ZplTemplateService],
 })
 export class OrdersModule { }

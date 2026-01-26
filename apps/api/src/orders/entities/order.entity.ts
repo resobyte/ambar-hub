@@ -206,8 +206,10 @@ export class Order extends BaseEntity {
 
     // ─────────────────────────────────────────────────────────────
     // Document Type (Belge Tipi) - Manuel siparişler için
+    // Default: INVOICE (pazaryeri siparişleri fatura ile gelir)
+    // WAYBILL sadece manuel siparişte irsaliye seçilirse kullanılır
     // ─────────────────────────────────────────────────────────────
-    @Column({ name: 'document_type', nullable: true, default: 'WAYBILL' })
+    @Column({ name: 'document_type', nullable: true, default: 'INVOICE' })
     documentType: string; // 'WAYBILL' | 'INVOICE'
 
     // ─────────────────────────────────────────────────────────────

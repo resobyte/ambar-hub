@@ -7,8 +7,11 @@ import {
     getRoute,
     deleteRoute,
     printRouteLabel,
+    bulkProcessRoute,
+    getRouteLabelsZpl,
     Route,
     RouteStatus,
+    BulkProcessResult,
 } from '@/lib/api';
 
 import {
@@ -32,6 +35,14 @@ import {
 } from '@/components/ui/table';
 import { Separator } from '@/components/ui/separator';
 import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
+import {
     Loader2,
     ArrowLeft,
     Printer,
@@ -40,6 +51,8 @@ import {
     Trash2,
     FileText,
     AlertCircle,
+    CheckCircle2,
+    Download,
 } from 'lucide-react';
 
 interface Props {
@@ -51,6 +64,9 @@ export function RouteDetailClient({ routeId }: Props) {
     const [route, setRoute] = useState<Route | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [bulkProcessing, setBulkProcessing] = useState(false);
+    const [bulkProcessResult, setBulkProcessResult] = useState<BulkProcessResult | null>(null);
+    const [showBulkProcessModal, setShowBulkProcessModal] = useState(false);
 
     const fetchRoute = useCallback(async () => {
         setLoading(true);
@@ -77,17 +93,6 @@ export function RouteDetailClient({ routeId }: Props) {
         }
     };
 
-    const handlePrintLabel = async () => {
-        try {
-            const labelHtml = await printRouteLabel(routeId);
-            const blob = new Blob([labelHtml], { type: 'text/html;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            window.open(url, '_blank');
-        } catch (err) {
-            console.error('Print label failed:', err);
-        }
-    };
-
     const handleCancel = async () => {
         if (!confirm('Bu rotayı iptal etmek istediğinize emin misiniz?')) return;
         try {
@@ -95,6 +100,56 @@ export function RouteDetailClient({ routeId }: Props) {
             router.push('/routes');
         } catch (err) {
             console.error('Cancel failed:', err);
+        }
+    };
+
+    const handleBulkProcess = async () => {
+        setShowBulkProcessModal(false);
+        setBulkProcessing(true);
+        setBulkProcessResult(null);
+        try {
+            const response = await bulkProcessRoute(routeId);
+            const result = response.data;
+            setBulkProcessResult(result);
+            
+            // Refresh route data
+            await fetchRoute();
+            
+            // Show summary
+            const successCount = result.results.filter(r => !r.error).length;
+            const errorCount = result.errors.length;
+            
+            if (errorCount > 0) {
+                alert(`İşlem tamamlandı:\n✓ ${successCount}/${result.total} sipariş başarıyla işlendi\n✗ ${errorCount} siparişte hata oluştu\n\nHatalar:\n${result.errors.join('\n')}`);
+            } else {
+                alert(`İşlem başarıyla tamamlandı!\n✓ ${successCount} sipariş işlendi\n✓ ${result.results.filter(r => r.labelFetched).length} etiket oluşturuldu`);
+            }
+        } catch (err: any) {
+            alert(`Toplu işlem başarısız: ${err.message || 'Bilinmeyen hata'}`);
+        } finally {
+            setBulkProcessing(false);
+        }
+    };
+
+    const handlePrintAllLabels = async () => {
+        try {
+            const response = await getRouteLabelsZpl(routeId);
+            const zplContent = response.data.zplContent;
+            
+            // ZPL dosyasını indir
+            const blob = new Blob([zplContent], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${route?.name || 'labels'}.zpl`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            alert(`${response.data.orderCount} etiket ZPL dosyası indirildi.\n\nBu dosyayı ZPL uyumlu bir yazıcıya gönderebilirsiniz.`);
+        } catch (err: any) {
+            alert(`Etiket indirme başarısız: ${err.message || 'Bilinmeyen hata'}`);
         }
     };
 
@@ -231,48 +286,41 @@ export function RouteDetailClient({ routeId }: Props) {
                             onClick={handlePrintRoute}
                         >
                             <Printer className="w-4 h-4 mr-2" />
-                            Rotayı Yazdır
-                        </Button>
-
-                        <Button
-                            variant="outline"
-                            className="w-full justify-start"
-                            onClick={handlePrintLabel}
-                        >
-                            <Tag className="w-4 h-4 mr-2" />
                             Rota Etiketini Yazdır
                         </Button>
 
                         <Separator />
 
-                        {route.status === RouteStatus.COLLECTING && (
-                            <Button
-                                className="w-full justify-start"
-                                onClick={() => router.push(`/picking?route=${routeId}`)}
-                            >
-                                <Package className="w-4 h-4 mr-2" />
-                                Toplamaya Git
-                            </Button>
-                        )}
-
                         {route.status === RouteStatus.READY && (
                             <Button
-                                className="w-full justify-start bg-green-600 hover:bg-green-700"
-                                onClick={() => router.push('/packing')}
+                                variant="secondary"
+                                className="w-full justify-start"
+                                onClick={() => setShowBulkProcessModal(true)}
+                                disabled={bulkProcessing}
                             >
-                                <Package className="w-4 h-4 mr-2" />
-                                Paketlemeye Git
+                                {bulkProcessing ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                        İşleniyor...
+                                    </>
+                                ) : (
+                                    <>
+                                        <FileText className="w-4 h-4 mr-2" />
+                                        Toplu Faturalama ve Etiketleme
+                                    </>
+                                )}
                             </Button>
                         )}
 
-                        <Button
-                            variant="secondary"
-                            className="w-full justify-start"
-                            disabled
-                        >
-                            <FileText className="w-4 h-4 mr-2" />
-                            Toplu Faturalama ve Paketleme
-                        </Button>
+                        {bulkProcessResult && bulkProcessResult.processed > 0 && (
+                            <Button
+                                className="w-full justify-start bg-green-600 hover:bg-green-700"
+                                onClick={handlePrintAllLabels}
+                            >
+                                <Download className="w-4 h-4 mr-2" />
+                                Tüm Etiketleri İndir ({bulkProcessResult.processed} adet)
+                            </Button>
+                        )}
 
                         {route.status !== RouteStatus.COMPLETED && route.status !== RouteStatus.CANCELLED && (
                             <>
@@ -343,6 +391,59 @@ export function RouteDetailClient({ routeId }: Props) {
                     </Table>
                 </CardContent>
             </Card>
+
+            {/* Bulk Process Confirmation Modal */}
+            <Dialog open={showBulkProcessModal} onOpenChange={setShowBulkProcessModal}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Toplu Faturalama ve Etiketleme</DialogTitle>
+                        <DialogDescription>
+                            Rotadaki tüm siparişler için aşağıdaki işlemler yapılacak:
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-3 py-4">
+                        <div className="flex items-start gap-3">
+                            <FileText className="w-5 h-5 text-blue-600 mt-0.5" />
+                            <div>
+                                <p className="font-medium">Fatura Kesimi</p>
+                                <p className="text-sm text-muted-foreground">Her sipariş için fatura kesilecek (E-Arşiv/E-Fatura/Mikro İhracat)</p>
+                            </div>
+                        </div>
+                        <div className="flex items-start gap-3">
+                            <Tag className="w-5 h-5 text-green-600 mt-0.5" />
+                            <div>
+                                <p className="font-medium">Etiket Oluşturma</p>
+                                <p className="text-sm text-muted-foreground">Aras Kargo'dan ZPL etiket çekilecek (başarısızsa dummy etiket)</p>
+                            </div>
+                        </div>
+                        <div className="flex items-start gap-3">
+                            <Download className="w-5 h-5 text-orange-600 mt-0.5" />
+                            <div>
+                                <p className="font-medium">Toplu Yazdırma</p>
+                                <p className="text-sm text-muted-foreground">Tüm etiketler birleştirilip tek dosya olarak indirilebilir</p>
+                            </div>
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowBulkProcessModal(false)}>
+                            İptal
+                        </Button>
+                        <Button onClick={handleBulkProcess} disabled={bulkProcessing}>
+                            {bulkProcessing ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    İşleniyor...
+                                </>
+                            ) : (
+                                <>
+                                    <CheckCircle2 className="w-4 h-4 mr-2" />
+                                    Başlat
+                                </>
+                            )}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

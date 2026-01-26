@@ -16,6 +16,7 @@ import { OrderItem } from '../orders/entities/order-item.entity';
 import { Product } from '../products/entities/product.entity';
 import { ShelfStock } from '../shelves/entities/shelf-stock.entity';
 import { Consumable } from '../consumables/entities/consumable.entity';
+import { Invoice } from '../invoices/entities/invoice.entity';
 import { RouteStatus } from './enums/route-status.enum';
 import { OrderStatus } from '../orders/enums/order-status.enum';
 import { CreateRouteDto } from './dto/create-route.dto';
@@ -24,6 +25,9 @@ import { RouteResponseDto } from './dto/route-response.dto';
 import { ConsumablesService } from '../consumables/consumables.service';
 import { OrderHistoryService } from '../orders/order-history.service';
 import { OrderHistoryAction } from '../orders/entities/order-history.entity';
+import { InvoicesService } from '../invoices/invoices.service';
+import { ArasKargoService } from '../stores/providers/aras-kargo.service';
+import { Store } from '../stores/entities/store.entity';
 
 interface ProductInfo {
     barcode: string;
@@ -84,9 +88,16 @@ export class RoutesService {
         private readonly shelfStockRepository: Repository<ShelfStock>,
         @InjectRepository(Consumable)
         private readonly consumableRepository: Repository<Consumable>,
+        @InjectRepository(Store)
+        private readonly storeRepository: Repository<Store>,
+        @InjectRepository(Invoice)
+        private readonly invoiceRepository: Repository<Invoice>,
         private readonly consumablesService: ConsumablesService,
         @Inject(forwardRef(() => OrderHistoryService))
         private readonly orderHistoryService: OrderHistoryService,
+        @Inject(forwardRef(() => InvoicesService))
+        private readonly invoicesService: InvoicesService,
+        private readonly arasKargoService: ArasKargoService,
     ) { }
 
     async create(dto: CreateRouteDto, userId?: string): Promise<RouteResponseDto> {
@@ -664,5 +675,217 @@ export class RoutesService {
         await this.routeRepository.update(id, {
             labelPrintedAt: new Date(),
         });
+    }
+
+    /**
+     * Toplu İşlem: Rotadaki tüm siparişler için fatura kes + etiket çek
+     */
+    async bulkProcessOrders(routeId: string, userId?: string): Promise<{
+        processed: number;
+        total: number;
+        errors: string[];
+        results: Array<{
+            orderId: string;
+            orderNumber: string;
+            invoiceCreated: boolean;
+            invoiceNumber?: string;
+            labelFetched: boolean;
+            labelType?: 'aras' | 'dummy';
+            error?: string;
+        }>;
+    }> {
+        // 1. Rotayı ve siparişlerini getir
+        const route = await this.routeRepository.findOne({
+            where: { id: routeId },
+            relations: ['routeOrders', 'routeOrders.order', 'routeOrders.order.store', 'routeOrders.order.customer', 'routeOrders.order.items'],
+        });
+
+        if (!route) {
+            throw new NotFoundException(`Rota bulunamadı: ${routeId}`);
+        }
+
+        const orders = route.routeOrders
+            .map(ro => ro.order)
+            .filter(order => order !== null && order !== undefined);
+        const results: Array<{
+            orderId: string;
+            orderNumber: string;
+            invoiceCreated: boolean;
+            invoiceNumber?: string;
+            labelFetched: boolean;
+            labelType?: 'aras' | 'dummy';
+            error?: string;
+        }> = [];
+
+        const errors: string[] = [];
+        let processed = 0;
+
+        // 2. Her sipariş için sırayla işle
+        for (const order of orders) {
+            const orderResult: {
+                orderId: string;
+                orderNumber: string;
+                invoiceCreated: boolean;
+                invoiceNumber?: string;
+                labelFetched: boolean;
+                labelType?: 'aras' | 'dummy';
+                error?: string;
+            } = {
+                orderId: order.id,
+                orderNumber: order.orderNumber,
+                invoiceCreated: false,
+                labelFetched: false,
+            };
+
+            try {
+                // A. Fatura kuyruğa ekle (asenkron işlem için)
+                // Pazaryerinden gelen siparişler varsayılan INVOICE type ile geliyor
+                // Manuel siparişlerde sadece WAYBILL seçilmişse fatura kesme
+                const shouldInvoice = order.documentType !== 'WAYBILL';
+                
+                if (shouldInvoice) {
+                    try {
+                        // Kuyruğa ekle - hızlı işlem, PENDING fatura oluşturur
+                        const pendingInvoice = await this.invoicesService.queueInvoiceForOrder(order.id);
+                        orderResult.invoiceCreated = true;
+                        // Fatura numarası PENDING'de geçici, job çalışınca güncellenecek
+                        orderResult.invoiceNumber = pendingInvoice.invoiceNumber;
+                        this.logger.log(`Invoice queued for order ${order.orderNumber}: ${pendingInvoice.invoiceNumber}`);
+                    } catch (error: any) {
+                        const message = `Fatura kuyruğa eklenemedi (${order.orderNumber}): ${error.message}`;
+                        this.logger.error(message);
+                        errors.push(message);
+                        // Fatura başarısız olsa bile etikete geç
+                    }
+                }
+
+                // B. Etiket oluştur - Önce Aras'tan ZPL çek, başarısızsa dummy oluştur
+                if (!order.cargoLabelZpl) {
+                    let labelType: 'aras' | 'dummy' = 'dummy';
+                    
+                    // Önce Aras'tan deneyim
+                    const arasZpl = await this.fetchArasLabel(order);
+                    
+                    if (arasZpl) {
+                        // Aras başarılı
+                        await this.orderRepository.update(order.id, {
+                            cargoLabelZpl: arasZpl,
+                        });
+                        labelType = 'aras';
+                        this.logger.log(`Aras label fetched for order ${order.orderNumber}`);
+                    } else {
+                        // Aras başarısız, dummy oluştur
+                        const invoiceNum = await this.getInvoiceNumberForOrder(order.id);
+                        const dummyZpl = this.generateDummyZplWithInvoice(order, invoiceNum);
+                        await this.orderRepository.update(order.id, {
+                            cargoLabelZpl: dummyZpl,
+                        });
+                        this.logger.warn(`Aras label failed for ${order.orderNumber}, using dummy label`);
+                    }
+                    
+                    orderResult.labelType = labelType;
+                }
+                orderResult.labelFetched = true;
+                this.logger.log(`Label generated for order ${order.orderNumber}`);
+
+                processed++;
+                results.push(orderResult);
+
+            } catch (error: any) {
+                const message = `Sipariş işlenemedi (${order.orderNumber}): ${error.message}`;
+                this.logger.error(message);
+                errors.push(message);
+                orderResult.error = error.message;
+                results.push(orderResult);
+            }
+        }
+
+        this.logger.log(`Bulk process completed for route ${routeId}: ${processed}/${orders.length} orders processed`);
+
+        return {
+            processed,
+            total: orders.length,
+            errors,
+            results,
+        };
+    }
+
+    /**
+     * Aras Kargo'dan ZPL etiket çek
+     */
+    private async fetchArasLabel(order: Order): Promise<string | null> {
+        try {
+            const integrationCode = order.orderNumber;
+            return await this.arasKargoService.getBarcode(integrationCode);
+        } catch (error) {
+            this.logger.warn(`Aras label fetch failed for ${order.orderNumber}: ${error.message}`);
+            return null;
+        }
+    }
+
+    /**
+     * Sipariş için fatura numarasını getir
+     */
+    private async getInvoiceNumberForOrder(orderId: string): Promise<string | null> {
+        const invoice = await this.invoiceRepository.findOne({
+            where: { orderId },
+            order: { createdAt: 'DESC' },
+        });
+        return invoice?.invoiceNumber || null;
+    }
+
+    /**
+     * Dummy ZPL etiket oluştur (fatura numarasıyla)
+     */
+    private generateDummyZplWithInvoice(order: Order, invoiceNum: string | null): string {
+        const trackingNum = order.cargoTrackingNumber || 'N/A';
+        const orderNum = order.orderNumber;
+        const customerName = order.customer
+            ? `${order.customer.firstName || ''} ${order.customer.lastName || ''}`.trim()
+            : 'N/A';
+        const invoiceDisplay = invoiceNum || 'N/A';
+
+        return `^XA
+^FO50,50^A0N,40,30^FDSiparis: ${orderNum}^FS
+^FO50,100^A0N,30,20^FDFatura: ${invoiceDisplay}^FS
+^FO50,140^A0N,30,20^FDTakip: ${trackingNum}^FS
+^FO50,180^A0N,30,20^FDMusteri: ${customerName}^FS
+^FO50,220^BCN,100,Y,N,N^FD${trackingNum}^FS
+^XZ`;
+    }
+
+    /**
+     * Rotadaki tüm ZPL etiketlerini birleştir (yazdırma için)
+     */
+    async getAllLabelsZpl(routeId: string): Promise<{ zplContent: string; orderCount: number }> {
+        const route = await this.routeRepository.findOne({
+            where: { id: routeId },
+            relations: ['routeOrders', 'routeOrders.order'],
+        });
+
+        if (!route) {
+            throw new NotFoundException(`Rota bulunamadı: ${routeId}`);
+        }
+
+        const zplContents: string[] = [];
+        
+        for (const routeOrder of route.routeOrders) {
+            const order = routeOrder.order;
+            if (order.cargoLabelZpl) {
+                zplContents.push(order.cargoLabelZpl);
+            }
+        }
+
+        if (zplContents.length === 0) {
+            throw new BadRequestException('Bu rotada hiç etiket bulunamadı. Önce toplu işlemi başlatın.');
+        }
+
+        // Tüm ZPL'leri birleştir
+        const combinedZpl = zplContents.join('\n');
+
+        return {
+            zplContent: combinedZpl,
+            orderCount: zplContents.length,
+        };
     }
 }

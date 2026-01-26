@@ -8,10 +8,14 @@ import { OrderItem } from '../orders/entities/order-item.entity';
 import { Product } from '../products/entities/product.entity';
 import { ShelfStock } from '../shelves/entities/shelf-stock.entity';
 import { Consumable } from '../consumables/entities/consumable.entity';
+import { Store } from '../stores/entities/store.entity';
+import { Invoice } from '../invoices/entities/invoice.entity';
 import { RoutesService } from './routes.service';
 import { RoutesController } from './routes.controller';
 import { ConsumablesModule } from '../consumables/consumables.module';
 import { OrdersModule } from '../orders/orders.module';
+import { InvoicesModule } from '../invoices/invoices.module';
+import { StoresModule } from '../stores/stores.module';
 
 @Module({
     imports: [
@@ -24,9 +28,13 @@ import { OrdersModule } from '../orders/orders.module';
             Product,
             ShelfStock,
             Consumable,
+            Store,
+            Invoice,
         ]),
         ConsumablesModule,
         forwardRef(() => OrdersModule),
+        forwardRef(() => InvoicesModule),
+        forwardRef(() => StoresModule),
     ],
     controllers: [RoutesController],
     providers: [RoutesService],
