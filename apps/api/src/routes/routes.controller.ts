@@ -58,6 +58,24 @@ export class RoutesController {
         };
     }
 
+    @Get('by-name/:name')
+    async findByName(@Param('name') name: string) {
+        const route = await this.routesService.findByName(name, RouteStatus.COLLECTING);
+        return {
+            success: true,
+            data: route,
+        };
+    }
+
+    @Get('by-name/:name/for-packing')
+    async findByNameForPacking(@Param('name') name: string) {
+        const route = await this.routesService.findByName(name, RouteStatus.READY);
+        return {
+            success: true,
+            data: route,
+        };
+    }
+
     @Get('suggestions')
     async getRouteSuggestions(
         @Query('storeId') storeId?: string,

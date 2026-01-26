@@ -339,6 +339,27 @@ export class RoutesService {
         return RouteResponseDto.fromEntity(route);
     }
 
+    async findByName(name: string, requiredStatus?: RouteStatus | RouteStatus[]): Promise<RouteResponseDto> {
+        const route = await this.routeRepository.findOne({
+            where: { name },
+            relations: ['routeOrders', 'routeOrders.order', 'routeOrders.order.items', 'routeOrders.order.store', 'routeOrders.order.customer', 'createdBy'],
+        });
+
+        if (!route) {
+            throw new NotFoundException(`Route with name ${name} not found`);
+        }
+
+        if (requiredStatus) {
+            const allowedStatuses = Array.isArray(requiredStatus) ? requiredStatus : [requiredStatus];
+            if (!allowedStatuses.includes(route.status)) {
+                const statusNames = allowedStatuses.join(' or ');
+                throw new BadRequestException(`Route ${name} is not in ${statusNames} status`);
+            }
+        }
+
+        return RouteResponseDto.fromEntity(route);
+    }
+
     async getFilteredOrders(filter: RouteFilterDto): Promise<any[]> {
         // Get orders that are ready for picking (WAITING_PICKING status, not in active route)
         const queryBuilder = this.orderRepository
@@ -736,7 +757,28 @@ export class RoutesService {
         const errors: string[] = [];
         let processed = 0;
 
-        // 2. Her sipariş için sırayla işle
+        // 2. Fatura kesilecek siparişleri ayır
+        const ordersToInvoice = orders.filter(order => order.documentType !== 'WAYBILL');
+        const orderIdsToInvoice = ordersToInvoice.map(o => o.id);
+
+        // 3. Toplu fatura kes (lock mekanizması ile)
+        let bulkInvoiceResults: { success: Array<{ orderId: string; invoiceNumber: string }>; failed: Array<{ orderId: string; error: string }> } = {
+            success: [],
+            failed: [],
+        };
+
+        if (orderIdsToInvoice.length > 0) {
+            try {
+                this.logger.log(`Starting bulk invoice for ${orderIdsToInvoice.length} orders in route ${routeId}`);
+                bulkInvoiceResults = await this.invoicesService.createBulkInvoices(orderIdsToInvoice);
+                this.logger.log(`Bulk invoice completed: ${bulkInvoiceResults.success.length} success, ${bulkInvoiceResults.failed.length} failed`);
+            } catch (error: any) {
+                this.logger.error(`Bulk invoice failed for route ${routeId}: ${error.message}`);
+                errors.push(`Toplu fatura hatası: ${error.message}`);
+            }
+        }
+
+        // 4. Her sipariş için etiket oluştur ve sonuçları derle
         for (const order of orders) {
             const orderResult: {
                 orderId: string;
@@ -754,25 +796,15 @@ export class RoutesService {
             };
 
             try {
-                // A. Fatura kuyruğa ekle (asenkron işlem için)
-                // Pazaryerinden gelen siparişler varsayılan INVOICE type ile geliyor
-                // Manuel siparişlerde sadece WAYBILL seçilmişse fatura kesme
-                const shouldInvoice = order.documentType !== 'WAYBILL';
+                // A. Fatura sonucunu kontrol et
+                const invoiceSuccess = bulkInvoiceResults.success.find(s => s.orderId === order.id);
+                const invoiceFailed = bulkInvoiceResults.failed.find(f => f.orderId === order.id);
 
-                if (shouldInvoice) {
-                    try {
-                        // Kuyruğa ekle - hızlı işlem, PENDING fatura oluşturur
-                        const pendingInvoice = await this.invoicesService.queueInvoiceForOrder(order.id);
-                        orderResult.invoiceCreated = true;
-                        // Fatura numarası PENDING'de geçici, job çalışınca güncellenecek
-                        orderResult.invoiceNumber = pendingInvoice.invoiceNumber;
-                        this.logger.log(`Invoice queued for order ${order.orderNumber}: ${pendingInvoice.invoiceNumber}`);
-                    } catch (error: any) {
-                        const message = `Fatura kuyruğa eklenemedi (${order.orderNumber}): ${error.message}`;
-                        this.logger.error(message);
-                        errors.push(message);
-                        // Fatura başarısız olsa bile etikete geç
-                    }
+                if (invoiceSuccess) {
+                    orderResult.invoiceCreated = true;
+                    orderResult.invoiceNumber = invoiceSuccess.invoiceNumber;
+                } else if (invoiceFailed) {
+                    errors.push(`Fatura hatası (${order.orderNumber}): ${invoiceFailed.error}`);
                 }
 
                 // B. Etiket oluştur - Önce Aras'tan ZPL çek, başarısızsa dummy oluştur

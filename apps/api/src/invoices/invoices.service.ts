@@ -67,7 +67,6 @@ export class InvoicesService {
         const isMicroExport = order.micro === true;
 
         let serialNo = '';
-        let invoiceNumber = '';
 
         // Determine serialNo based on invoice type
         if (integrationType === 'TRENDYOL' && isMicroExport && storeConfig.hasMicroExport) {
@@ -102,38 +101,76 @@ export class InvoicesService {
             }
         }
 
-        // Generate invoice number (with FOR UPDATE lock)
-        if (serialNo) {
-            invoiceNumber = await this.generateInvoiceNumber(serialNo);
-        } else {
-            invoiceNumber = `PENDING-${order.orderNumber}`;
-        }
-
         // Calculate total amount
         const totalAmount = order.items?.reduce((sum, item) => {
             return sum + (Number(item.unitPrice) || 0) * (item.quantity || 1);
         }, 0) || Number(order.totalPrice) || 0;
 
-        // Create pending invoice record with proper invoice number
-        const invoice = this.invoiceRepository.create({
-            orderId,
-            storeId: order.storeId,
-            invoiceNumber,
-            invoiceSerial: serialNo,
-            status: InvoiceStatus.PENDING,
-            totalAmount,
-            currencyCode: order.currencyCode || 'TRY',
-            invoiceDate: new Date(),
-            customerFirstName: order.customer?.firstName,
-            customerLastName: order.customer?.lastName,
-            customerEmail: order.customer?.email,
-            customerAddress: this.formatAddress(order.shippingAddress),
-        } as any);
+        // Use transaction with lock to prevent race condition
+        // Number generation + invoice save must be atomic
+        const queryRunner = this.dataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
 
-        const saved = await this.invoiceRepository.save(invoice) as unknown as Invoice;
-        this.logger.log(`Queued invoice for order ${order.orderNumber} - Invoice: ${invoiceNumber}, ID: ${saved.id}`);
+        try {
+            let invoiceNumber = '';
 
-        return saved;
+            if (serialNo) {
+                const year = new Date().getFullYear();
+                const prefixYear = `${serialNo}${year}`;
+
+                // Lock and get last invoice number
+                const lastInvoice = await queryRunner.manager
+                    .createQueryBuilder(Invoice, 'invoice')
+                    .where('invoice.invoiceNumber LIKE :pattern', { pattern: `${prefixYear}%` })
+                    .orderBy('invoice.invoiceNumber', 'DESC')
+                    .setLock('pessimistic_write')
+                    .getOne();
+
+                if (lastInvoice && lastInvoice.invoiceNumber.startsWith(prefixYear)) {
+                    const sequencePart = lastInvoice.invoiceNumber.substring(prefixYear.length);
+                    const lastSequence = parseInt(sequencePart, 10);
+                    if (!isNaN(lastSequence)) {
+                        invoiceNumber = `${prefixYear}${String(lastSequence + 1).padStart(9, '0')}`;
+                    } else {
+                        invoiceNumber = `${prefixYear}000000001`;
+                    }
+                } else {
+                    invoiceNumber = `${prefixYear}000000001`;
+                }
+            } else {
+                invoiceNumber = `PENDING-${order.orderNumber}`;
+            }
+
+            // Create and save invoice within the same transaction (lock still held)
+            const invoice = queryRunner.manager.create(Invoice, {
+                orderId,
+                storeId: order.storeId,
+                invoiceNumber,
+                invoiceSerial: serialNo,
+                status: InvoiceStatus.PENDING,
+                totalAmount,
+                currencyCode: order.currencyCode || 'TRY',
+                invoiceDate: new Date(),
+                customerFirstName: order.customer?.firstName,
+                customerLastName: order.customer?.lastName,
+                customerEmail: order.customer?.email,
+                customerAddress: this.formatAddress(order.shippingAddress),
+            } as any);
+
+            const saved = await queryRunner.manager.save(invoice) as unknown as Invoice;
+            await queryRunner.commitTransaction();
+
+            this.logger.log(`Queued invoice for order ${order.orderNumber} - Invoice: ${invoiceNumber}, ID: ${saved.id}`);
+            return saved;
+
+        } catch (error) {
+            await queryRunner.rollbackTransaction();
+            this.logger.error(`Failed to queue invoice for order ${orderId}: ${error.message}`);
+            throw error;
+        } finally {
+            await queryRunner.release();
+        }
     }
 
     /**

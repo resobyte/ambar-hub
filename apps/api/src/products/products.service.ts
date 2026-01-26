@@ -89,6 +89,19 @@ export class ProductsService {
     };
   }
 
+  async findByBarcode(barcode: string): Promise<ProductResponseDto> {
+    const product = await this.productRepository.findOne({
+      where: { barcode },
+      relations: ['productStores', 'brand', 'category'],
+    });
+
+    if (!product) {
+      throw new NotFoundException(`Barkod ${barcode} ile ürün bulunamadı`);
+    }
+
+    return ProductResponseDto.fromEntity(product, product.productStores?.length || 0);
+  }
+
   async findOne(id: string): Promise<ProductResponseDto> {
     const product = await this.productRepository.findOne({
       where: { id },

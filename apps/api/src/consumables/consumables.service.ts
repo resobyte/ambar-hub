@@ -67,6 +67,17 @@ export class ConsumablesService {
         return consumable;
     }
 
+    async findByBarcode(barcode: string): Promise<Consumable> {
+        const consumable = await this.consumableRepository.findOne({
+            where: { barcode },
+            relations: ['parent', 'variants'],
+        });
+        if (!consumable) {
+            throw new NotFoundException(`Barkod ${barcode} ile malzeme bulunamadı`);
+        }
+        return consumable;
+    }
+
     async update(id: string, updateConsumableDto: UpdateConsumableDto): Promise<Consumable> {
         const consumable = await this.findOne(id);
 

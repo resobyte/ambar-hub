@@ -61,6 +61,34 @@ export class PackingController {
         };
     }
 
+    @Post('find-order-by-barcode')
+    async findOrderByBarcode(@Body() body: { sessionId: string; barcode: string }) {
+        const result = await this.packingService.findOrderByProductBarcode(body.sessionId, body.barcode);
+        return {
+            success: result.success,
+            message: result.message,
+            data: {
+                order: result.order,
+                item: result.item,
+                allItemsForOrder: result.allItemsForOrder,
+            },
+        };
+    }
+
+    @Post('confirm-product')
+    async confirmProduct(@Body() body: { sessionId: string; barcode: string; orderId: string }) {
+        const result = await this.packingService.confirmProductScan(body.sessionId, body.barcode, body.orderId);
+        return {
+            success: result.success,
+            message: result.message,
+            data: {
+                item: result.item,
+                orderComplete: result.orderComplete,
+                allItemsForOrder: result.allItemsForOrder,
+            },
+        };
+    }
+
     @Post('complete-order')
     async completeOrder(@Body() dto: CompleteOrderDto) {
         const result = await this.packingService.completeOrder(dto);

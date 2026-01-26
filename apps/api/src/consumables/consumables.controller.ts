@@ -16,6 +16,11 @@ export class ConsumablesController {
         return this.consumablesService.findAll();
     }
 
+    @Get('by-barcode/:barcode')
+    findByBarcode(@Param('barcode') barcode: string) {
+        return this.consumablesService.findByBarcode(barcode);
+    }
+
     @Get(':id')
     findOne(@Param('id') id: string) {
         return this.consumablesService.findOne(id);

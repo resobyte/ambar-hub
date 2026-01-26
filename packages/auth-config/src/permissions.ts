@@ -92,6 +92,14 @@ export const ROUTE_PERMISSIONS: RouteConfig[] = [
   },
   // Operasyon
   {
+    path: '/operations',
+    label: 'Operasyon',
+    icon: 'scan',
+    roles: [Role.PLATFORM_OWNER, Role.OPERATION],
+    showInSidebar: true,
+    group: 'Operasyon',
+  },
+  {
     path: '/routes',
     label: 'Rotalar',
     icon: 'route',
@@ -101,7 +109,7 @@ export const ROUTE_PERMISSIONS: RouteConfig[] = [
   },
   {
     path: '/picking',
-    label: 'Toplama',
+    label: 'Toplama (Web)',
     icon: 'picking',
     roles: [Role.PLATFORM_OWNER],
     showInSidebar: true,
@@ -109,7 +117,7 @@ export const ROUTE_PERMISSIONS: RouteConfig[] = [
   },
   {
     path: '/packing',
-    label: 'Paketleme',
+    label: 'Paketleme (Web)',
     icon: 'package',
     roles: [Role.PLATFORM_OWNER],
     showInSidebar: true,
@@ -205,6 +213,9 @@ export function isRouteAllowed(path: string, role: Role): boolean {
 export function getDefaultRouteByRole(role: Role): string {
   if (role === Role.PLATFORM_OWNER) {
     return '/dashboard';
+  }
+  if (role === Role.OPERATION) {
+    return '/operations';
   }
   return '/account';
 }

@@ -66,6 +66,11 @@ export class ProductsController {
     return this.productsService.findAll(page, limit, { name, isActive, brandId, categoryId, storeId });
   }
 
+  @Get('barcode/:barcode')
+  findByBarcode(@Param('barcode') barcode: string) {
+    return this.productsService.findByBarcode(barcode);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.productsService.findOne(id);

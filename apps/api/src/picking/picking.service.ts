@@ -291,16 +291,18 @@ export class PickingService {
         }
         const routePickedItems = this.pickingProgress.get(routeId)!;
         const currentQty = routePickedItems.get(barcode) || 0;
+        const remainingQty = item.totalQuantity - currentQty;
 
-        const newQty = Math.min(currentQty + quantity, item.totalQuantity);
-        if (newQty === currentQty && quantity > 0) {
+        // Check if requested quantity exceeds remaining
+        if (quantity > remainingQty) {
             return {
                 success: false,
-                message: `Daha fazla ürün toplanamaz. (İstenen: ${currentQty + quantity}, Toplam: ${item.totalQuantity})`,
+                message: `Fazla adet girdiniz! Kalan: ${remainingQty}, Girilen: ${quantity}`,
                 item,
             };
         }
 
+        const newQty = currentQty + quantity;
         routePickedItems.set(barcode, newQty);
 
         // Transfer stock from source shelf to picking pool

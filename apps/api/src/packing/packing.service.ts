@@ -169,7 +169,7 @@ export class PackingService {
     async getSession(id: string): Promise<PackingSession> {
         const session = await this.sessionRepository.findOne({
             where: { id },
-            relations: ['route', 'items', 'items.order', 'items.order.customer'],
+            relations: ['route', 'route.routeConsumables', 'route.routeConsumables.consumable', 'items', 'items.order', 'items.order.customer', 'items.order.items'],
         });
 
         if (!session) {
@@ -177,6 +177,130 @@ export class PackingService {
         }
 
         return session;
+    }
+
+    async findOrderByProductBarcode(sessionId: string, barcode: string): Promise<{
+        success: boolean;
+        message: string;
+        order?: Order;
+        item?: PackingOrderItem;
+        allItemsForOrder?: PackingOrderItem[];
+    }> {
+        const session = await this.sessionRepository.findOne({
+            where: { id: sessionId },
+            relations: ['items', 'items.order', 'items.order.customer', 'items.order.items'],
+        });
+
+        if (!session) {
+            throw new NotFoundException('Session not found');
+        }
+
+        if (session.status !== PackingSessionStatus.ACTIVE) {
+            throw new BadRequestException('Session is not active');
+        }
+
+        const matchingItem = session.items.find(
+            item => item.barcode === barcode && !item.isComplete
+        );
+
+        if (!matchingItem) {
+            const completedItem = session.items.find(item => item.barcode === barcode);
+            if (completedItem) {
+                return {
+                    success: false,
+                    message: 'Bu ürün zaten tarandı',
+                };
+            }
+
+            return {
+                success: false,
+                message: `Barkod bu rotada bulunamadı: ${barcode}`,
+            };
+        }
+
+        const order = await this.orderRepository.findOne({
+            where: { id: matchingItem.orderId },
+            relations: ['customer', 'items', 'store'],
+        });
+
+        if (!order) {
+            return {
+                success: false,
+                message: 'Sipariş bulunamadı',
+            };
+        }
+
+        const allItemsForOrder = session.items.filter(
+            item => item.orderId === matchingItem.orderId
+        );
+
+        return {
+            success: true,
+            message: 'Sipariş bulundu',
+            order,
+            item: matchingItem,
+            allItemsForOrder,
+        };
+    }
+
+    async confirmProductScan(sessionId: string, barcode: string, orderId: string): Promise<{
+        success: boolean;
+        message: string;
+        item?: PackingOrderItem;
+        orderComplete?: boolean;
+        allItemsForOrder?: PackingOrderItem[];
+    }> {
+        const session = await this.sessionRepository.findOne({
+            where: { id: sessionId },
+            relations: ['items'],
+        });
+
+        if (!session) {
+            throw new NotFoundException('Session not found');
+        }
+
+        const matchingItem = session.items.find(
+            item => item.barcode === barcode && item.orderId === orderId && !item.isComplete
+        );
+
+        if (!matchingItem) {
+            return {
+                success: false,
+                message: 'Ürün bulunamadı veya zaten tarandı',
+            };
+        }
+
+        matchingItem.scannedQuantity += 1;
+        matchingItem.scannedAt = new Date();
+
+        if (matchingItem.scannedQuantity >= matchingItem.requiredQuantity) {
+            matchingItem.isComplete = true;
+        }
+
+        await this.packingItemRepository.save(matchingItem);
+
+        await this.transferToPackingShelf(
+            barcode,
+            1,
+            orderId,
+            session.routeId,
+        );
+
+        const allItemsForOrder = await this.packingItemRepository.find({
+            where: { sessionId, orderId },
+        });
+
+        const orderComplete = allItemsForOrder.every(item => item.isComplete);
+
+        return {
+            success: true,
+            message: orderComplete
+                ? 'Sipariş tamamlandı!'
+                : `Ürün onaylandı (${matchingItem.scannedQuantity}/${matchingItem.requiredQuantity})`,
+            item: matchingItem,
+            orderComplete,
+            allItemsForOrder,
+        };
     }
 
     async scanBarcode(dto: ScanBarcodeDto): Promise<{
@@ -614,6 +738,14 @@ export class PackingService {
             if (arasResult.ResultCode === '0') {
                 this.logger.log(`Aras Kargo shipment created for order ${order.orderNumber}`);
 
+                // IntegrationCode'u cargoTrackingNumber olarak kaydet ki getBarcode çalışsın
+                const integrationCode = order.packageId || order.orderNumber;
+                await this.orderRepository.update(order.id, {
+                    cargoTrackingNumber: integrationCode,
+                    cargoProviderName: 'Aras Kargo',
+                });
+                order.cargoTrackingNumber = integrationCode;
+
                 await this.orderHistoryService.logEvent({
                     orderId: order.id,
                     action: OrderHistoryAction.CARGO_CREATED,
@@ -621,6 +753,7 @@ export class PackingService {
                     metadata: {
                         provider: 'Aras Kargo',
                         resultCode: arasResult.ResultCode,
+                        integrationCode,
                     },
                 });
 

@@ -1270,6 +1270,15 @@ export enum RouteStatus {
   CANCELLED = 'CANCELLED',
 }
 
+export interface RouteConsumable {
+  id: string;
+  routeId: string;
+  consumableId: string;
+  consumable?: Consumable;
+  quantity: number;
+  unitCost: number;
+}
+
 export interface Route {
   id: string;
   name: string;
@@ -1284,6 +1293,7 @@ export interface Route {
   createdAt: string;
   updatedAt: string;
   orders?: Order[];
+  routeConsumables?: RouteConsumable[];
 }
 
 export interface RouteSuggestion {
@@ -1597,6 +1607,56 @@ export async function cancelPackingSession(sessionId: string): Promise<{ success
   return res.json();
 }
 
+export async function findOrderByProductBarcode(sessionId: string, barcode: string): Promise<{
+  success: boolean;
+  message: string;
+  data?: {
+    order?: Order;
+    item?: PackingOrderItem;
+    allItemsForOrder?: PackingOrderItem[];
+  };
+}> {
+  const res = await fetch(`${API_URL}/packing/find-order-by-barcode`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ sessionId, barcode }),
+  });
+  return res.json();
+}
+
+export async function confirmProductScan(sessionId: string, barcode: string, orderId: string): Promise<{
+  success: boolean;
+  message: string;
+  data?: {
+    item?: PackingOrderItem;
+    orderComplete?: boolean;
+    allItemsForOrder?: PackingOrderItem[];
+  };
+}> {
+  const res = await fetch(`${API_URL}/packing/confirm-product`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ sessionId, barcode, orderId }),
+  });
+  return res.json();
+}
+
+export async function getCargoLabel(orderId: string): Promise<{
+  success: boolean;
+  data?: {
+    zpl?: string;
+    html: string;
+    labelType: 'aras' | 'dummy';
+  };
+}> {
+  const res = await fetch(`${API_URL}/packing/cargo-label/${orderId}`, {
+    credentials: 'include',
+  });
+  return res.json();
+}
+
 // Picking API
 
 export interface PickingItem {
@@ -1674,6 +1734,57 @@ export async function resetPicking(routeId: string): Promise<ApiResponse<Picking
   });
   return res.json();
 }
+
+export async function getRouteByName(name: string): Promise<ApiResponse<Route>> {
+  const res = await fetch(`${API_URL}/routes/by-name/${encodeURIComponent(name)}`, {
+    credentials: 'include',
+  });
+  return res.json();
+}
+
+export async function getRouteByNameForPacking(name: string): Promise<ApiResponse<Route>> {
+  const res = await fetch(`${API_URL}/routes/by-name/${encodeURIComponent(name)}/for-packing`, {
+    credentials: 'include',
+  });
+  return res.json();
+}
+
+export async function scanPickingShelf(routeId: string, shelfBarcode: string): Promise<{
+  success: boolean;
+  message: string;
+  expectedShelf?: string;
+  scannedShelf?: string;
+  nextItem?: PickingItem;
+}> {
+  const res = await fetch(`${API_URL}/picking/scan-shelf`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ routeId, shelfBarcode }),
+  });
+  return res.json();
+}
+
+export async function scanPickingProductWithShelf(
+  routeId: string,
+  productBarcode: string,
+  quantity: number = 1
+): Promise<{
+  success: boolean;
+  message: string;
+  item?: PickingItem;
+  progress?: PickingProgress;
+  requiresShelfScan?: boolean;
+}> {
+  const res = await fetch(`${API_URL}/picking/scan-product`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ routeId, productBarcode, quantity }),
+  });
+  return res.json();
+}
+
 // Definitions API
 
 // Brands
@@ -1921,6 +2032,13 @@ export async function consumeFromParent(variantId: string, quantity: number): Pr
   return res.json();
 }
 
+export async function getConsumableByBarcode(barcode: string): Promise<ApiResponse<Consumable>> {
+  const res = await fetch(`${API_URL}/consumables/by-barcode/${encodeURIComponent(barcode)}`, {
+    credentials: 'include',
+  });
+  return res.json();
+}
+
 // Dashboard API
 export interface DashboardStats {
   todayOrders: number;
@@ -2111,4 +2229,96 @@ export async function reshipOrder(
     throw new Error(error.message || 'Yeniden gönderim başarısız');
   }
   return res.json();
+}
+
+// ─────────────────────────────────────────────────────────────
+// Supply / İkmal - Shelf & Product Operations
+// ─────────────────────────────────────────────────────────────
+
+export interface ShelfStock {
+  shelf: Shelf;
+  warehouse: { id: string; name: string };
+  quantity: number;
+  product: { name: string; barcode: string };
+}
+
+export interface ShelfStockItem {
+  id: string;
+  productId: string;
+  quantity: number;
+  product?: Product;
+}
+
+export async function getShelfByBarcode(barcode: string): Promise<ApiResponse<Shelf>> {
+  const res = await fetch(`${API_URL}/shelves/barcode/${encodeURIComponent(barcode)}`, {
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Raf bulunamadı');
+  }
+  return res.json();
+}
+
+export async function getShelfStock(shelfId: string): Promise<ApiResponse<ShelfStockItem[]>> {
+  const res = await fetch(`${API_URL}/shelves/${shelfId}/stock`, {
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Raf stoku alınamadı');
+  }
+  return res.json();
+}
+
+export async function getProductByBarcode(barcode: string): Promise<ApiResponse<Product>> {
+  const res = await fetch(`${API_URL}/products/barcode/${encodeURIComponent(barcode)}`, {
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Ürün bulunamadı');
+  }
+  return res.json();
+}
+
+export async function searchProductInShelves(query: string): Promise<ShelfStock[]> {
+  const res = await fetch(`${API_URL}/shelves/search-product?query=${encodeURIComponent(query)}`, {
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    return [];
+  }
+  const json = await res.json();
+  return json.data || json || [];
+}
+
+export async function transferShelfStock(
+  fromShelfId: string,
+  toShelfId: string,
+  productId: string,
+  quantity: number
+): Promise<ApiResponse<{ success: boolean }>> {
+  const res = await fetch(`${API_URL}/shelves/transfer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ fromShelfId, toShelfId, productId, quantity }),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Transfer başarısız');
+  }
+  return res.json();
+}
+
+export async function getReceivingShelves(warehouseId: string): Promise<Shelf[]> {
+  const res = await fetch(`${API_URL}/shelves/receiving/${warehouseId}`, {
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    return [];
+  }
+  const json = await res.json();
+  return json.data || json || [];
 }
