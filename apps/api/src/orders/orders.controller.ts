@@ -56,6 +56,11 @@ export class OrdersController {
         return this.ordersService.generateCargoLabelZpl(id);
     }
 
+    @Get(':id/cargo-label')
+    async getCargoLabel(@Param('id') id: string) {
+        return this.ordersService.getCargoLabel(id);
+    }
+
     @Put(':id/trendyol-status/picking')
     async updateTrendyolPicking(@Param('id') id: string) {
         return this.ordersService.updateTrendyolPackageStatus(id, 'Picking');

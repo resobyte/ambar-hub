@@ -131,7 +131,7 @@ export interface Store {
   invoiceEnabled?: boolean;
   invoiceTransactionCode?: string;
   hasMicroExport?: boolean;
-  
+
   // E-Arşiv
   eArchiveBulkCustomer?: boolean;
   eArchiveCardCode?: string;
@@ -140,7 +140,7 @@ export interface Store {
   eArchiveSequenceNo?: string;
   eArchiveHavaleCardCode?: string;
   eArchiveHavaleAccountCode?: string;
-  
+
   // E-Fatura
   eInvoiceBulkCustomer?: boolean;
   eInvoiceCardCode?: string;
@@ -149,19 +149,19 @@ export interface Store {
   eInvoiceSequenceNo?: string;
   eInvoiceHavaleCardCode?: string;
   eInvoiceHavaleAccountCode?: string;
-  
+
   // Toplu Faturalama
   bulkEArchiveSerialNo?: string;
   bulkEArchiveSequenceNo?: string;
   bulkEInvoiceSerialNo?: string;
   bulkEInvoiceSequenceNo?: string;
-  
+
   // İade Gider Pusulası
   refundExpenseVoucherEArchiveSerialNo?: string;
   refundExpenseVoucherEArchiveSequenceNo?: string;
   refundExpenseVoucherEInvoiceSerialNo?: string;
   refundExpenseVoucherEInvoiceSequenceNo?: string;
-  
+
   // Mikro İhracat
   microExportTransactionCode?: string;
   microExportAccountCode?: string;
@@ -172,6 +172,13 @@ export interface Store {
   microExportBulkSequenceNo?: string;
   microExportRefundSerialNo?: string;
   microExportRefundSequenceNo?: string;
+
+  // Fatura Gönderen Bilgileri
+  senderCompanyName?: string;
+  senderAddress?: string;
+  senderTaxOffice?: string;
+  senderTaxNumber?: string;
+  senderPhone?: string;
 }
 
 export interface Product {
@@ -273,7 +280,7 @@ export async function getStores(page = 1, limit = 10, type?: string): Promise<Pa
   params.append('page', String(page));
   params.append('limit', String(limit));
   if (type) params.append('type', type);
-  
+
   const res = await fetch(`${API_URL}/stores?${params}`, {
     cache: 'no-store',
     credentials: 'include',
@@ -1091,6 +1098,27 @@ export async function getOrderStockMovements(orderId: string): Promise<{ success
   return res.json();
 }
 
+export interface CargoLabelResponse {
+  success: boolean;
+  hasZpl: boolean;
+  hasHtml: boolean;
+  zpl?: string;
+  html?: string;
+  labelType: 'aras' | 'dummy' | 'none';
+}
+
+export async function getOrderCargoLabel(orderId: string): Promise<CargoLabelResponse> {
+  const res = await fetch(`${API_URL}/orders/${orderId}/cargo-label`, {
+    cache: 'no-store',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Etiket alınamadı');
+  }
+  return res.json();
+}
+
 export async function syncOrders(integrationId: string): Promise<{ success: boolean; message: string }> {
   const res = await fetch(`${API_URL}/orders/sync/${integrationId}`, {
     method: 'POST',
@@ -1439,6 +1467,7 @@ export async function bulkProcessRoute(routeId: string): Promise<ApiResponse<Bul
 
 export interface RouteLabelsResult {
   zplContent: string;
+  htmlContent?: string;
   orderCount: number;
 }
 
@@ -1449,6 +1478,18 @@ export async function getRouteLabelsZpl(routeId: string): Promise<ApiResponse<Ro
   if (!res.ok) {
     const error = await res.json();
     throw new Error(error.message || 'Etiketler alınamadı');
+  }
+  return res.json();
+}
+
+export async function markRouteOrdersAsPacked(routeId: string): Promise<ApiResponse<{ updated: number; errors: string[] }>> {
+  const res = await fetch(`${API_URL}/routes/${routeId}/mark-packed`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.message || 'Siparişler paketlendi olarak işaretlenemedi');
   }
   return res.json();
 }

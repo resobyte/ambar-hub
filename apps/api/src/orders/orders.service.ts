@@ -45,13 +45,13 @@ export class OrdersService {
      */
     private convertMarketplaceTimestamp(timestamp: number | string | null | undefined): Date | null {
         if (!timestamp) return null;
-        
+
         // ISO string ise (örn: "2024-01-15T14:30:00.000Z")
         if (typeof timestamp === 'string' && timestamp.includes('-')) {
             const date = new Date(timestamp);
             return isNaN(date.getTime()) ? null : date;
         }
-        
+
         // Unix timestamp (Trendyol) - +3 offset'li gelir, 3 saat çıkar
         const ts = typeof timestamp === 'string' ? parseInt(timestamp, 10) : timestamp;
         if (isNaN(ts)) return null;
@@ -481,7 +481,7 @@ export class OrdersService {
                         });
 
                         const data = response.data;
-                        
+
                         let items: any[] = [];
                         if (Array.isArray(data)) {
                             items = data;
@@ -500,7 +500,7 @@ export class OrdersService {
                         for (const item of items) {
                             const orderNumber = item.orderNumber || item.OrderNumber || item.orderId || item.OrderId;
                             if (!orderNumber) continue;
-                            
+
                             if (!orderMap.has(orderNumber)) {
                                 orderMap.set(orderNumber, []);
                             }
@@ -542,7 +542,7 @@ export class OrdersService {
                 let offset = 0;
                 const limit = 100;
                 let hasMore = true;
-                
+
                 while (hasMore) {
                     try {
                         const response = await axios.get(statusEndpoint.url, {
@@ -603,7 +603,7 @@ export class OrdersService {
         if (!hbItems || hbItems.length === 0) return null;
 
         const firstItem = hbItems[0];
-        
+
         const orderNumber = firstItem.orderNumber || firstItem.OrderNumber;
         const orderId = firstItem.orderId || firstItem.OrderId;
         const orderDate = firstItem.orderDate || firstItem.OrderDate;
@@ -617,15 +617,15 @@ export class OrdersService {
 
         let totalPrice = 0;
         for (const item of hbItems) {
-            const itemTotal = item.totalPrice?.amount || item.totalPrice?.Amount || 
-                             item.TotalPrice?.amount || item.TotalPrice?.Amount ||
-                             item.totalPrice || item.TotalPrice || 0;
+            const itemTotal = item.totalPrice?.amount || item.totalPrice?.Amount ||
+                item.TotalPrice?.amount || item.TotalPrice?.Amount ||
+                item.totalPrice || item.TotalPrice || 0;
             totalPrice += parseFloat(itemTotal) || 0;
         }
 
         const hbId = invoice?.turkishIdentityNumber || invoice?.TurkishIdentityNumber;
         const hbTax = invoice?.taxNumber || invoice?.TaxNumber;
-        
+
         const isDummy = (id: string) => !id || id === '11111111111' || id === '2222222222' || id.length < 10;
         let validId = null;
         if (!isDummy(hbId)) {
@@ -639,11 +639,11 @@ export class OrdersService {
         const customerLastName = nameParts.slice(1).join(' ') || '';
 
         const addressName = shippingAddress?.addressName || shippingAddress?.AddressName || '';
-        const addressLine = shippingAddress?.address || shippingAddress?.Address || 
-                           shippingAddress?.addressLine || shippingAddress?.AddressLine || '';
+        const addressLine = shippingAddress?.address || shippingAddress?.Address ||
+            shippingAddress?.addressLine || shippingAddress?.AddressLine || '';
         const city = shippingAddress?.city || shippingAddress?.City || '';
-        const district = shippingAddress?.district || shippingAddress?.District || 
-                        shippingAddress?.county || shippingAddress?.County || '';
+        const district = shippingAddress?.district || shippingAddress?.District ||
+            shippingAddress?.county || shippingAddress?.County || '';
         const phone = shippingAddress?.phoneNumber || shippingAddress?.PhoneNumber || '';
         const zipCode = shippingAddress?.zipCode || shippingAddress?.ZipCode || '';
 
@@ -688,12 +688,12 @@ export class OrdersService {
                 zipCode: zipCode,
             },
             lines: hbItems.map((item: any) => {
-                const unitPrice = item.unitPrice?.amount || item.unitPrice?.Amount || 
-                                 item.UnitPrice?.amount || item.UnitPrice?.Amount ||
-                                 item.unitPrice || item.UnitPrice || 0;
-                const itemTotal = item.totalPrice?.amount || item.totalPrice?.Amount || 
-                                 item.TotalPrice?.amount || item.TotalPrice?.Amount ||
-                                 item.totalPrice || item.TotalPrice || 0;
+                const unitPrice = item.unitPrice?.amount || item.unitPrice?.Amount ||
+                    item.UnitPrice?.amount || item.UnitPrice?.Amount ||
+                    item.unitPrice || item.UnitPrice || 0;
+                const itemTotal = item.totalPrice?.amount || item.totalPrice?.Amount ||
+                    item.TotalPrice?.amount || item.TotalPrice?.Amount ||
+                    item.totalPrice || item.TotalPrice || 0;
                 return {
                     productName: item.name || item.Name || item.productName || item.ProductName,
                     sku: item.merchantSKU || item.MerchantSKU || item.sku || item.Sku,
@@ -1657,8 +1657,8 @@ export class OrdersService {
             let allItemsHaveStock = true;
 
             for (const item of order.items) {
-                const product = await this.productRepository.findOne({ 
-                    where: { barcode: item.barcode } 
+                const product = await this.productRepository.findOne({
+                    where: { barcode: item.barcode }
                 });
 
                 if (!product) {
@@ -1716,7 +1716,7 @@ export class OrdersService {
         // 3. Item'ları validate et
         const validItemIds = originalOrder.items.map(i => i.id);
         const itemMap = new Map(originalOrder.items.map(i => [i.id, i]));
-        
+
         // Validate all items and quantities
         for (const dtoItem of dto.items) {
             const originalItem = itemMap.get(dtoItem.itemId);
@@ -1928,5 +1928,122 @@ export class OrdersService {
         }
 
         return { success: false, message: result.message || 'Kargo etiketi oluşturulamadı' };
+    }
+    /**
+     * Get cargo label data for an order (for viewing/reprinting in order detail)
+     * Generates HTML label on-demand if not exists
+     */
+    async getCargoLabel(orderId: string): Promise<{
+        success: boolean;
+        hasZpl: boolean;
+        hasHtml: boolean;
+        zpl?: string;
+        html?: string;
+        labelType: 'aras' | 'dummy' | 'none';
+    }> {
+        const order = await this.orderRepository.findOne({
+            where: { id: orderId },
+            relations: ['customer', 'store', 'items'],
+        });
+
+        if (!order) {
+            throw new NotFoundException('Sipariş bulunamadı');
+        }
+
+        // Generate HTML label on-demand if not exists
+        let html = order.cargoLabelHtml;
+        if (!html) {
+            html = this.generateCargoLabelHtml(order);
+            // Save for future use
+            await this.orderRepository.update(orderId, { cargoLabelHtml: html });
+        }
+
+        return {
+            success: true,
+            hasZpl: !!order.cargoLabelZpl,
+            hasHtml: true, // Always true now since we generate on-demand
+            zpl: order.cargoLabelZpl || undefined,
+            html,
+            labelType: order.cargoLabelZpl ? 'aras' : 'dummy',
+        };
+    }
+
+    /**
+     * Generate cargo label HTML for an order
+     */
+    private generateCargoLabelHtml(order: Order): string {
+        const shippingAddress = order.shippingAddress || {};
+        const customerName = order.customer
+            ? `${order.customer.firstName || ''} ${order.customer.lastName || ''}`.trim()
+            : (shippingAddress as any).firstName
+                ? `${(shippingAddress as any).firstName} ${(shippingAddress as any).lastName || ''}`.trim()
+                : 'Müşteri';
+
+        const address = (shippingAddress as any).fullAddress
+            || `${(shippingAddress as any).address1 || ''} ${(shippingAddress as any).district || ''} ${(shippingAddress as any).city || ''}`.trim()
+            || 'Adres bilgisi yok';
+
+        const phone = (shippingAddress as any).phone || order.customer?.phone || '';
+        const senderNumber = order.cargoSenderNumber || order.packageId || order.orderNumber;
+
+        // Store info for sender
+        const store = order.store;
+        const senderName = store?.senderCompanyName || store?.brandName || 'Gönderen';
+        const senderAddress = store?.senderAddress || '';
+
+        // Items list
+        const itemsList = (order.items || []).slice(0, 5).map(item =>
+            `${item.sku || item.barcode || 'N/A'} x${item.quantity || 1} - ${item.productName || 'Ürün'}`
+        ).join('<br>');
+
+        return `
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>Kargo Etiketi - ${order.orderNumber}</title>
+  <style type="text/css">
+    body { font-family: "Arial", sans-serif; margin: 0; padding: 0; }
+    .label { width: 100mm; height: 100mm; padding: 5mm; box-sizing: border-box; border: 1px solid #000; }
+    .header { text-align: center; font-size: 14pt; font-weight: bold; margin-bottom: 5mm; border-bottom: 2px solid #000; padding-bottom: 3mm; }
+    .barcode-container { text-align: center; margin: 5mm 0; }
+    .sender-number { font-size: 16pt; font-weight: bold; text-align: center; margin: 3mm 0; letter-spacing: 2px; }
+    .recipient { margin-top: 5mm; font-size: 11pt; line-height: 1.4; }
+    .recipient strong { font-size: 12pt; }
+    .sender { margin-top: 3mm; font-size: 9pt; color: #333; }
+    .items { margin-top: 3mm; font-size: 8pt; color: #555; border-top: 1px dashed #999; padding-top: 2mm; }
+    .order-info { margin-top: 3mm; font-size: 9pt; color: #333; border-top: 1px dashed #999; padding-top: 2mm; }
+    @media print { @page { size: 100mm 100mm; margin: 0; } body { margin: 0; } }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+</head>
+<body>
+  <div class="label">
+    <div class="header">KARGO ETİKETİ</div>
+    <div class="barcode-container"><svg id="barcode"></svg></div>
+    <div class="sender-number">${senderNumber}</div>
+    <div class="recipient">
+      <strong>ALICI:</strong><br>
+      ${customerName}<br>
+      ${address}<br>
+      ${phone ? `Tel: ${phone}` : ''}
+    </div>
+    <div class="sender">
+      <strong>GÖNDERİCİ:</strong> ${senderName}<br>
+      ${senderAddress}
+    </div>
+    ${itemsList ? `<div class="items"><strong>Ürünler:</strong><br>${itemsList}</div>` : ''}
+    <div class="order-info">
+      Sipariş No: ${order.orderNumber}<br>
+      Tarih: ${new Date().toLocaleDateString('tr-TR')}
+    </div>
+  </div>
+  <script>
+    JsBarcode("#barcode", "${senderNumber}", { format: "CODE128", width: 2, height: 50, displayValue: false });
+    window.onload = function() { setTimeout(function() { window.print(); }, 500); };
+  </script>
+</body>
+</html>
+        `.trim();
     }
 }

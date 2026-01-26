@@ -136,6 +136,15 @@ export class RoutesController {
         };
     }
 
+    @Post(':id/mark-packed')
+    async markOrdersAsPacked(@Param('id', ParseUUIDPipe) id: string) {
+        const result = await this.routesService.markOrdersAsPacked(id);
+        return {
+            success: true,
+            data: result,
+        };
+    }
+
     private generateRouteLabelHtml(route: any): string {
         const now = new Date();
         const formatDate = (date: Date | string | null) => {

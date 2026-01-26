@@ -9,6 +9,7 @@ import {
     printRouteLabel,
     bulkProcessRoute,
     getRouteLabelsZpl,
+    markRouteOrdersAsPacked,
     Route,
     RouteStatus,
     BulkProcessResult,
@@ -25,6 +26,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useToast } from '@/components/ui/use-toast';
 import {
     Table,
     TableBody,
@@ -61,6 +63,7 @@ interface Props {
 
 export function RouteDetailClient({ routeId }: Props) {
     const router = useRouter();
+    const { toast } = useToast();
     const [route, setRoute] = useState<Route | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -111,14 +114,14 @@ export function RouteDetailClient({ routeId }: Props) {
             const response = await bulkProcessRoute(routeId);
             const result = response.data;
             setBulkProcessResult(result);
-            
+
             // Refresh route data
             await fetchRoute();
-            
+
             // Show summary
             const successCount = result.results.filter(r => !r.error).length;
             const errorCount = result.errors.length;
-            
+
             if (errorCount > 0) {
                 alert(`İşlem tamamlandı:\n✓ ${successCount}/${result.total} sipariş başarıyla işlendi\n✗ ${errorCount} siparişte hata oluştu\n\nHatalar:\n${result.errors.join('\n')}`);
             } else {
@@ -134,20 +137,57 @@ export function RouteDetailClient({ routeId }: Props) {
     const handlePrintAllLabels = async () => {
         try {
             const response = await getRouteLabelsZpl(routeId);
-            const zplContent = response.data.zplContent;
-            
-            // ZPL dosyasını indir
-            const blob = new Blob([zplContent], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `${route?.name || 'labels'}.zpl`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            
-            alert(`${response.data.orderCount} etiket ZPL dosyası indirildi.\n\nBu dosyayı ZPL uyumlu bir yazıcıya gönderebilirsiniz.`);
+            const labelData = response.data;
+
+            // HTML formatında etiketleri oluştur ve yeni sekmede aç
+            if (labelData.htmlContent) {
+                const blob = new Blob([labelData.htmlContent], { type: 'text/html;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                window.open(url, '_blank');
+            } else if (labelData.zplContent) {
+                // Fallback: ZPL dosyasını indir
+                const blob = new Blob([labelData.zplContent], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${route?.name || 'labels'}.zpl`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                alert(`${response.data.orderCount} etiket ZPL dosyası indirildi.\n\nBu dosyayı ZPL uyumlu bir yazıcıya gönderebilirsiniz.`);
+            }
+
+            // Etiketleri yazdırdıktan sonra siparişleri paketlendi olarak işaretle
+            try {
+                const markResponse = await markRouteOrdersAsPacked(routeId);
+                const result = markResponse.data;
+
+                // Refresh route data
+                await fetchRoute();
+
+                if (result.errors && result.errors.length > 0) {
+                    toast({
+                        title: 'Kısmi Başarı',
+                        description: `${result.updated} sipariş paketlendi olarak işaretlendi. ${result.errors.length} hata oluştu.`,
+                        variant: 'destructive',
+                    });
+                } else {
+                    toast({
+                        title: 'Başarılı',
+                        description: `${result.updated} sipariş paketlendi olarak işaretlendi.`,
+                        variant: 'success',
+                    });
+                }
+            } catch (markErr: any) {
+                console.error('Mark as packed failed:', markErr);
+                toast({
+                    title: 'Uyarı',
+                    description: `Etiketler yazdırıldı ancak siparişler paketlendi olarak işaretlenemedi: ${markErr.message || 'Bilinmeyen hata'}`,
+                    variant: 'destructive',
+                });
+            }
         } catch (err: any) {
             alert(`Etiket indirme başarısız: ${err.message || 'Bilinmeyen hata'}`);
         }
@@ -156,12 +196,32 @@ export function RouteDetailClient({ routeId }: Props) {
     const getStatusBadge = (status: RouteStatus) => {
         const config: Record<RouteStatus, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string }> = {
             [RouteStatus.COLLECTING]: { variant: 'default', label: 'Toplanıyor' },
-            [RouteStatus.READY]: { variant: 'secondary', label: 'Hazır' },
+            [RouteStatus.READY]: { variant: 'secondary', label: 'Rotada Toplanmış' },
             [RouteStatus.COMPLETED]: { variant: 'outline', label: 'Tamamlandı' },
             [RouteStatus.CANCELLED]: { variant: 'destructive', label: 'İptal' },
         };
         const { variant, label } = config[status];
         return <Badge variant={variant} className="text-sm px-3 py-1">{label}</Badge>;
+    };
+
+    const getOrderStatusLabel = (status: string): string => {
+        const statusLabels: Record<string, string> = {
+            CREATED: 'Oluşturuldu',
+            WAITING_STOCK: 'Stok Bekliyor',
+            WAITING_PICKING: 'Toplama Bekliyor',
+            PICKING: 'Toplanıyor',
+            PICKED: 'Rotada Toplanmış',
+            PACKING: 'Paketleniyor',
+            PACKED: 'Paketlendi',
+            INVOICED: 'Faturalandı',
+            SHIPPED: 'Kargoya Verildi',
+            DELIVERED: 'Teslim Edildi',
+            CANCELLED: 'İptal Edildi',
+            RETURNED: 'İade Edildi',
+            UNSUPPLIED: 'Tedarik Edilemedi',
+            REPACK: 'Yeniden Paketle',
+        };
+        return statusLabels[status] || status || 'Rotada';
     };
 
     if (loading) {
@@ -268,7 +328,7 @@ export function RouteDetailClient({ routeId }: Props) {
                             </div>
                             <div className="p-3 rounded-lg bg-muted/50">
                                 <p className="text-2xl font-bold text-orange-600">{route.packedOrderCount || 0}</p>
-                                <p className="text-xs text-muted-foreground">Paketlenen</p>
+                                <p className="text-xs text-muted-foreground">Paketlenen Sipariş</p>
                             </div>
                         </div>
                     </CardContent>
@@ -293,7 +353,7 @@ export function RouteDetailClient({ routeId }: Props) {
 
                         {route.status === RouteStatus.READY && (
                             <Button
-                                variant="secondary"
+                                variant="outline"
                                 className="w-full justify-start"
                                 onClick={() => setShowBulkProcessModal(true)}
                                 disabled={bulkProcessing}
@@ -312,15 +372,17 @@ export function RouteDetailClient({ routeId }: Props) {
                             </Button>
                         )}
 
-                        {bulkProcessResult && bulkProcessResult.processed > 0 && (
+                        {/* Show print labels button if bulk process was done OR if there are already labels */}
+                        {(bulkProcessResult && bulkProcessResult.processed > 0) || (route.orders && route.orders.some((o: any) => o.hasLabel)) ? (
                             <Button
-                                className="w-full justify-start bg-green-600 hover:bg-green-700"
+                                variant="outline"
+                                className="w-full justify-start"
                                 onClick={handlePrintAllLabels}
                             >
                                 <Download className="w-4 h-4 mr-2" />
-                                Tüm Etiketleri İndir ({bulkProcessResult.processed} adet)
+                                Tüm Etiketleri Yazdır ({bulkProcessResult?.processed || route.orders?.filter((o: any) => o.hasLabel).length || 0} adet)
                             </Button>
-                        )}
+                        ) : null}
 
                         {route.status !== RouteStatus.COMPLETED && route.status !== RouteStatus.CANCELLED && (
                             <>
@@ -329,6 +391,7 @@ export function RouteDetailClient({ routeId }: Props) {
                                     variant="destructive"
                                     className="w-full justify-start"
                                     onClick={handleCancel}
+                                    disabled={route.status === RouteStatus.READY || route.pickedItemCount > 0}
                                 >
                                     <Trash2 className="w-4 h-4 mr-2" />
                                     Rotayı İptal Et
@@ -375,7 +438,7 @@ export function RouteDetailClient({ routeId }: Props) {
                                         </TableCell>
                                         <TableCell>
                                             <Badge variant="outline">
-                                                {order.status || 'Rotada'}
+                                                {getOrderStatusLabel(order.status)}
                                             </Badge>
                                         </TableCell>
                                     </TableRow>
@@ -413,7 +476,7 @@ export function RouteDetailClient({ routeId }: Props) {
                             <Tag className="w-5 h-5 text-green-600 mt-0.5" />
                             <div>
                                 <p className="font-medium">Etiket Oluşturma</p>
-                                <p className="text-sm text-muted-foreground">Aras Kargo'dan ZPL etiket çekilecek (başarısızsa dummy etiket)</p>
+                                <p className="text-sm text-muted-foreground">Aras Kargo&apos;dan ZPL etiket çekilecek (başarısızsa dummy etiket)</p>
                             </div>
                         </div>
                         <div className="flex items-start gap-3">

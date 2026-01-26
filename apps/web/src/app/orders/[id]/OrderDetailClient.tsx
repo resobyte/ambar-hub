@@ -11,6 +11,7 @@ import {
     OrderStatus,
     getOrderStockMovements,
     StockMovement,
+    getOrderCargoLabel,
 } from '@/lib/api';
 
 import {
@@ -53,6 +54,7 @@ import {
     ArrowDownLeft,
     ArrowUpRight,
     ArrowLeftRight,
+    Printer,
 } from 'lucide-react';
 import { ReshipmentModal } from '@/components/orders/ReshipmentModal';
 
@@ -84,7 +86,7 @@ const statusLabels: Record<string, string> = {
     WAITING_STOCK: 'Stok Bekliyor',
     WAITING_PICKING: 'Toplama Bekliyor',
     PICKING: 'Toplanıyor',
-    PICKED: 'Toplandı',
+    PICKED: 'Rotada Toplanmış',
     PACKING: 'Paketleniyor',
     PACKED: 'Paketlendi',
     INVOICED: 'Faturalandı',
@@ -213,6 +215,35 @@ export function OrderDetailClient({ orderId }: Props) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [reshipModalOpen, setReshipModalOpen] = useState(false);
+    const [labelLoading, setLabelLoading] = useState(false);
+
+    // Etiket görüntülenebilir statüler
+    const labelVisibleStatuses = [
+        OrderStatus.PACKED,
+        OrderStatus.INVOICED,
+        OrderStatus.SHIPPED,
+        OrderStatus.DELIVERED,
+    ];
+
+    const handlePrintLabel = async () => {
+        setLabelLoading(true);
+        try {
+            const data = await getOrderCargoLabel(orderId);
+            if (data.html) {
+                const printWindow = window.open('', '_blank');
+                if (printWindow) {
+                    printWindow.document.write(data.html);
+                    printWindow.document.close();
+                }
+            } else {
+                alert('Etiket bulunamadı');
+            }
+        } catch (err: any) {
+            alert(err.message || 'Etiket alınamadı');
+        } finally {
+            setLabelLoading(false);
+        }
+    };
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -341,6 +372,25 @@ export function OrderDetailClient({ orderId }: Props) {
                                 <div>
                                     <p className="text-sm text-muted-foreground">Tahmini Teslimat</p>
                                     <p className="font-medium">{formatDate(order.agreedDeliveryDate)}</p>
+                                </div>
+                            )}
+                            {labelVisibleStatuses.includes(order.status as OrderStatus) && (
+                                <div>
+                                    <p className="text-sm text-muted-foreground">Kargo Etiketi</p>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={handlePrintLabel}
+                                        disabled={labelLoading}
+                                        className="mt-1"
+                                    >
+                                        {labelLoading ? (
+                                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                        ) : (
+                                            <Printer className="h-4 w-4 mr-2" />
+                                        )}
+                                        Etiketi Yazdır
+                                    </Button>
                                 </div>
                             )}
                         </CardContent>

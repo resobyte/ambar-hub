@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -112,6 +113,12 @@ interface StoreFormData {
   microExportBulkSequenceNo: string;
   microExportRefundSerialNo: string;
   microExportRefundSequenceNo: string;
+  // Fatura Gönderen Bilgileri
+  senderCompanyName: string;
+  senderAddress: string;
+  senderTaxOffice: string;
+  senderTaxNumber: string;
+  senderPhone: string;
 }
 
 const defaultFormData: StoreFormData = {
@@ -167,6 +174,11 @@ const defaultFormData: StoreFormData = {
   microExportBulkSequenceNo: '',
   microExportRefundSerialNo: '',
   microExportRefundSequenceNo: '',
+  senderCompanyName: '',
+  senderAddress: '',
+  senderTaxOffice: '',
+  senderTaxNumber: '',
+  senderPhone: '',
 };
 
 export function StoreDetailClient({ storeId }: StoreDetailClientProps) {
@@ -249,6 +261,11 @@ export function StoreDetailClient({ storeId }: StoreDetailClientProps) {
             microExportBulkSequenceNo: store.microExportBulkSequenceNo || '',
             microExportRefundSerialNo: store.microExportRefundSerialNo || '',
             microExportRefundSequenceNo: store.microExportRefundSequenceNo || '',
+            senderCompanyName: store.senderCompanyName || '',
+            senderAddress: store.senderAddress || '',
+            senderTaxOffice: store.senderTaxOffice || '',
+            senderTaxNumber: store.senderTaxNumber || '',
+            senderPhone: store.senderPhone || '',
           });
         }
       }
@@ -349,6 +366,13 @@ export function StoreDetailClient({ storeId }: StoreDetailClientProps) {
         } else {
           submitData.hasMicroExport = false;
         }
+
+        // Fatura Gönderen Bilgileri
+        submitData.senderCompanyName = formData.senderCompanyName || null;
+        submitData.senderAddress = formData.senderAddress || null;
+        submitData.senderTaxOffice = formData.senderTaxOffice || null;
+        submitData.senderTaxNumber = formData.senderTaxNumber || null;
+        submitData.senderPhone = formData.senderPhone || null;
       }
 
       if (isNew) {
@@ -985,6 +1009,61 @@ export function StoreDetailClient({ storeId }: StoreDetailClientProps) {
               )}
             </>
           )}
+
+          {/* Fatura Gönderen Bilgileri - Her mağaza için */}
+          <Card className="mt-4">
+            <CardHeader>
+              <CardTitle>Fatura Gönderen Bilgileri</CardTitle>
+              <CardDescription>Kargo etiketlerinde gösterilecek gönderici bilgileri</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Şirket Adı</Label>
+                  <Input
+                    placeholder="Farmakozmetika Sağlık Ürünleri ve Kozmetik Tic. Ltd. Şti."
+                    value={formData.senderCompanyName}
+                    onChange={(e) => setFormData({ ...formData, senderCompanyName: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Adres</Label>
+                  <Textarea
+                    placeholder="Cihangir Mahallesi Güvercin Sokak No:4 193 Numara Avcılar İstanbul"
+                    value={formData.senderAddress}
+                    onChange={(e) => setFormData({ ...formData, senderAddress: e.target.value })}
+                    rows={2}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Vergi Dairesi</Label>
+                    <Input
+                      placeholder="Avcılar"
+                      value={formData.senderTaxOffice}
+                      onChange={(e) => setFormData({ ...formData, senderTaxOffice: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Vergi Numarası / TC</Label>
+                    <Input
+                      placeholder="3851513350"
+                      value={formData.senderTaxNumber}
+                      onChange={(e) => setFormData({ ...formData, senderTaxNumber: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Telefon</Label>
+                  <Input
+                    placeholder="+90 212 555 0000"
+                    value={formData.senderPhone}
+                    onChange={(e) => setFormData({ ...formData, senderPhone: e.target.value })}
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

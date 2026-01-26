@@ -198,7 +198,7 @@ export function OrdersTable({
             case OrderStatus.WAITING_STOCK: return 'Stok Bekliyor';
             case OrderStatus.WAITING_PICKING: return 'Toplama Bekliyor';
             case OrderStatus.PICKING: return 'Toplanıyor';
-            case OrderStatus.PICKED: return 'Toplandı';
+            case OrderStatus.PICKED: return 'Rotada Toplanmış';
             case OrderStatus.PACKING: return 'Paketleniyor';
             case OrderStatus.PACKED: return 'Paketlendi';
             case OrderStatus.INVOICED: return 'Faturalandı';
@@ -413,7 +413,7 @@ export function OrdersTable({
                                     { value: "WAITING_STOCK", label: "Stok Bekliyor" },
                                     { value: "WAITING_PICKING", label: "Toplama Bekliyor" },
                                     { value: "PICKING", label: "Toplanıyor" },
-                                    { value: "PICKED", label: "Toplandı" },
+                                    { value: "PICKED", label: "Rotada Toplanmış" },
                                     { value: "PACKING", label: "Paketleniyor" },
                                     { value: "PACKED", label: "Paketlendi" },
                                     { value: "INVOICED", label: "Faturalandı" },

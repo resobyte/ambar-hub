@@ -36,7 +36,7 @@ export interface ShipmentResult {
     message: string;
     invoiceNumber?: string;
     invoiceId?: string;
-    cargoLabel?: { type: 'zpl' | 'html'; content: string };
+    cargoLabel?: { zpl?: string; html: string; labelType: 'aras' | 'dummy' };
     waybillNumber?: string;
 }
 
@@ -324,13 +324,13 @@ export class PackingService {
         });
 
         let shouldProcessShipment = dto.processShipment === true;
-        
+
         if (!shouldProcessShipment && dto.processShipment !== false) {
             const order = await this.orderRepository.findOne({
                 where: { id: dto.orderId },
                 relations: ['store'],
             });
-            
+
             if (order?.store && order.store.type !== StoreType.MANUAL) {
                 if (order.store.sendOrderStatus) {
                     shouldProcessShipment = true;
@@ -550,11 +550,13 @@ export class PackingService {
         await this.orderHistoryService.logEvent({
             orderId: order.id,
             action: OrderHistoryAction.CARGO_LABEL_FETCHED,
-            description: `Kargo etiketi alındı (${label.type.toUpperCase()})`,
-            metadata: { labelType: label.type },
+            description: `Kargo etiketi alındı (${label.labelType.toUpperCase()})`,
+            metadata: { labelType: label.labelType },
         });
 
-        await this.orderRepository.update(order.id, { status: OrderStatus.SHIPPED });
+        // Pazaryeri siparişleri paketleme sonrası PACKED statüsünde kalmalı
+        // Kargoya teslim ayrı bir adım olarak yapılacak
+        await this.orderRepository.update(order.id, { status: OrderStatus.PACKED });
     }
 
     private async processManualShipment(
@@ -564,7 +566,7 @@ export class PackingService {
         this.logger.log(`Processing manual shipment for order ${order.orderNumber}, documentType: ${order.documentType}`);
 
         const shouldCreateInvoice = order.documentType === 'INVOICE';
-        
+
         if (shouldCreateInvoice) {
             try {
                 const pendingInvoice = await this.invoicesService.queueInvoiceForOrder(order.id);
@@ -628,8 +630,8 @@ export class PackingService {
                 await this.orderHistoryService.logEvent({
                     orderId: order.id,
                     action: OrderHistoryAction.CARGO_LABEL_FETCHED,
-                    description: `Kargo etiketi alındı (${label.type.toUpperCase()})`,
-                    metadata: { labelType: label.type },
+                    description: `Kargo etiketi alındı (${label.labelType.toUpperCase()})`,
+                    metadata: { labelType: label.labelType },
                 });
             } else {
                 this.logger.warn(`Aras Kargo failed: ${arasResult.ResultMsg}`);
@@ -688,29 +690,41 @@ export class PackingService {
         this.logger.log(`Trendyol status updated to ${status} for package ${order.packageId}`);
     }
 
-    async getOrCreateCargoLabel(order: Order): Promise<{ type: 'zpl' | 'html'; content: string }> {
-        if (order.cargoLabelZpl) {
-            return { type: 'zpl', content: order.cargoLabelZpl };
+    async getOrCreateCargoLabel(order: Order): Promise<{
+        zpl?: string;
+        html: string;
+        labelType: 'aras' | 'dummy';
+    }> {
+        // Her zaman HTML etiket oluştur/al
+        let html = order.cargoLabelHtml;
+        if (!html) {
+            html = this.generateFallbackLabelHtml(order);
+            await this.orderRepository.update(order.id, { cargoLabelHtml: html });
         }
 
-        if (order.cargoTrackingNumber || order.cargoSenderNumber) {
+        // Aras ZPL varsa kullan, yoksa çekmeyi dene
+        let zpl = order.cargoLabelZpl;
+        let labelType: 'aras' | 'dummy' = 'dummy';
+
+        if (!zpl && (order.cargoTrackingNumber || order.cargoSenderNumber)) {
             try {
-                const zpl = await this.arasKargoService.getBarcode(
+                const arasZpl = await this.arasKargoService.getBarcode(
                     order.cargoTrackingNumber || order.cargoSenderNumber || ''
                 );
 
-                if (zpl) {
+                if (arasZpl) {
+                    zpl = arasZpl;
                     await this.orderRepository.update(order.id, { cargoLabelZpl: zpl });
-                    return { type: 'zpl', content: zpl };
+                    labelType = 'aras';
                 }
             } catch (error) {
                 this.logger.warn(`Failed to get ZPL from Aras: ${error.message}`);
             }
+        } else if (zpl) {
+            labelType = 'aras';
         }
 
-        const html = this.generateFallbackLabelHtml(order);
-        await this.orderRepository.update(order.id, { cargoLabelHtml: html });
-        return { type: 'html', content: html };
+        return { zpl, html, labelType };
     }
 
     private generateFallbackLabelHtml(order: Order): string {
@@ -895,7 +909,7 @@ export class PackingService {
                 if (productStore) {
                     const quantity = item.quantity || 1;
                     productStore.committedQuantity = Math.max(0, (productStore.committedQuantity || 0) - quantity);
-                    productStore.sellableQuantity = Math.max(0, 
+                    productStore.sellableQuantity = Math.max(0,
                         (productStore.reservableQuantity || 0) - productStore.committedQuantity
                     );
                     await this.productStoreRepository.save(productStore);

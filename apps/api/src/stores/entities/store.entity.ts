@@ -202,6 +202,24 @@ export class Store extends BaseEntity {
   microExportRefundSequenceNo: string;
 
   // ─────────────────────────────────────────────────────────────
+  // Fatura Gönderen Bilgileri (Sender Info for Labels)
+  // ─────────────────────────────────────────────────────────────
+  @Column({ name: 'sender_company_name', type: 'varchar', length: 255, nullable: true })
+  senderCompanyName: string;
+
+  @Column({ name: 'sender_address', type: 'text', nullable: true })
+  senderAddress: string;
+
+  @Column({ name: 'sender_tax_office', type: 'varchar', length: 100, nullable: true })
+  senderTaxOffice: string;
+
+  @Column({ name: 'sender_tax_number', type: 'varchar', length: 50, nullable: true })
+  senderTaxNumber: string;
+
+  @Column({ name: 'sender_phone', type: 'varchar', length: 50, nullable: true })
+  senderPhone: string;
+
+  // ─────────────────────────────────────────────────────────────
   // Relations
   // ─────────────────────────────────────────────────────────────
   @ManyToOne(() => Warehouse, (warehouse) => warehouse.stores, {

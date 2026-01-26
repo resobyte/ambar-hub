@@ -257,7 +257,7 @@ export function RoutesClient() {
     const getStatusBadge = (status: RouteStatus) => {
         const config: Record<RouteStatus, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string }> = {
             [RouteStatus.COLLECTING]: { variant: 'default', label: 'Toplanıyor' },
-            [RouteStatus.READY]: { variant: 'secondary', label: 'Hazır' },
+            [RouteStatus.READY]: { variant: 'secondary', label: 'Rotada Toplanmış' },
             [RouteStatus.COMPLETED]: { variant: 'outline', label: 'Tamamlandı' },
             [RouteStatus.CANCELLED]: { variant: 'destructive', label: 'İptal' },
         };
@@ -342,9 +342,9 @@ export function RoutesClient() {
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">Tümü</SelectItem>
-                                <SelectItem value="active">Aktif (Toplanıyor + Hazır)</SelectItem>
+                                <SelectItem value="active">Aktif (Toplanıyor + Rotada Toplanmış)</SelectItem>
                                 <SelectItem value="collecting">Toplanıyor</SelectItem>
-                                <SelectItem value="ready">Hazır</SelectItem>
+                                <SelectItem value="ready">Rotada Toplanmış</SelectItem>
                                 <SelectItem value="completed">Tamamlandı</SelectItem>
                                 <SelectItem value="cancelled">İptal Edilmiş</SelectItem>
                             </SelectContent>

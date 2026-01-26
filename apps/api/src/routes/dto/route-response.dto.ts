@@ -34,7 +34,7 @@ export class RouteResponseDto {
         dto.pickedItemCount = route.pickedItemCount;
         dto.packedOrderCount = route.packedOrderCount;
         dto.createdById = route.createdById;
-        dto.createdByName = route.createdBy?.firstName 
+        dto.createdByName = route.createdBy?.firstName
             ? `${route.createdBy.firstName} ${route.createdBy.lastName || ''}`.trim()
             : null;
         dto.orderStartDate = route.orderStartDate;
@@ -56,6 +56,17 @@ export class RouteResponseDto {
                     sequence: ro.sequence,
                     isPicked: ro.isPicked,
                     isPacked: ro.isPacked,
+                    hasLabel: !!ro.order.cargoLabelZpl,
+                    items: ro.order.items?.map(item => ({
+                        barcode: item.barcode,
+                        productName: item.productName,
+                        quantity: item.quantity,
+                        sku: item.sku,
+                    })) || [],
+                    customer: ro.order.customer ? {
+                        firstName: ro.order.customer.firstName,
+                        lastName: ro.order.customer.lastName,
+                    } : null,
                 }));
         }
 

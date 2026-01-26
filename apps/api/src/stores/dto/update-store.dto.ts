@@ -259,4 +259,29 @@ export class UpdateStoreDto {
   @IsOptional()
   @MaxLength(50)
   microExportRefundSequenceNo?: string;
+
+  // Fatura Gönderen Bilgileri
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  senderCompanyName?: string;
+
+  @IsString()
+  @IsOptional()
+  senderAddress?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  senderTaxOffice?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(50)
+  senderTaxNumber?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(50)
+  senderPhone?: string;
 }
