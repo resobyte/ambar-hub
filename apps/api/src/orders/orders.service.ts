@@ -304,6 +304,92 @@ export class OrdersService {
             await this.orderItemRepository.save(orderItems);
         }
 
+        // For manual orders, create Aras Kargo shipment during order creation
+        // If it fails, rollback the entire order creation
+        if (dto.storeId) {
+            const store = await this.storeRepository.findOne({ where: { id: dto.storeId } });
+            if (store && store.cargoUsername) {
+                try {
+                    const credentials = {
+                        customerCode: store.cargoCustomerCode,
+                        username: store.cargoUsername,
+                        password: store.cargoPassword,
+                    };
+
+                    const arasResult = await this.arasKargoService.createShipment(savedOrder, credentials);
+                    
+                    await this.orderApiLogService.log({
+                        orderId: savedOrder.id,
+                        provider: ApiLogProvider.ARAS_KARGO,
+                        logType: ApiLogType.SET_ORDER,
+                        endpoint: arasResult._request?.endpoint,
+                        method: 'POST',
+                        requestPayload: arasResult._request,
+                        responsePayload: arasResult._response,
+                        isSuccess: arasResult.ResultCode === '0',
+                        errorMessage: arasResult.ResultCode !== '0' ? arasResult.ResultMsg : undefined,
+                        durationMs: arasResult._durationMs,
+                    });
+
+                    if (arasResult.ResultCode === '0') {
+                        this.logger.log(`Aras Kargo shipment created for manual order ${orderNumber}`);
+
+                        // Update order with cargo tracking info
+                        const integrationCode = savedOrder.packageId || savedOrder.orderNumber;
+                        await this.orderRepository.update(savedOrder.id, {
+                            cargoTrackingNumber: integrationCode,
+                            cargoProviderName: 'Aras Kargo',
+                        });
+                        savedOrder.cargoTrackingNumber = integrationCode;
+
+                        await this.orderHistoryService.logEvent({
+                            orderId: savedOrder.id,
+                            action: OrderHistoryAction.CARGO_CREATED,
+                            description: `Aras Kargo kaydı oluşturuldu`,
+                            metadata: {
+                                provider: 'Aras Kargo',
+                                resultCode: arasResult.ResultCode,
+                                integrationCode,
+                            },
+                        });
+                    } else {
+                        // Aras Kargo failed - rollback order creation
+                        this.logger.error(`Aras Kargo shipment creation failed for order ${orderNumber}: ${arasResult.ResultMsg}`);
+                        await this.orderRepository.delete({ id: savedOrder.id });
+                        await this.orderItemRepository.delete({ orderId: savedOrder.id });
+                        throw new BadRequestException(`Kargo kaydı oluşturulamadı: ${arasResult.ResultMsg}. Sipariş oluşturulmadı.`);
+                    }
+                } catch (error: any) {
+                    // If it's a BadRequestException, re-throw it
+                    if (error instanceof BadRequestException) {
+                        throw error;
+                    }
+                    
+                    // Log other errors and rollback
+                    this.logger.error(`Aras Kargo error for order ${orderNumber}: ${error.message}`);
+                    await this.orderRepository.delete({ id: savedOrder.id });
+                    await this.orderItemRepository.delete({ orderId: savedOrder.id });
+                    
+                    if (error._request) {
+                        await this.orderApiLogService.log({
+                            orderId: savedOrder.id,
+                            provider: ApiLogProvider.ARAS_KARGO,
+                            logType: ApiLogType.SET_ORDER,
+                            endpoint: error._request?.endpoint,
+                            method: 'POST',
+                            requestPayload: error._request,
+                            responsePayload: error._response,
+                            isSuccess: false,
+                            errorMessage: error.message,
+                            durationMs: error._durationMs,
+                        });
+                    }
+                    
+                    throw new BadRequestException(`Kargo kaydı oluşturulurken hata: ${error.message}. Sipariş oluşturulmadı.`);
+                }
+            }
+        }
+
         await this.updateStockCommitment(savedOrder, 'reserve');
 
         return savedOrder;
@@ -757,24 +843,60 @@ export class OrdersService {
         const customer = await this.customersService.createOrUpdate(customerData);
 
         let order = await this.orderRepository.findOne({ where: { packageId } });
-        const status = this.mapStatus(pkg.status || pkg.shipmentPackageStatus);
+        const newIntegrationStatus = pkg.status || pkg.shipmentPackageStatus;
+        const status = this.mapStatus(newIntegrationStatus);
 
         if (order) {
-            const newIntegrationStatus = pkg.status || pkg.shipmentPackageStatus;
+            // Handle marketplace status updates
             if (order.integrationStatus !== newIntegrationStatus) {
-                // Sadece integrationStatus güncellenir, bizim internal status'umuz korunur
-                order.integrationStatus = newIntegrationStatus;
-                order.lastModifiedDate = this.convertMarketplaceTimestamp(pkg.lastModifiedDate) || new Date();
-                order.invoiceLink = pkg.invoiceLink || order.invoiceLink;
-                order.cargoTrackingNumber = pkg.cargoTrackingNumber?.toString() || order.cargoTrackingNumber;
-                order.cargoTrackingLink = pkg.cargoTrackingLink || order.cargoTrackingLink;
-                order.packageHistories = pkg.packageHistories || order.packageHistories;
-                await this.orderRepository.save(order);
-
-                // Trendyol'dan iptal/iade gelirse stok serbest bırakılır
-                if ((newIntegrationStatus === 'Cancelled' || newIntegrationStatus === 'Returned' || newIntegrationStatus === 'UnSupplied') &&
-                    order.status !== OrderStatus.CANCELLED && order.status !== OrderStatus.RETURNED) {
-                    await this.updateStockCommitment(order, 'release');
+                // CANCELLED: Always update internal status to CANCELLED
+                if (newIntegrationStatus === 'Cancelled' || newIntegrationStatus === 'CANCELLED') {
+                    order.status = OrderStatus.CANCELLED;
+                    order.integrationStatus = newIntegrationStatus;
+                    order.lastModifiedDate = this.convertMarketplaceTimestamp(pkg.lastModifiedDate) || new Date();
+                    order.invoiceLink = pkg.invoiceLink || order.invoiceLink;
+                    order.cargoTrackingNumber = pkg.cargoTrackingNumber?.toString() || order.cargoTrackingNumber;
+                    order.cargoTrackingLink = pkg.cargoTrackingLink || order.cargoTrackingLink;
+                    order.packageHistories = pkg.packageHistories || order.packageHistories;
+                    await this.orderRepository.save(order);
+                    
+                    // Release stock for cancelled orders
+                    if (order.status !== OrderStatus.CANCELLED && order.status !== OrderStatus.RETURNED) {
+                        await this.updateStockCommitment(order, 'release');
+                    }
+                    this.logger.log(`Order ${order.orderNumber} cancelled by marketplace`);
+                }
+                // CREATED: Do NOT update internal status if order is already in a different status
+                else if (newIntegrationStatus === 'Created' || newIntegrationStatus === 'CREATED') {
+                    if (order.status === OrderStatus.CREATED) {
+                        // Only update metadata, keep CREATED status
+                        order.integrationStatus = newIntegrationStatus;
+                        order.lastModifiedDate = this.convertMarketplaceTimestamp(pkg.lastModifiedDate) || new Date();
+                        order.invoiceLink = pkg.invoiceLink || order.invoiceLink;
+                        order.cargoTrackingNumber = pkg.cargoTrackingNumber?.toString() || order.cargoTrackingNumber;
+                        order.cargoTrackingLink = pkg.cargoTrackingLink || order.cargoTrackingLink;
+                        order.packageHistories = pkg.packageHistories || order.packageHistories;
+                        await this.orderRepository.save(order);
+                    } else {
+                        // Skip update - order is in a different status, don't downgrade
+                        this.logger.debug(`Skipping CREATED status update for order ${order.orderNumber} (current status: ${order.status})`);
+                    }
+                }
+                // OTHER STATUSES: Update integration status only, preserve internal status
+                else {
+                    order.integrationStatus = newIntegrationStatus;
+                    order.lastModifiedDate = this.convertMarketplaceTimestamp(pkg.lastModifiedDate) || new Date();
+                    order.invoiceLink = pkg.invoiceLink || order.invoiceLink;
+                    order.cargoTrackingNumber = pkg.cargoTrackingNumber?.toString() || order.cargoTrackingNumber;
+                    order.cargoTrackingLink = pkg.cargoTrackingLink || order.cargoTrackingLink;
+                    order.packageHistories = pkg.packageHistories || order.packageHistories;
+                    await this.orderRepository.save(order);
+                    
+                    // Release stock for returns/unsupplied
+                    if ((newIntegrationStatus === 'Returned' || newIntegrationStatus === 'UnSupplied') &&
+                        order.status !== OrderStatus.CANCELLED && order.status !== OrderStatus.RETURNED) {
+                        await this.updateStockCommitment(order, 'release');
+                    }
                 }
             }
         } else {
@@ -2024,6 +2146,91 @@ export class OrdersService {
             html,
             labelType: order.cargoLabelZpl ? 'aras' : 'dummy',
         };
+    }
+
+    private getLabelaryLabelSizeFromZpl(zpl: string, dpmm: number): { widthIn: string; heightIn: string } {
+        const pwMatch = zpl.match(/\^PW(\d+)/);
+        const llMatch = zpl.match(/\^LL(\d+)/);
+
+        const pwDots = pwMatch ? Number(pwMatch[1]) : null;
+        const llDots = llMatch ? Number(llMatch[1]) : null;
+
+        // Fallback to common shipping label size
+        if (!pwDots || !llDots || Number.isNaN(pwDots) || Number.isNaN(llDots) || pwDots <= 0 || llDots <= 0) {
+            return { widthIn: '4', heightIn: '6' };
+        }
+
+        const widthMm = pwDots / dpmm;
+        const heightMm = llDots / dpmm;
+        const widthInNum = widthMm / 25.4;
+        const heightInNum = heightMm / 25.4;
+
+        const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+        const fmt = (v: number) => {
+            const fixed = v.toFixed(2);
+            return fixed.replace(/\.?0+$/, '');
+        };
+
+        return {
+            widthIn: fmt(clamp(widthInNum, 1, 8)),
+            heightIn: fmt(clamp(heightInNum, 1, 12)),
+        };
+    }
+
+    async renderZplToHtml(zpl: string): Promise<{ success: boolean; html?: string; message?: string }> {
+        if (!zpl || typeof zpl !== 'string') {
+            return { success: false, message: 'ZPL gereklidir.' };
+        }
+        if (zpl.length > 200_000) {
+            return { success: false, message: 'ZPL çok büyük.' };
+        }
+
+        const labelaryBaseUrl = process.env.LABELARY_API_URL || 'https://api.labelary.com';
+        const dpmmRaw = Number(process.env.LABELARY_DPMM || 8);
+        const dpmm = Number.isFinite(dpmmRaw) && dpmmRaw > 0 ? dpmmRaw : 8;
+        const { widthIn, heightIn } = this.getLabelaryLabelSizeFromZpl(zpl, dpmm);
+
+        const url = `${labelaryBaseUrl}/v1/printers/${dpmm}dpmm/labels/${widthIn}x${heightIn}/0/`;
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { Accept: 'image/png' },
+            body: zpl,
+        });
+
+        if (!response.ok) {
+            const text = await response.text();
+            return { success: false, message: `Labelary error ${response.status}: ${text}` };
+        }
+
+        const buf = Buffer.from(await response.arrayBuffer());
+        const dataUrl = `data:image/png;base64,${buf.toString('base64')}`;
+
+        const html = `
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>Kargo Etiketi</title>
+  <style type="text/css">
+    body { margin: 0; padding: 0; background: #fff; }
+    .page { width: ${widthIn}in; height: ${heightIn}in; display: flex; align-items: center; justify-content: center; }
+    img { width: 100%; height: auto; display: block; }
+    @media print { @page { size: ${widthIn}in ${heightIn}in; margin: 0; } }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <img src="${dataUrl}" alt="Kargo Etiketi" />
+  </div>
+  <script>
+    window.onload = function() { setTimeout(function() { window.print(); }, 200); };
+  </script>
+</body>
+</html>
+        `.trim();
+
+        return { success: true, html };
     }
 
     /**

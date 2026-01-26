@@ -63,6 +63,14 @@ export class OrdersController {
         return this.ordersService.getCargoLabel(id);
     }
 
+    @Post('render-zpl')
+    async renderZpl(@Body() body: { zpl: string }) {
+        if (!body?.zpl || typeof body.zpl !== 'string') {
+            return { success: false, message: 'ZPL gereklidir.' };
+        }
+        return this.ordersService.renderZplToHtml(body.zpl);
+    }
+
     @Put(':id/trendyol-status/picking')
     async updateTrendyolPicking(@Param('id') id: string) {
         return this.ordersService.updateTrendyolPackageStatus(id, 'Picking');

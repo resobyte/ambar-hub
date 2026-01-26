@@ -241,14 +241,31 @@ export function OrderDetailClient({ orderId }: Props) {
         setLabelLoading(true);
         try {
             const data = await getOrderCargoLabel(orderId);
-            if (data.html) {
-                const printWindow = window.open('', '_blank');
-                if (printWindow) {
-                    printWindow.document.write(data.html);
-                    printWindow.document.close();
+            let htmlToPrint: string | undefined;
+
+            // Prefer ZPL if available, otherwise use HTML (without auto-print)
+            if (data.zpl) {
+                const rendered = await (await import('@/lib/api')).renderZplToHtml(data.zpl);
+                if (rendered.success && rendered.html) {
+                    htmlToPrint = rendered.html;
                 }
-            } else {
-                alert('Etiket bulunamadı');
+            } else if (data.html) {
+                // Remove auto-print script from HTML
+                htmlToPrint = data.html.replace(
+                    /window\.onload\s*=\s*function\(\)\s*\{\s*setTimeout\(function\(\)\s*\{\s*window\.print\(\);\s*\},\s*\d+\);\s*\};?/g,
+                    ''
+                );
+            }
+
+            if (!htmlToPrint) {
+                alert('Kargo etiketi bulunamadı');
+                return;
+            }
+
+            const printWindow = window.open('', '_blank');
+            if (printWindow) {
+                printWindow.document.write(htmlToPrint);
+                printWindow.document.close();
             }
         } catch (err: any) {
             alert(err.message || 'Etiket alınamadı');

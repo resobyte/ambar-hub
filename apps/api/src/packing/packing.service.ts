@@ -737,79 +737,91 @@ export class PackingService {
             }
         }
 
-        try {
-            const credentials = order.store?.cargoUsername ? {
-                customerCode: order.store.cargoCustomerCode,
-                username: order.store.cargoUsername,
-                password: order.store.cargoPassword,
-            } : undefined;
+        // Check if cargo shipment already created (e.g., during manual order creation)
+        const needsCargoCreation = !order.cargoTrackingNumber;
 
-            const arasResult = await this.arasKargoService.createShipment(order, credentials);
-            
-            await this.orderApiLogService.log({
-                orderId: order.id,
-                provider: ApiLogProvider.ARAS_KARGO,
-                logType: ApiLogType.SET_ORDER,
-                endpoint: arasResult._request?.endpoint,
-                method: 'POST',
-                requestPayload: arasResult._request,
-                responsePayload: arasResult._response,
-                isSuccess: arasResult.ResultCode === '0',
-                errorMessage: arasResult.ResultCode !== '0' ? arasResult.ResultMsg : undefined,
-                durationMs: arasResult._durationMs,
-            });
+        if (needsCargoCreation) {
+            try {
+                const credentials = order.store?.cargoUsername ? {
+                    customerCode: order.store.cargoCustomerCode,
+                    username: order.store.cargoUsername,
+                    password: order.store.cargoPassword,
+                } : undefined;
 
-            if (arasResult.ResultCode === '0') {
-                this.logger.log(`Aras Kargo shipment created for order ${order.orderNumber}`);
-
-                // IntegrationCode'u cargoTrackingNumber olarak kaydet ki getBarcode çalışsın
-                const integrationCode = order.packageId || order.orderNumber;
-                await this.orderRepository.update(order.id, {
-                    cargoTrackingNumber: integrationCode,
-                    cargoProviderName: 'Aras Kargo',
-                });
-                order.cargoTrackingNumber = integrationCode;
-
-                await this.orderHistoryService.logEvent({
-                    orderId: order.id,
-                    action: OrderHistoryAction.CARGO_CREATED,
-                    description: `Aras Kargo kaydı oluşturuldu`,
-                    metadata: {
-                        provider: 'Aras Kargo',
-                        resultCode: arasResult.ResultCode,
-                        integrationCode,
-                    },
-                });
-
-                const label = await this.getOrCreateCargoLabel(order);
-                result.cargoLabel = label;
-
-                await this.orderHistoryService.logEvent({
-                    orderId: order.id,
-                    action: OrderHistoryAction.CARGO_LABEL_FETCHED,
-                    description: `Kargo etiketi alındı (${label.labelType.toUpperCase()})`,
-                    metadata: { labelType: label.labelType },
-                });
-            } else {
-                this.logger.warn(`Aras Kargo failed: ${arasResult.ResultMsg}`);
-            }
-        } catch (error: any) {
-            this.logger.error(`Aras Kargo error: ${error.message}`);
-            
-            if (error._request) {
+                const arasResult = await this.arasKargoService.createShipment(order, credentials);
+                
                 await this.orderApiLogService.log({
                     orderId: order.id,
                     provider: ApiLogProvider.ARAS_KARGO,
                     logType: ApiLogType.SET_ORDER,
-                    endpoint: error._request?.endpoint,
+                    endpoint: arasResult._request?.endpoint,
                     method: 'POST',
-                    requestPayload: error._request,
-                    responsePayload: error._response,
-                    isSuccess: false,
-                    errorMessage: error.message,
-                    durationMs: error._durationMs,
+                    requestPayload: arasResult._request,
+                    responsePayload: arasResult._response,
+                    isSuccess: arasResult.ResultCode === '0',
+                    errorMessage: arasResult.ResultCode !== '0' ? arasResult.ResultMsg : undefined,
+                    durationMs: arasResult._durationMs,
                 });
+
+                if (arasResult.ResultCode === '0') {
+                    this.logger.log(`Aras Kargo shipment created for order ${order.orderNumber}`);
+
+                    // IntegrationCode'u cargoTrackingNumber olarak kaydet ki getBarcode çalışsın
+                    const integrationCode = order.packageId || order.orderNumber;
+                    await this.orderRepository.update(order.id, {
+                        cargoTrackingNumber: integrationCode,
+                        cargoProviderName: 'Aras Kargo',
+                    });
+                    order.cargoTrackingNumber = integrationCode;
+
+                    await this.orderHistoryService.logEvent({
+                        orderId: order.id,
+                        action: OrderHistoryAction.CARGO_CREATED,
+                        description: `Aras Kargo kaydı oluşturuldu`,
+                        metadata: {
+                            provider: 'Aras Kargo',
+                            resultCode: arasResult.ResultCode,
+                            integrationCode,
+                        },
+                    });
+                } else {
+                    this.logger.warn(`Aras Kargo failed: ${arasResult.ResultMsg}`);
+                }
+            } catch (error: any) {
+                this.logger.error(`Aras Kargo error: ${error.message}`);
+                
+                if (error._request) {
+                    await this.orderApiLogService.log({
+                        orderId: order.id,
+                        provider: ApiLogProvider.ARAS_KARGO,
+                        logType: ApiLogType.SET_ORDER,
+                        endpoint: error._request?.endpoint,
+                        method: 'POST',
+                        requestPayload: error._request,
+                        responsePayload: error._response,
+                        isSuccess: false,
+                        errorMessage: error.message,
+                        durationMs: error._durationMs,
+                    });
+                }
             }
+        } else {
+            this.logger.log(`Aras Kargo shipment already exists for order ${order.orderNumber}, skipping setOrder`);
+        }
+
+        // Get cargo label (either from existing shipment or newly created one)
+        try {
+            const label = await this.getOrCreateCargoLabel(order);
+            result.cargoLabel = label;
+
+            await this.orderHistoryService.logEvent({
+                orderId: order.id,
+                action: OrderHistoryAction.CARGO_LABEL_FETCHED,
+                description: `Kargo etiketi alındı (${label.labelType.toUpperCase()})`,
+                metadata: { labelType: label.labelType },
+            });
+        } catch (error: any) {
+            this.logger.error(`Failed to get cargo label: ${error.message}`);
         }
 
         await this.orderRepository.update(order.id, { status: OrderStatus.SHIPPED });

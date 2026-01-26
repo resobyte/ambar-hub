@@ -1175,6 +1175,20 @@ export async function getOrderCargoLabel(orderId: string): Promise<CargoLabelRes
   return res.json();
 }
 
+export async function renderZplToHtml(zpl: string): Promise<{ success: boolean; html?: string; message?: string }> {
+  const res = await fetch(`${API_URL}/orders/render-zpl`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ zpl }),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.message || 'ZPL render edilemedi');
+  }
+  return res.json();
+}
+
 export async function syncOrders(integrationId: string): Promise<{ success: boolean; message: string }> {
   const res = await fetch(`${API_URL}/orders/sync/${integrationId}`, {
     method: 'POST',

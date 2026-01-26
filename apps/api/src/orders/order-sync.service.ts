@@ -529,11 +529,13 @@ export class OrderSyncService {
         const statusMap: Record<string, OrderStatus> = {
             'Created': OrderStatus.CREATED,
             'Picking': OrderStatus.PICKING,
+            'Packed': OrderStatus.PACKED,
             'Invoiced': OrderStatus.INVOICED,
             'Shipped': OrderStatus.SHIPPED,
             'Delivered': OrderStatus.DELIVERED,
             'Cancelled': OrderStatus.CANCELLED,
             'UnDelivered': OrderStatus.UNDELIVERED,
+            'UnSupplied': OrderStatus.UNSUPPLIED,
             'Returned': OrderStatus.RETURNED,
         };
         return statusMap[status] || null;
