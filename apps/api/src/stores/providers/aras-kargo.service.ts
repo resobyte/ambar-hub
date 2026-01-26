@@ -12,30 +12,16 @@ export interface ArasPieceDetail {
 
 export interface ArasOrderInfo {
     IntegrationCode: string;
-    TradingWaybillNumber: string;
     InvoiceNumber?: string;
     ReceiverName: string;
     ReceiverAddress: string;
     ReceiverPhone1: string;
-    ReceiverPhone2?: string;
-    ReceiverPhone3?: string;
     ReceiverCityName: string;
     ReceiverTownName: string;
-    ReceiverDistrictName?: string;
-    ReceiverQuarterName?: string;
-    ReceiverAvenueName?: string;
-    ReceiverStreetName?: string;
+    VolumetricWeight: number;
     PieceCount: number;
     Pieces: ArasPieceDetail[];
     PayorTypeCode: number;
-    IsWorldWide: number;
-    Description?: string;
-    IsCod?: '0' | '1';
-    CodAmount?: number;
-    CodCollectionType?: '0' | '1';
-    CodBillingType?: '0';
-    TaxNumber?: string;
-    TaxOffice?: string;
 }
 
 export interface ArasSetOrderResponse {
@@ -60,36 +46,27 @@ export class ArasKargoService {
 
     async createShipment(order: any): Promise<ArasSetOrderResponse> {
         const shippingAddress = order.shippingAddress || {};
-        const invoiceAddress = order.invoiceAddress || {};
 
+        const volumetricWeight = Number(order.cargoDeci) || 1;
         const pieceCount = 1;
         const pieces: ArasPieceDetail[] = [{
             BarcodeNumber: order.packageId || order.orderNumber,
-            VolumetricWeight: (order.cargoDeci || 1).toString(),
+            VolumetricWeight: volumetricWeight.toString(),
             Weight: "1",
-            Description: "Sipariş: " + order.orderNumber
         }];
 
         const arasOrder: ArasOrderInfo = {
-            IntegrationCode: order.orderNumber,
-            TradingWaybillNumber: (order.packageId || order.orderNumber).substring(0, 16),
-            InvoiceNumber: order.orderNumber.substring(0, 20),
+            IntegrationCode: order.packageId || order.orderNumber,
+            InvoiceNumber: order.orderNumber,
             ReceiverName: ((shippingAddress.firstName || '') + ' ' + (shippingAddress.lastName || '')).trim() || 'Alıcı',
             ReceiverAddress: shippingAddress.fullAddress || shippingAddress.addressDetail || ((shippingAddress.addressLine1 || '') + ' ' + (shippingAddress.addressLine2 || '')).trim() || 'Adres',
             ReceiverPhone1: shippingAddress.phone || order.customer?.phone || '05000000000',
             ReceiverCityName: shippingAddress.city || 'İstanbul',
             ReceiverTownName: shippingAddress.district || 'Merkez',
-            ReceiverDistrictName: shippingAddress.neighborhood || '',
+            VolumetricWeight: volumetricWeight,
             PieceCount: pieceCount,
             Pieces: pieces,
             PayorTypeCode: order.whoPays === 2 ? 2 : 1,
-            IsWorldWide: 0,
-            Description: order.note || '',
-            IsCod: order.isCod ? '1' : '0',
-            CodAmount: order.isCod ? Number(order.totalPrice) : 0,
-            CodCollectionType: order.paymentMethod === 'CREDIT_CARD_AT_DOOR' ? '1' : '0',
-            TaxNumber: order.taxNumber,
-            TaxOffice: invoiceAddress.taxOffice
         };
 
         return this.setOrder(arasOrder);
@@ -99,59 +76,42 @@ export class ArasKargoService {
         const { username, password } = this.getCredentials();
 
         const pieceDetailsXml = orderInfo.Pieces.map(piece => `
-                  <PieceDetail>
-                     <VolumetricWeight>${piece.VolumetricWeight}</VolumetricWeight>
-                     <Weight>${piece.Weight}</Weight>
-                     <BarcodeNumber>${piece.BarcodeNumber}</BarcodeNumber>
-                     <ProductNumber>${piece.ProductNumber || ''}</ProductNumber>
-                     <Description>${piece.Description || ''}</Description>
-                  </PieceDetail>`).join('');
+                <PieceDetail>
+                  <VolumetricWeight>${piece.VolumetricWeight}</VolumetricWeight>
+                  <Weight>${piece.Weight}</Weight>
+                  <BarcodeNumber>${piece.BarcodeNumber}</BarcodeNumber>
+                  <ProductNumber/>
+                  <Description/>
+                </PieceDetail>`).join('');
 
-        const soapBody = `<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">
-   <soap:Header/>
-   <soap:Body>
-      <tem:SetOrder>
-         <tem:orderInfo>
-            <tem:Order>
-               <tem:UserName>${username}</tem:UserName>
-               <tem:Password>${password}</tem:Password>
-               <tem:TradingWaybillNumber>${orderInfo.TradingWaybillNumber}</tem:TradingWaybillNumber>
-               <tem:InvoiceNumber>${orderInfo.InvoiceNumber || ''}</tem:InvoiceNumber>
-               <tem:ReceiverName>${this.escapeXml(orderInfo.ReceiverName)}</tem:ReceiverName>
-               <tem:ReceiverAddress>${this.escapeXml(orderInfo.ReceiverAddress)}</tem:ReceiverAddress>
-               <tem:ReceiverPhone1>${orderInfo.ReceiverPhone1}</tem:ReceiverPhone1>
-               <tem:ReceiverPhone2>${orderInfo.ReceiverPhone2 || ''}</tem:ReceiverPhone2>
-               <tem:ReceiverPhone3>${orderInfo.ReceiverPhone3 || ''}</tem:ReceiverPhone3>
-               <tem:ReceiverCityName>${this.escapeXml(orderInfo.ReceiverCityName)}</tem:ReceiverCityName>
-               <tem:ReceiverTownName>${this.escapeXml(orderInfo.ReceiverTownName)}</tem:ReceiverTownName>
-               <tem:ReceiverDistrictName>${this.escapeXml(orderInfo.ReceiverDistrictName || '')}</tem:ReceiverDistrictName>
-               <tem:ReceiverQuarterName>${this.escapeXml(orderInfo.ReceiverQuarterName || '')}</tem:ReceiverQuarterName>
-               <tem:ReceiverAvenueName>${this.escapeXml(orderInfo.ReceiverAvenueName || '')}</tem:ReceiverAvenueName>
-               <tem:ReceiverStreetName>${this.escapeXml(orderInfo.ReceiverStreetName || '')}</tem:ReceiverStreetName>
-               <tem:VolumetricWeight>0</tem:VolumetricWeight>
-               <tem:Weight>0</tem:Weight>
-               <tem:PieceCount>${orderInfo.PieceCount}</tem:PieceCount>
-               <tem:IntegrationCode>${orderInfo.IntegrationCode}</tem:IntegrationCode>
-               <tem:PayorTypeCode>${orderInfo.PayorTypeCode || 1}</tem:PayorTypeCode>
-               <tem:IsWorldWide>${orderInfo.IsWorldWide || 0}</tem:IsWorldWide>
-               <tem:Description>${this.escapeXml(orderInfo.Description || '')}</tem:Description>
-               <tem:IsCod>${orderInfo.IsCod || '0'}</tem:IsCod>
-               <tem:CodAmount>${orderInfo.CodAmount || '0'}</tem:CodAmount>
-               <tem:CodCollectionType>${orderInfo.CodCollectionType || ''}</tem:CodCollectionType>
-               <tem:CodBillingType>${orderInfo.CodBillingType || '0'}</tem:CodBillingType>
-               <tem:TaxNumber>${orderInfo.TaxNumber || ''}</tem:TaxNumber>
-               <tem:TaxOffice>${orderInfo.TaxOffice || ''}</tem:TaxOffice>
-               <tem:PieceDetails>
-                  ${pieceDetailsXml}
-               </tem:PieceDetails>
-               <tem:SenderAccountAddressId></tem:SenderAccountAddressId>
-            </tem:Order>
-         </tem:orderInfo>
-         <tem:userName>${username}</tem:userName>
-         <tem:password>${password}</tem:password>
-      </tem:SetOrder>
-   </soap:Body>
+        const soapBody = `<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <soap:Body>
+    <SetOrder xmlns="http://tempuri.org/">
+      <orderInfo>
+        <Order>
+          <UserName>${username}</UserName>
+          <Password>${password}</Password>
+          <TradingsetNumber/>
+          <InvoiceNumber>${orderInfo.InvoiceNumber || ''}</InvoiceNumber>
+          <ReceiverName>${this.escapeXml(orderInfo.ReceiverName)}</ReceiverName>
+          <ReceiverAddress>${this.escapeXml(orderInfo.ReceiverAddress)}</ReceiverAddress>
+          <ReceiverPhone1>${orderInfo.ReceiverPhone1}</ReceiverPhone1>
+          <ReceiverCityName>${this.escapeXml(orderInfo.ReceiverCityName)}</ReceiverCityName>
+          <ReceiverTownName>${this.escapeXml(orderInfo.ReceiverTownName)}</ReceiverTownName>
+          <VolumetricWeight>${orderInfo.VolumetricWeight}</VolumetricWeight>
+          <PieceCount>${orderInfo.PieceCount}</PieceCount>
+          <IntegrationCode>${orderInfo.IntegrationCode}</IntegrationCode>
+          <PayorTypeCode>${orderInfo.PayorTypeCode || 1}</PayorTypeCode>
+          <SenderAccountAddressId></SenderAccountAddressId>
+          <PieceDetails>${pieceDetailsXml}
+          </PieceDetails>
+        </Order>
+      </orderInfo>
+      <userName>${username}</userName>
+      <password>${password}</password>
+    </SetOrder>
+  </soap:Body>
 </soap:Envelope>`;
 
         try {
