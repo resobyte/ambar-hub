@@ -41,6 +41,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Check, ChevronsUpDown } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -145,50 +146,65 @@ function ProductCombobox({ products, value, onChange }: {
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[400px] p-0" align="start">
-        <div className="flex flex-col max-h-[300px]">
+      <PopoverContent
+        className="w-[400px] p-0"
+        align="start"
+        side="bottom"
+        sideOffset={4}
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        <div className="flex flex-col">
           <div className="p-3 border-b">
             <Input
               placeholder="Ürün ara..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="h-9"
+              onMouseDown={(e) => e.stopPropagation()}
             />
           </div>
-          <div className="flex-1 overflow-y-auto">
+          <div
+            className="h-[250px] overflow-y-auto"
+            onWheel={(e) => {
+              e.stopPropagation();
+              e.currentTarget.scrollTop += e.deltaY;
+            }}
+          >
             {filteredProducts.length === 0 ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
                 Ürün bulunamadı.
               </div>
             ) : (
-              filteredProducts.map((product) => (
-                <button
-                  key={product.id}
-                  type="button"
-                  onClick={() => {
-                    onChange(product.id);
-                    setOpen(false);
-                    setSearch('');
-                  }}
-                  className={`
-                    w-full px-3 py-2 text-left hover:bg-accent hover:text-accent-foreground
-                    flex items-center gap-2 transition-colors
-                    ${value === product.id ? 'bg-accent' : ''}
-                  `}
-                >
-                  <Check
-                    className={`h-4 w-4 shrink-0 ${
-                      value === product.id ? 'opacity-100' : 'opacity-0'
-                    }`}
-                  />
-                  <div className="flex flex-col min-w-0">
-                    <span className="font-medium truncate">{product.name}</span>
-                    <span className="text-xs text-muted-foreground truncate">
-                      SKU: {product.sku || '-'} | Barkod: {product.barcode || '-'}
-                    </span>
-                  </div>
-                </button>
-              ))
+              <div>
+                {filteredProducts.map((product) => (
+                  <button
+                    key={product.id}
+                    type="button"
+                    onClick={() => {
+                      onChange(product.id);
+                      setOpen(false);
+                      setSearch('');
+                    }}
+                    className={`
+                      w-full px-3 py-2 text-left hover:bg-accent hover:text-accent-foreground
+                      flex items-center gap-2 transition-colors border-b border-border last:border-b-0
+                      ${value === product.id ? 'bg-accent' : ''}
+                    `}
+                  >
+                    <Check
+                      className={`h-4 w-4 shrink-0 ${
+                        value === product.id ? 'opacity-100' : 'opacity-0'
+                      }`}
+                    />
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-medium truncate">{product.name}</span>
+                      <span className="text-xs text-muted-foreground truncate">
+                        SKU: {product.sku || '-'} | Barkod: {product.barcode || '-'}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         </div>
