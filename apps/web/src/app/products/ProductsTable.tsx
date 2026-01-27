@@ -294,6 +294,7 @@ export function ProductsTable() {
     setPrice: 0,
   });
   const [setComponents, setSetComponents] = useState<SetComponentData[]>([]);
+  const [initialSetComponents, setInitialSetComponents] = useState<SetComponentData[]>([]);
   const [initialFormData, setInitialFormData] = useState<ProductFormData>({
     name: '',
     brandId: '',
@@ -436,33 +437,41 @@ export function ProductsTable() {
     formDataRef.current = newData;
     setInitialFormData(newData);
 
-    // Ürün SET tipindeyse ve setItems zaten geldiyse kullan, yoksa API'den al
+    // Ürün SET tipindeyse ve setItems zaten geldiyse kullan, yoksa API'dan al
     const setItems = (product as any).setItems;
+    const mappedSetItems = (Array.isArray(setItems) && setItems.length > 0 ? setItems : []).map((item, index) => ({
+      componentProductId: item.componentProductId,
+      quantity: item.quantity,
+      priceShare: item.priceShare,
+      sortOrder: item.sortOrder ?? index,
+    }));
+    
     if ((product as any).productType === 'SET' && Array.isArray(setItems) && setItems.length > 0) {
-      setSetComponents(setItems.map((item, index) => ({
-        componentProductId: item.componentProductId,
-        quantity: item.quantity,
-        priceShare: item.priceShare,
-        sortOrder: item.sortOrder ?? index,
-      })));
+      setSetComponents(mappedSetItems);
+      setInitialSetComponents(mappedSetItems);
     } else if ((product as any).productType === 'SET') {
       // setItems gelmediyse API'den al (fallback)
       getProductSetItems(product.id).then(items => {
         if (Array.isArray(items)) {
-          setSetComponents(items.map((item, index) => ({
+          const mapped = items.map((item, index) => ({
             componentProductId: item.componentProductId,
             quantity: item.quantity,
             priceShare: item.priceShare,
             sortOrder: item.sortOrder ?? index,
-          })));
+          }));
+          setSetComponents(mapped);
+          setInitialSetComponents(mapped);
         } else {
           setSetComponents([]);
+          setInitialSetComponents([]);
         }
       }).catch(() => {
         setSetComponents([]);
+        setInitialSetComponents([]);
       });
     } else {
       setSetComponents([]);
+      setInitialSetComponents([]);
     }
 
     setIsModalOpen(true);
@@ -531,9 +540,18 @@ export function ProductsTable() {
     return JSON.stringify(formData) !== JSON.stringify(initialFormData);
   }, [formData, initialFormData]);
 
+  // setComponents değiştiyse de güncelleme yapılabilir olmalı
+  // Yeni ürün düzenleniyorsa ve setComponents boş değilse, değişiklik var sayılır
+  const hasSetComponentsChanged = useMemo(() => {
+    if (!editingProduct) return false;
+    // initialSetComponents henüz yüklenmediyse (boş array), setComponents doluysa değişiklik var
+    if (initialSetComponents.length === 0 && setComponents.length > 0) return true;
+    return JSON.stringify(setComponents) !== JSON.stringify(initialSetComponents);
+  }, [setComponents, initialSetComponents, editingProduct]);
+
   const canSubmit = useMemo(() => {
-    return isFormValid && (isFormDirty || !editingProduct);
-  }, [isFormValid, isFormDirty, editingProduct]);
+    return isFormValid && (isFormDirty || hasSetComponentsChanged || !editingProduct);
+  }, [isFormValid, isFormDirty, hasSetComponentsChanged, editingProduct]);
 
   const handleConfirmDelete = useCallback(async () => {
     if (!deletingProductId) return;
