@@ -60,8 +60,11 @@ import {
     createProductStore,
     updateProductStore,
     deleteProductStore,
+    getProducts,
+    updateProductSetItems,
     Product,
     ProductStore,
+    ProductSetItemInfo,
     Store as ApiStore,
 } from '@/lib/api';
 
@@ -77,11 +80,18 @@ export function ProductDetailClient({ productId }: Props) {
     const [product, setProduct] = useState<Product | null>(null);
     const [productStores, setProductStores] = useState<ProductStore[]>([]);
     const [stores, setStores] = useState<ApiStore[]>([]);
+    const [allProducts, setAllProducts] = useState<Product[]>([]);
 
     // Store modal
     const [isStoreModalOpen, setIsStoreModalOpen] = useState(false);
     const [editingStore, setEditingStore] = useState<ProductStore | null>(null);
     const [saving, setSaving] = useState(false);
+
+    // Set Items modal
+    const [isSetItemModalOpen, setIsSetItemModalOpen] = useState(false);
+    const [editingSetItem, setEditingSetItem] = useState<ProductSetItemInfo | null>(null);
+    const [setItems, setSetItems] = useState<ProductSetItemInfo[]>([]);
+    const [savingSetItem, setSavingSetItem] = useState(false);
 
     const [storeForm, setStoreForm] = useState({
         storeId: '',
@@ -90,18 +100,28 @@ export function ProductDetailClient({ productId }: Props) {
         isActive: true,
     });
 
+    const [setItemForm, setSetItemForm] = useState({
+        componentProductId: '',
+        quantity: '1',
+        priceShare: '0',
+        sortOrder: '0',
+    });
+
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const [productRes, storesRes, productStoresRes] = await Promise.all([
+            const [productRes, storesRes, productStoresRes, allProductsRes] = await Promise.all([
                 getProduct(productId),
                 getStores(1, 100),
                 getProductStores(productId),
+                getProducts(1, 1000), // Tüm ürünleri getir (SET item seçimi için)
             ]);
 
             setProduct(productRes.data);
             setStores(storesRes.data || []);
             setProductStores(productStoresRes || []);
+            setAllProducts(allProductsRes.data || []);
+            setSetItems(productRes.data.setItems || []);
         } catch (error: any) {
             toast({ variant: 'destructive', title: 'Hata', description: error.message || 'Veri yüklenemedi' });
         } finally {
@@ -180,8 +200,105 @@ export function ProductDetailClient({ productId }: Props) {
         return stores.find(s => s.id === storeId)?.name || storeId;
     };
 
+    const getProductName = (productId: string) => {
+        return allProducts.find(p => p.id === productId)?.name || productId;
+    };
+
     const connectedStoreIds = productStores.map(ps => ps.storeId);
     const availableStores = stores.filter(s => !connectedStoreIds.includes(s.id) || editingStore?.storeId === s.id);
+
+    // Set Items handlers
+    const handleAddSetItem = () => {
+        setEditingSetItem(null);
+        setSetItemForm({
+            componentProductId: '',
+            quantity: '1',
+            priceShare: '0',
+            sortOrder: setItems.length.toString(),
+        });
+        setIsSetItemModalOpen(true);
+    };
+
+    const handleEditSetItem = (item: ProductSetItemInfo) => {
+        setEditingSetItem(item);
+        setSetItemForm({
+            componentProductId: item.componentProductId,
+            quantity: item.quantity.toString(),
+            priceShare: item.priceShare.toString(),
+            sortOrder: item.sortOrder.toString(),
+        });
+        setIsSetItemModalOpen(true);
+    };
+
+    const handleSaveSetItem = async () => {
+        setSavingSetItem(true);
+        try {
+            const newItems = editingSetItem
+                ? setItems.map(item =>
+                    item.id === editingSetItem.id
+                        ? {
+                            ...item,
+                            componentProductId: setItemForm.componentProductId,
+                            componentProductName: getProductName(setItemForm.componentProductId),
+                            quantity: parseInt(setItemForm.quantity) || 1,
+                            priceShare: parseFloat(setItemForm.priceShare) || 0,
+                            sortOrder: parseInt(setItemForm.sortOrder) || 0,
+                        }
+                        : item
+                )
+                : [
+                    ...setItems,
+                    {
+                        id: `temp-${Date.now()}`,
+                        componentProductId: setItemForm.componentProductId,
+                        componentProductName: getProductName(setItemForm.componentProductId),
+                        quantity: parseInt(setItemForm.quantity) || 1,
+                        priceShare: parseFloat(setItemForm.priceShare) || 0,
+                        sortOrder: parseInt(setItemForm.sortOrder) || 0,
+                    },
+                ];
+
+            // API'ye gönder
+            const itemsToSave = newItems.map(item => ({
+                componentProductId: item.componentProductId,
+                quantity: item.quantity,
+                priceShare: item.priceShare,
+                sortOrder: item.sortOrder,
+            }));
+
+            await updateProductSetItems(productId, itemsToSave);
+            setSetItems(newItems);
+            setIsSetItemModalOpen(false);
+            fetchData(); // Ürün bilgisini yenile
+            toast({ title: 'Başarılı', description: 'Set ürünleri güncellendi', variant: 'success' });
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Hata', description: error.message });
+        } finally {
+            setSavingSetItem(false);
+        }
+    };
+
+    const handleRemoveSetItem = async (itemId: string) => {
+        if (!confirm('Bu ürünü set\'ten çıkarmak istediğinize emin misiniz?')) return;
+        try {
+            const newItems = setItems.filter(item => item.id !== itemId);
+            const itemsToSave = newItems.map(item => ({
+                componentProductId: item.componentProductId,
+                quantity: item.quantity,
+                priceShare: item.priceShare,
+                sortOrder: item.sortOrder,
+            }));
+
+            await updateProductSetItems(productId, itemsToSave);
+            setSetItems(newItems);
+            fetchData();
+            toast({ title: 'Başarılı', description: 'Ürün set\'ten çıkarıldı', variant: 'success' });
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Hata', description: error.message });
+        }
+    };
+
+    const availableProducts = allProducts.filter(p => p.id !== productId && p.productType !== 'SET');
 
     if (loading) {
         return (
@@ -424,6 +541,32 @@ export function ProductDetailClient({ productId }: Props) {
                                     <p className="text-sm text-muted-foreground">Mağaza Sayısı</p>
                                     <p className="font-medium">{product.storeCount}</p>
                                 </div>
+                                {product.productType === 'SET' && (
+                                    <>
+                                        <div className="space-y-1">
+                                            <p className="text-sm text-muted-foreground">Ürün Tipi</p>
+                                            <p className="font-medium">
+                                                <Badge variant="secondary">SET Ürünü</Badge>
+                                            </p>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <p className="text-sm text-muted-foreground">Set Fiyatı</p>
+                                            <p className="font-medium text-blue-600">
+                                                {product.setPrice?.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺
+                                            </p>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <p className="text-sm text-muted-foreground">Set İçeriği</p>
+                                            <p className="font-medium">{setItems.length} ürün</p>
+                                        </div>
+                                        <div className="col-span-full">
+                                            <Button onClick={handleAddSetItem} variant="outline" className="w-full">
+                                                <Package className="w-4 h-4 mr-2" />
+                                                Set Ürünlerini Yönet
+                                            </Button>
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         </CardContent>
                     </Card>
@@ -513,6 +656,174 @@ export function ProductDetailClient({ productId }: Props) {
                         >
                             {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                             Kaydet
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Set Items Management Modal */}
+            <Dialog open={isSetItemModalOpen} onOpenChange={setIsSetItemModalOpen}>
+                <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>Set Ürünlerini Yönet</DialogTitle>
+                        <DialogDescription>
+                            Bu set'in içindeki ürünleri ekleyin, düzenleyin veya çıkarın
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-6 py-4">
+                        {/* Mevcut Set Ürünleri Listesi */}
+                        <div>
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-lg font-semibold">Set Ürünleri</h3>
+                                <Button onClick={handleAddSetItem} size="sm" disabled={availableProducts.length === 0}>
+                                    <Plus className="w-4 h-4 mr-2" />
+                                    Yeni Ürün Ekle
+                                </Button>
+                            </div>
+
+                            {setItems.length === 0 ? (
+                                <div className="text-center py-8 text-muted-foreground border rounded-lg">
+                                    <Package className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                                    <p>Henüz set ürünü eklenmemiş</p>
+                                </div>
+                            ) : (
+                                <div className="rounded-md border">
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead className="w-16">Sıra</TableHead>
+                                                <TableHead>Ürün</TableHead>
+                                                <TableHead className="text-right">Adet</TableHead>
+                                                <TableHead className="text-right">Fiyat Payı</TableHead>
+                                                <TableHead className="text-right">İşlemler</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {setItems
+                                                .sort((a, b) => a.sortOrder - b.sortOrder)
+                                                .map((item) => (
+                                                    <TableRow key={item.id}>
+                                                        <TableCell className="font-medium">{item.sortOrder + 1}</TableCell>
+                                                        <TableCell className="font-medium">{getProductName(item.componentProductId)}</TableCell>
+                                                        <TableCell className="text-right">{item.quantity}</TableCell>
+                                                        <TableCell className="text-right">{item.priceShare.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</TableCell>
+                                                        <TableCell className="text-right">
+                                                            <div className="flex justify-end gap-1">
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    onClick={() => handleEditSetItem(item)}
+                                                                >
+                                                                    <Pencil className="w-4 h-4" />
+                                                                </Button>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    onClick={() => handleRemoveSetItem(item.id)}
+                                                                >
+                                                                    <Trash2 className="w-4 h-4 text-destructive" />
+                                                                </Button>
+                                                            </div>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Form - Sadece düzenleme modunda veya yeni ürün eklerken göster */}
+                        {(editingSetItem || (!editingSetItem && setItemForm.componentProductId)) && (
+                            <>
+                                <Separator />
+                                <div>
+                                    <h3 className="text-lg font-semibold mb-4">
+                                        {editingSetItem ? 'Ürünü Düzenle' : 'Yeni Ürün Ekle'}
+                                    </h3>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        {!editingSetItem && (
+                                            <div className="space-y-2">
+                                                <Label>Ürün</Label>
+                                                <Select
+                                                    value={setItemForm.componentProductId}
+                                                    onValueChange={(v) => setSetItemForm(prev => ({ ...prev, componentProductId: v }))}
+                                                >
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Ürün seçin" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {availableProducts.map(prod => (
+                                                            <SelectItem key={prod.id} value={prod.id}>
+                                                                {prod.name} ({prod.sku || prod.barcode || 'N/A'})
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                        )}
+
+                                        <div className="space-y-2">
+                                            <Label>Adet</Label>
+                                            <Input
+                                                type="number"
+                                                min="1"
+                                                value={setItemForm.quantity}
+                                                onChange={(e) => setSetItemForm(prev => ({ ...prev, quantity: e.target.value }))}
+                                            />
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label>Fiyat Payı (₺)</Label>
+                                            <Input
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
+                                                value={setItemForm.priceShare}
+                                                onChange={(e) => setSetItemForm(prev => ({ ...prev, priceShare: e.target.value }))}
+                                            />
+                                            <p className="text-xs text-muted-foreground">
+                                                Bu ürünün set fiyatındaki payı
+                                            </p>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label>Sıra</Label>
+                                            <Input
+                                                type="number"
+                                                min="0"
+                                                value={setItemForm.sortOrder}
+                                                onChange={(e) => setSetItemForm(prev => ({ ...prev, sortOrder: e.target.value }))}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="flex justify-end gap-2 mt-4">
+                                        <Button variant="outline" onClick={() => {
+                                            setEditingSetItem(null);
+                                            setSetItemForm({ componentProductId: '', quantity: '1', priceShare: '0', sortOrder: '0' });
+                                        }}>
+                                            İptal
+                                        </Button>
+                                        <Button
+                                            onClick={handleSaveSetItem}
+                                            disabled={savingSetItem || (!editingSetItem && !setItemForm.componentProductId)}
+                                        >
+                                            {savingSetItem && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                                            Kaydet
+                                        </Button>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                    </div>
+
+                    <Separator />
+
+                    <div className="flex justify-end gap-2 pt-4">
+                        <Button variant="outline" onClick={() => setIsSetItemModalOpen(false)}>
+                            Kapat
                         </Button>
                     </div>
                 </DialogContent>

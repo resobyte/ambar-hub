@@ -11,6 +11,7 @@ import { ProductStore } from '../../product-stores/entities/product-store.entity
 import { ProductType } from '../enums/product-type.enum';
 import { Brand } from './brand.entity';
 import { Category } from './category.entity';
+import { ProductSetItem } from './product-set-item.entity';
 
 @Entity('products')
 export class Product extends BaseEntity {
@@ -76,5 +77,13 @@ export class Product extends BaseEntity {
 
   @OneToMany(() => ProductStore, (ps) => ps.product, { cascade: true })
   productStores: ProductStore[];
+
+  // SET ürünün içerdiği component ürünler
+  @OneToMany(() => ProductSetItem, (psi) => psi.setProduct)
+  setItems: ProductSetItem[];
+
+  // Bu ürünün component olarak kullanıldığı SET'ler
+  @OneToMany(() => ProductSetItem, (psi) => psi.componentProduct)
+  componentOfSets: ProductSetItem[];
 }
 

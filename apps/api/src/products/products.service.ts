@@ -42,6 +42,8 @@ export class ProductsService {
       .leftJoinAndSelect('product.productStores', 'productStores')
       .leftJoinAndSelect('product.brand', 'brand')
       .leftJoinAndSelect('product.category', 'category')
+      .leftJoinAndSelect('product.setItems', 'setItems')
+      .leftJoinAndSelect('setItems.componentProduct', 'componentProduct')
       .where('product.deletedAt IS NULL');
 
     if (filters?.name) {
@@ -105,7 +107,7 @@ export class ProductsService {
   async findOne(id: string): Promise<ProductResponseDto> {
     const product = await this.productRepository.findOne({
       where: { id },
-      relations: ['productStores'],
+      relations: ['productStores', 'brand', 'category', 'setItems', 'setItems.componentProduct'],
     });
 
     if (!product) {
@@ -121,7 +123,7 @@ export class ProductsService {
   ): Promise<ProductResponseDto> {
     const product = await this.productRepository.findOne({
       where: { id },
-      relations: ['productStores'],
+      relations: ['productStores', 'brand', 'category', 'setItems', 'setItems.componentProduct'],
     });
 
     if (!product) {
@@ -130,7 +132,14 @@ export class ProductsService {
 
     Object.assign(product, updateProductDto);
     const updated = await this.productRepository.save(product);
-    return ProductResponseDto.fromEntity(updated, updated.productStores?.length || 0);
+
+    // Güncellenmiş ürünü relations ile tekrar yükle
+    const reloaded = await this.productRepository.findOne({
+      where: { id: updated.id },
+      relations: ['productStores', 'brand', 'category', 'setItems', 'setItems.componentProduct'],
+    });
+
+    return ProductResponseDto.fromEntity(reloaded!, reloaded!.productStores?.length || 0);
   }
 
   async remove(id: string): Promise<void> {

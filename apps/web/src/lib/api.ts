@@ -210,6 +210,15 @@ export interface Store {
   senderPhone?: string;
 }
 
+export interface ProductSetItemInfo {
+  id: string;
+  componentProductId: string;
+  componentProductName: string;
+  quantity: number;
+  priceShare: number;
+  sortOrder: number;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -229,6 +238,11 @@ export interface Product {
   totalReservableQuantity: number;
   createdAt: string;
   updatedAt: string;
+  
+  // SET ürün bilgileri
+  productType?: 'SIMPLE' | 'SET';
+  setPrice?: number | null;
+  setItems?: ProductSetItemInfo[];
 }
 
 export interface ProductStore {

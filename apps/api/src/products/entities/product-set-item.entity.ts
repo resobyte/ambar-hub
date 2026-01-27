@@ -15,7 +15,7 @@ export class ProductSetItem extends BaseEntity {
     @Column({ name: 'set_product_id' })
     setProductId: string;
 
-    @ManyToOne(() => Product, { onDelete: 'CASCADE' })
+    @ManyToOne(() => Product, (p) => p.setItems, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'set_product_id' })
     setProduct: Product;
 
@@ -23,7 +23,7 @@ export class ProductSetItem extends BaseEntity {
     @Column({ name: 'component_product_id' })
     componentProductId: string;
 
-    @ManyToOne(() => Product, { onDelete: 'CASCADE' })
+    @ManyToOne(() => Product, (p) => p.componentOfSets, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'component_product_id' })
     componentProduct: Product;
 

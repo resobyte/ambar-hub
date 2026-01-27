@@ -436,14 +436,30 @@ export function ProductsTable() {
     formDataRef.current = newData;
     setInitialFormData(newData);
 
-    if ((product as any).productType === 'SET') {
+    // Ürün SET tipindeyse ve setItems zaten geldiyse kullan, yoksa API'den al
+    const setItems = (product as any).setItems;
+    if ((product as any).productType === 'SET' && Array.isArray(setItems) && setItems.length > 0) {
+      setSetComponents(setItems.map((item, index) => ({
+        componentProductId: item.componentProductId,
+        quantity: item.quantity,
+        priceShare: item.priceShare,
+        sortOrder: item.sortOrder ?? index,
+      })));
+    } else if ((product as any).productType === 'SET') {
+      // setItems gelmediyse API'den al (fallback)
       getProductSetItems(product.id).then(items => {
-        setSetComponents(items.map((item, index) => ({
-          componentProductId: item.componentProductId,
-          quantity: item.quantity,
-          priceShare: item.priceShare,
-          sortOrder: item.sortOrder ?? index,
-        })));
+        if (Array.isArray(items)) {
+          setSetComponents(items.map((item, index) => ({
+            componentProductId: item.componentProductId,
+            quantity: item.quantity,
+            priceShare: item.priceShare,
+            sortOrder: item.sortOrder ?? index,
+          })));
+        } else {
+          setSetComponents([]);
+        }
+      }).catch(() => {
+        setSetComponents([]);
       });
     } else {
       setSetComponents([]);
