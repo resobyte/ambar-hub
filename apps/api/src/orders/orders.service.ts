@@ -6,6 +6,7 @@ import { OrderItem } from './entities/order-item.entity';
 import { FaultyOrder, FaultyOrderReason } from './entities/faulty-order.entity';
 import { CustomersService } from '../customers/customers.service';
 import { StoresService } from '../stores/stores.service';
+import { ProductStoresService } from '../product-stores/product-stores.service';
 import { OrderStatus } from './enums/order-status.enum';
 import { Store, StoreType } from '../stores/entities/store.entity';
 import { Product } from '../products/entities/product.entity';
@@ -85,6 +86,7 @@ export class OrdersService {
         private readonly shelfStockRepository: Repository<ShelfStock>,
         private readonly customersService: CustomersService,
         private readonly storesService: StoresService,
+        private readonly productStoresService: ProductStoresService,
         private readonly arasKargoService: ArasKargoService,
         private readonly invoicesService: InvoicesService,
         private readonly orderHistoryService: OrderHistoryService,
@@ -164,15 +166,32 @@ export class OrdersService {
         }));
     }
 
-    private async checkProductsExist(lines: any[]): Promise<{ valid: boolean; missing: string[] }> {
+    private async checkProductsExist(lines: any[], storeId?: string): Promise<{ valid: boolean; missing: string[] }> {
         const missing: string[] = [];
         for (const line of lines) {
             const barcode = line.barcode;
-            if (!barcode) continue;
+            const sku = line.sku;
+            if (!barcode && !sku) continue;
 
-            const product = await this.productRepository.findOne({ where: { barcode } });
+            let product: Product | null = null;
+
+            // Eğer storeId varsa, önce mağazaya özel barkod/SKU ile ara
+            if (storeId) {
+                product = await this.productStoresService.findProductByStoreCode(storeId, barcode, sku);
+            }
+
+            // Global barkod ile ara
+            if (!product && barcode) {
+                product = await this.productRepository.findOne({ where: { barcode } });
+            }
+
+            // Global SKU ile ara
+            if (!product && sku) {
+                product = await this.productRepository.findOne({ where: { sku } });
+            }
+
             if (!product) {
-                missing.push(barcode);
+                missing.push(barcode || sku);
             }
         }
         return { valid: missing.length === 0, missing };
@@ -813,7 +832,7 @@ export class OrdersService {
 
         const existingFaulty = await this.faultyOrderRepository.findOne({ where: { packageId } });
 
-        const { valid, missing } = await this.checkProductsExist(lines);
+        const { valid, missing } = await this.checkProductsExist(lines, storeId);
 
         if (!valid) {
             await this.saveAsFaultyOrder(pkg, storeId, missing);
@@ -1044,11 +1063,20 @@ export class OrdersService {
             if (!storeId) continue;
 
             let productId = null;
-            if (item.barcode) {
+
+            // 1. Önce mağazaya özel barkod/SKU ile ara (storeBarcode, storeSku)
+            const storeProduct = await this.productStoresService.findProductByStoreCode(storeId, item.barcode, item.sku);
+            if (storeProduct) {
+                productId = storeProduct.id;
+            }
+
+            // 2. Mağazaya özel bulunamazsa global barkod ile ara
+            if (!productId && item.barcode) {
                 const product = await this.productRepository.findOne({ where: { barcode: item.barcode } });
                 if (product) productId = product.id;
             }
 
+            // 3. Global SKU ile ara
             if (!productId && item.sku) {
                 const product = await this.productRepository.findOne({ where: { sku: item.sku } });
                 if (product) productId = product.id;
@@ -1085,13 +1113,28 @@ export class OrdersService {
 
         for (const line of lines) {
             const barcode = line.barcode;
+            const sku = line.sku;
             const requiredQty = line.quantity || 1;
 
-            if (!barcode) continue;
+            if (!barcode && !sku) continue;
 
-            const product = await this.productRepository.findOne({ where: { barcode } });
+            let product: Product | null = null;
+
+            // 1. Önce mağazaya özel barkod/SKU ile ara
+            product = await this.productStoresService.findProductByStoreCode(storeId, barcode, sku);
+
+            // 2. Global barkod ile ara
+            if (!product && barcode) {
+                product = await this.productRepository.findOne({ where: { barcode } });
+            }
+
+            // 3. Global SKU ile ara
+            if (!product && sku) {
+                product = await this.productRepository.findOne({ where: { sku } });
+            }
+
             if (!product) {
-                insufficientProducts.push(barcode);
+                insufficientProducts.push(barcode || sku);
                 continue;
             }
 
@@ -1100,14 +1143,14 @@ export class OrdersService {
             });
 
             if (!productStore) {
-                insufficientProducts.push(barcode);
+                insufficientProducts.push(barcode || sku);
                 continue;
             }
 
             const availableStock = (productStore.sellableQuantity || 0) + (productStore.reservableQuantity || 0);
 
             if (availableStock < requiredQty) {
-                insufficientProducts.push(barcode);
+                insufficientProducts.push(barcode || sku);
             }
         }
 

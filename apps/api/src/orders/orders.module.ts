@@ -13,6 +13,7 @@ import { OrderApiLog } from './entities/order-api-log.entity';
 import { FaultyOrder } from './entities/faulty-order.entity';
 import { CustomersModule } from '../customers/customers.module';
 import { StoresModule } from '../stores/stores.module';
+import { ProductStoresModule } from '../product-stores/product-stores.module';
 import { Product } from '../products/entities/product.entity';
 import { ProductSetItem } from '../products/entities/product-set-item.entity';
 import { ProductStore } from '../product-stores/entities/product-store.entity';
@@ -30,6 +31,7 @@ import { StockSyncModule } from '../stock-sync/stock-sync.module';
         TypeOrmModule.forFeature([Order, OrderItem, OrderHistory, OrderApiLog, FaultyOrder, Product, ProductSetItem, ProductStore, RouteOrder, Route, User, Store, ShelfStock]),
         CustomersModule,
         StoresModule,
+        ProductStoresModule,
         InvoicesModule,
         forwardRef(() => ShelvesModule),
         forwardRef(() => StockSyncModule),

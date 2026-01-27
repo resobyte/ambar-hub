@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ProductStore } from './entities/product-store.entity';
+import { Product } from '../products/entities/product.entity';
 import { CreateProductStoreDto } from './dto/create-product-store.dto';
 import { UpdateProductStoreDto } from './dto/update-product-store.dto';
 import { ProductStoreResponseDto } from './dto/product-store-response.dto';
@@ -148,6 +149,33 @@ export class ProductStoresService {
       where: { storeId, storeBarcode: barcode },
       relations: ['product'],
     });
+  }
+
+  async findByStoreSku(storeId: string, sku: string): Promise<ProductStore | null> {
+    return this.productStoreRepository.findOne({
+      where: { storeId, storeSku: sku },
+      relations: ['product'],
+    });
+  }
+
+  /**
+   * Mağazaya özel barkod veya SKU ile ürün arar
+   * Öncelik sırası: storeBarcode -> storeSku
+   */
+  async findProductByStoreCode(storeId: string, barcode?: string, sku?: string): Promise<Product | null> {
+    // 1. Önce mağazaya özel barkod ile ara
+    if (barcode) {
+      const ps = await this.findByStoreBarcode(storeId, barcode);
+      if (ps?.product) return ps.product;
+    }
+
+    // 2. Mağazaya özel SKU ile ara
+    if (sku) {
+      const ps = await this.findByStoreSku(storeId, sku);
+      if (ps?.product) return ps.product;
+    }
+
+    return null;
   }
 
   async bulkUpsert(storeId: string, items: Array<{
