@@ -45,6 +45,7 @@ import {
     CheckCircle2,
     AlertCircle,
     ScanBarcode,
+    ArrowRightLeft,
 } from 'lucide-react';
 
 export function PickingClient() {
@@ -138,6 +139,7 @@ export function PickingClient() {
         const progressPercent = progress.totalItems > 0
             ? Math.round((progress.pickedItems / progress.totalItems) * 100)
             : 0;
+        const hasProductsNeedingTransfer = progress.productsNeedingTransfer && progress.productsNeedingTransfer.length > 0;
 
         return (
             <div className="h-[calc(100vh-120px)] flex flex-col gap-4">
@@ -188,6 +190,61 @@ export function PickingClient() {
                     </CardContent>
                 </Card>
 
+                {/* Products Needing Transfer Warning */}
+                {progress.productsNeedingTransfer && progress.productsNeedingTransfer.length > 0 && (
+                    <Alert variant="destructive" className="border-red-500 bg-red-50">
+                        <AlertCircle className="h-5 w-5" />
+                        <AlertDescription>
+                            <div className="space-y-2">
+                                <p className="font-semibold text-red-800">
+                                    Transfer Edilmesi Gereken Ürünler
+                                </p>
+                                <p className="text-sm text-red-700">
+                                    Aşağıdaki ürünler için satılabilir stok yetersiz. Bu ürünleri satılabilir rafa transfer etmeniz gerekiyor:
+                                </p>
+                                <div className="mt-3 space-y-2">
+                                    {progress.productsNeedingTransfer.map((product, idx) => (
+                                        <div
+                                            key={idx}
+                                            className="bg-white p-3 rounded-md border border-red-200"
+                                        >
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <p className="font-medium text-sm">{product.productName}</p>
+                                                    <code className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded mt-1 inline-block">
+                                                        {product.barcode}
+                                                    </code>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-xs text-muted-foreground">Gerekli</p>
+                                                    <p className="font-semibold text-red-600">{product.requiredQuantity} adet</p>
+                                                </div>
+                                            </div>
+                                            <div className="mt-2 text-xs text-muted-foreground">
+                                                Satılamaz rafta: <span className="font-medium text-amber-600">{product.availableInNonSellable} adet</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="flex items-center justify-between mt-4 pt-3 border-t border-red-200">
+                                    <p className="text-sm text-red-700 font-medium">
+                                        ⚠️ Transfer işlemi tamamlanana kadar rotayı başlatamazsınız.
+                                    </p>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="border-red-300 text-red-700 hover:bg-red-100 hover:text-red-800"
+                                        onClick={() => router.push('/operations/transfer')}
+                                    >
+                                        <ArrowRightLeft className="w-4 h-4 mr-2" />
+                                        Transfer Sayfasına Git
+                                    </Button>
+                                </div>
+                            </div>
+                        </AlertDescription>
+                    </Alert>
+                )}
+
                 {/* Main Content */}
                 <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-0">
                     {/* Left Panel */}
@@ -212,7 +269,7 @@ export function PickingClient() {
                                         value={quantity}
                                         onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
                                         className="w-20 text-center text-lg"
-                                        disabled={processing || progress.isComplete}
+                                        disabled={processing || progress.isComplete || hasProductsNeedingTransfer}
                                     />
                                     <Input
                                         ref={barcodeInputRef}
@@ -223,11 +280,11 @@ export function PickingClient() {
                                         className="flex-1 text-lg"
                                         placeholder="Barkodu okutun..."
                                         autoFocus
-                                        disabled={processing || progress.isComplete}
+                                        disabled={processing || progress.isComplete || hasProductsNeedingTransfer}
                                     />
                                     <Button
                                         onClick={handleScanBarcode}
-                                        disabled={!barcode.trim() || processing || progress.isComplete}
+                                        disabled={!barcode.trim() || processing || progress.isComplete || hasProductsNeedingTransfer}
                                         size="lg"
                                     >
                                         {processing ? (

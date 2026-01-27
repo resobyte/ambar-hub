@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseInterceptors, UploadedFile, Res, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseInterceptors, UploadedFile, Res, Req, UseGuards, NotFoundException } from '@nestjs/common';
 import { Request } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
@@ -59,8 +59,12 @@ export class ShelvesController {
     }
 
     @Get('barcode/:barcode')
-    findByBarcode(@Param('barcode') barcode: string) {
-        return this.shelvesService.findByBarcode(barcode);
+    async findByBarcode(@Param('barcode') barcode: string) {
+        const shelf = await this.shelvesService.findByBarcode(barcode);
+        if (!shelf) {
+            throw new NotFoundException('Raf bulunamadı');
+        }
+        return shelf;
     }
 
     @Get('search-product')

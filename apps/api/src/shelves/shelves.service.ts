@@ -193,10 +193,38 @@ export class ShelvesService {
     }
 
     async findByBarcode(barcode: string): Promise<Shelf | null> {
-        return this.shelfRepository.findOne({
-            where: { barcode },
+        const trimmedBarcode = barcode?.trim();
+        if (!trimmedBarcode) return null;
+        
+        this.logger.log(`Looking for shelf with barcode: "${trimmedBarcode}"`);
+        
+        // Try exact match first
+        let shelf = await this.shelfRepository.findOne({
+            where: { name: trimmedBarcode },
             relations: ['warehouse'],
         });
+        
+        if (shelf) {
+            this.logger.log(`Found shelf: ${shelf.id} - ${shelf.name}`);
+            return shelf;
+        }
+        
+        this.logger.log(`Exact match not found, trying case-insensitive search`);
+        
+        // If not found, try case-insensitive match
+        const result = await this.shelfRepository
+            .createQueryBuilder('shelf')
+            .leftJoinAndSelect('shelf.warehouse', 'warehouse')
+            .where('LOWER(shelf.barcode) = LOWER(:barcode)', { barcode: trimmedBarcode })
+            .getOne();
+        
+        if (result) {
+            this.logger.log(`Found shelf via case-insensitive: ${result.id} - ${result.barcode}`);
+        } else {
+            this.logger.warn(`Shelf not found with barcode: "${trimmedBarcode}"`);
+        }
+        
+        return result;
     }
 
     async update(id: string, dto: UpdateShelfDto): Promise<Shelf> {
@@ -901,7 +929,11 @@ export class ShelvesService {
             where: { shelfId: fromShelfId, productId },
         });
 
-        const fromQuantityBefore = fromStock?.quantity || 0;
+        if (!fromStock) {
+            throw new BadRequestException('Kaynak rafta bu ürün bulunamadı');
+        }
+
+        const fromQuantityBefore = fromStock.quantity;
         if (fromQuantityBefore < quantity) {
             throw new BadRequestException(`Yetersiz stok. Mevcut: ${fromQuantityBefore}, İstenen: ${quantity}`);
         }
@@ -912,9 +944,6 @@ export class ShelvesService {
         const toQuantityBefore = toStock?.quantity || 0;
 
         // Remove from source shelf (without sync - we'll sync after both operations)
-        if (!fromStock) {
-            throw new BadRequestException('Kaynak rafta stok bulunamadı');
-        }
         fromStock.quantity = Math.max(0, fromStock.quantity - quantity);
         if (fromStock.quantity === 0 && fromStock.reservedQuantity === 0) {
             await this.shelfStockRepository.remove(fromStock);

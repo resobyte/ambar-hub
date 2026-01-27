@@ -1743,6 +1743,14 @@ export interface PickingItem {
   }[];
 }
 
+export interface ProductNeedingTransfer {
+  barcode: string;
+  productName: string;
+  requiredQuantity: number;
+  availableInNonSellable: number;
+  sourceShelfIds?: string[];
+}
+
 export interface PickingProgress {
   routeId: string;
   routeName: string;
@@ -1752,6 +1760,7 @@ export interface PickingProgress {
   totalOrders: number;
   items: PickingItem[];
   isComplete: boolean;
+  productsNeedingTransfer?: ProductNeedingTransfer[];
 }
 
 export async function getPickingProgress(routeId: string): Promise<ApiResponse<PickingProgress>> {

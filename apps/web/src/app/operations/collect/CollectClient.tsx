@@ -14,7 +14,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Loader2, MapPin, CheckCircle2, Package, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Loader2, MapPin, CheckCircle2, Package, ArrowRight, ArrowLeft, AlertCircle, ArrowRightLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 type ScreenState = 'route_input' | 'collecting';
@@ -269,6 +269,7 @@ export function CollectClient() {
   const progressPercent = progress
     ? Math.round((progress.pickedItems / progress.totalItems) * 100)
     : 0;
+  const hasProductsNeedingTransfer = progress?.productsNeedingTransfer && progress.productsNeedingTransfer.length > 0;
 
   // Background color based on feedback
   const getBgClass = () => {
@@ -371,6 +372,61 @@ export function CollectClient() {
           />
         </div>
 
+        {/* Products Needing Transfer Warning */}
+        {progress.productsNeedingTransfer && progress.productsNeedingTransfer.length > 0 && (
+          <div className="mx-4 mt-4 p-4 rounded-lg border border-red-300 bg-red-50">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
+              <div className="space-y-2 flex-1">
+                <p className="font-semibold text-red-800">
+                  Transfer Edilmesi Gereken Ürünler
+                </p>
+                <p className="text-sm text-red-700">
+                  Aşağıdaki ürünler için satılabilir stok yetersiz. Transfer yapılana kadar toplama işlemi yapılamaz:
+                </p>
+                <div className="mt-3 space-y-2">
+                  {progress.productsNeedingTransfer.map((product, idx) => (
+                    <div
+                      key={idx}
+                      className="bg-white p-3 rounded-md border border-red-200"
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="font-medium text-sm">{product.productName}</p>
+                          <code className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded mt-1 inline-block">
+                            {product.barcode}
+                          </code>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-muted-foreground">Gerekli</p>
+                          <p className="font-semibold text-red-600">{product.requiredQuantity} adet</p>
+                        </div>
+                      </div>
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        Satılamaz rafta: <span className="font-medium text-amber-600">{product.availableInNonSellable} adet</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between mt-4 pt-3 border-t border-red-200">
+                  <p className="text-sm text-red-700 font-medium">
+                    ⚠️ Transfer işlemi tamamlanana kadar toplama yapılamaz.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-red-300 text-red-700 hover:bg-red-100 hover:text-red-800"
+                    onClick={() => router.push('/operations/transfer')}
+                  >
+                    <ArrowRightLeft className="w-4 h-4 mr-2" />
+                    Transfer Sayfasına Git
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Main Content */}
         <div className="flex-1 flex flex-col p-4 gap-4 overflow-hidden">
           {/* Completion State */}
@@ -457,7 +513,7 @@ export function CollectClient() {
                       }`}
                       placeholder="Raf barkodu"
                       autoFocus
-                      disabled={loading}
+                      disabled={loading || hasProductsNeedingTransfer}
                     />
                   </div>
                 ) : (
@@ -480,7 +536,7 @@ export function CollectClient() {
                         }`}
                         placeholder="Ürün barkodu"
                         autoFocus
-                        disabled={loading}
+                        disabled={loading || hasProductsNeedingTransfer}
                       />
                     </div>
 
@@ -498,7 +554,7 @@ export function CollectClient() {
                         }`}
                         placeholder="1"
                         min={1}
-                        disabled={loading}
+                        disabled={loading || hasProductsNeedingTransfer}
                       />
                     </div>
                   </div>

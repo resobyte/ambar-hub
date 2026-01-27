@@ -142,53 +142,8 @@ export class RoutesService {
             );
         }
 
-        // Check if all products are on sellable shelves
-        const allProductBarcodes: string[] = [];
-        for (const order of orders) {
-            if (order.items) {
-                order.items.forEach(item => {
-                    if (item.barcode) allProductBarcodes.push(item.barcode);
-                });
-            }
-        }
-
-        if (allProductBarcodes.length > 0) {
-            // Get products by barcodes
-            const products = await this.productRepository.find({
-                where: { barcode: In(allProductBarcodes) },
-            });
-
-            const productIds = products.map(p => p.id);
-
-            if (productIds.length > 0) {
-                // Check shelf stocks for these products - only on sellable shelves
-                const shelfStocks = await this.shelfStockRepository
-                    .createQueryBuilder('ss')
-                    .innerJoin('ss.shelf', 'shelf')
-                    .where('ss.productId IN (:...productIds)', { productIds })
-                    .andWhere('ss.quantity > 0')
-                    .andWhere('shelf.isSellable = :isSellable', { isSellable: true })
-                    .select(['ss.productId', 'SUM(ss.quantity) as totalQty'])
-                    .groupBy('ss.productId')
-                    .getRawMany();
-
-                const sellableProductIds = new Set(shelfStocks.map(s => s.ss_product_id || s.productId));
-
-                // Find products that are NOT on sellable shelves
-                const unsellableProducts: string[] = [];
-                for (const product of products) {
-                    if (!sellableProductIds.has(product.id)) {
-                        unsellableProducts.push(product.name || product.barcode);
-                    }
-                }
-
-                if (unsellableProducts.length > 0) {
-                    throw new BadRequestException(
-                        `Şu ürünler satılabilir rafta değil: ${unsellableProducts.slice(0, 3).join(', ')}${unsellableProducts.length > 3 ? ` ve ${unsellableProducts.length - 3} ürün daha` : ''}`
-                    );
-                }
-            }
-        }
+        // Stock availability check is now done when starting the route (picking phase)
+        // This allows routes to be created with products that need to be transferred first
 
         // Calculate totals and unique products
         let totalItemCount = 0;
@@ -575,27 +530,47 @@ export class RoutesService {
                 if (groupOrders.length === 0) continue;
 
                 const productName = groupOrders[0].items[0]?.productName || 'Ürün';
-                const totalQty = groupOrders.reduce((sum, o) => sum + o.totalQuantity, 0);
-                const hasSingleQty = groupOrders.every(o => o.totalQuantity === 1);
+                
+                // Group by quantity per order
+                const ordersByQuantity = new Map<number, any[]>();
+                for (const order of groupOrders) {
+                    const qty = order.totalQuantity;
+                    if (!ordersByQuantity.has(qty)) {
+                        ordersByQuantity.set(qty, []);
+                    }
+                    ordersByQuantity.get(qty)!.push(order);
+                }
 
-                suggestions.push({
-                    id: `suggestion-${++suggestionId}`,
-                    type: hasSingleQty ? 'single_product' : 'single_product_multi',
-                    name: `${productName} (${groupOrders.length} sipariş)`,
-                    description: `${barcode} - Toplam ${totalQty} adet`,
-                    storeName,
-                    storeId: storeKey !== 'no-store' ? storeKey : undefined,
-                    orderCount: groupOrders.length,
-                    totalQuantity: totalQty,
-                    products: [{
-                        barcode,
-                        name: productName,
-                        orderCount: groupOrders.length,
+                // Create a separate suggestion for each quantity group
+                for (const [qty, qtyGroupOrders] of ordersByQuantity) {
+                    const totalQty = qtyGroupOrders.reduce((sum, o) => sum + o.totalQuantity, 0);
+                    
+                    let suggestionName: string;
+                    if (qty === 1) {
+                        suggestionName = `${productName} - Tekli (${qtyGroupOrders.length} sipariş)`;
+                    } else {
+                        suggestionName = `${productName} - ${qty}'li (${qtyGroupOrders.length} sipariş)`;
+                    }
+
+                    suggestions.push({
+                        id: `suggestion-${++suggestionId}`,
+                        type: qty === 1 ? 'single_product' : 'single_product_multi',
+                        name: suggestionName,
+                        description: `${barcode} - ${qty} adet/sipariş, toplam ${totalQty} adet`,
+                        storeName,
+                        storeId: storeKey !== 'no-store' ? storeKey : undefined,
+                        orderCount: qtyGroupOrders.length,
                         totalQuantity: totalQty,
-                    }],
-                    orders: groupOrders,
-                    priority: hasSingleQty ? 100 : 80, // Single qty has higher priority
-                });
+                        products: [{
+                            barcode,
+                            name: productName,
+                            orderCount: qtyGroupOrders.length,
+                            totalQuantity: totalQty,
+                        }],
+                        orders: qtyGroupOrders,
+                        priority: qty === 1 ? 100 : Math.max(50, 100 - qty * 5), // Higher priority for lower quantities
+                    });
+                }
             }
 
             // Create suggestion for mixed orders if any

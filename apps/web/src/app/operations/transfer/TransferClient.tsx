@@ -158,6 +158,12 @@ export function TransferClient() {
     try {
       const shelfResult = await getShelfByBarcode(targetBarcode.trim());
       if (shelfResult.success && shelfResult.data) {
+        if (!shelfResult.data.isShelvable) {
+          showError('Bu rafa ürün transfer edilemez (raflanabilir değil)');
+          setTargetBarcode('');
+          setLoading(false);
+          return;
+        }
         setTargetShelf(shelfResult.data);
         showSuccess();
         setTimeout(() => {

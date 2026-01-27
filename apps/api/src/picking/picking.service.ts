@@ -48,6 +48,14 @@ export interface CurrentPickingState {
     shelfValidated: boolean;
 }
 
+export interface ProductNeedingTransfer {
+    barcode: string;
+    productName: string;
+    requiredQuantity: number;
+    availableInNonSellable: number;
+    sourceShelfIds?: string[];
+}
+
 export interface PickingProgress {
     routeId: string;
     routeName: string;
@@ -57,6 +65,7 @@ export interface PickingProgress {
     totalOrders: number;
     items: PickingItem[];
     isComplete: boolean;
+    productsNeedingTransfer?: ProductNeedingTransfer[];
 }
 
 @Injectable()
@@ -147,6 +156,10 @@ export class PickingService {
 
         // Fetch shelf locations for all items
         const barcodes = Array.from(itemMap.keys());
+        let productMap = new Map<string, any>();
+        let productIds: string[] = [];
+        let nonSellableStocks: any[] = [];
+        
         if (barcodes.length > 0) {
             // Find products by barcode first to get IDs
             const products = await this.productRepository.find({
@@ -157,8 +170,8 @@ export class PickingService {
                 select: ['id', 'barcode', 'name']
             });
 
-            const productMap = new Map(products.map(p => [p.barcode, p]));
-            const productIds = products.map(p => p.id);
+            productMap = new Map(products.map(p => [p.barcode, p]));
+            productIds = products.map(p => p.id);
 
             if (productIds.length > 0) {
                 // Find shelf stocks for these products - ONLY from pickable shelves
@@ -172,6 +185,16 @@ export class PickingService {
                     .where('ss.productId IN (:...productIds)', { productIds })
                     .andWhere('ss.quantity > 0')
                     .andWhere('shelf.isPickable = :isPickable', { isPickable: true })
+                    .getMany();
+
+                // Also check for stocks in NON-sellable shelves to identify products needing transfer
+                nonSellableStocks = await this.shelfStockRepository
+                    .createQueryBuilder('ss')
+                    .innerJoinAndSelect('ss.shelf', 'shelf')
+                    .where('ss.productId IN (:...productIds)', { productIds })
+                    .andWhere('ss.quantity > 0')
+                    .andWhere('shelf.isSellable = :isSellable', { isSellable: false })
+                    .select(['ss.productId', 'ss.quantity', 'ss.shelfId', 'shelf.name'])
                     .getMany();
 
                 // Map product ID to shelf location (taking the one with most stock or first found)
@@ -280,6 +303,33 @@ export class PickingService {
         const pickedItems = items.reduce((sum, i) => sum + Math.min(i.pickedQuantity, i.totalQuantity), 0);
         const isComplete = pickedItems >= totalItems;
 
+        // Check for products needing transfer (products not in sellable/pickable shelves)
+        const productsNeedingTransfer: ProductNeedingTransfer[] = [];
+        
+        // Re-query non-sellable stocks if needed (outside the if block scope)
+        if (productIds.length > 0 && nonSellableStocks && nonSellableStocks.length > 0) {
+            for (const [barcode, item] of itemMap) {
+                // If product has no shelf location, check if it exists in non-sellable shelves
+                if (!item.shelfLocation) {
+                    const product = Array.from(productMap.values()).find(p => p.barcode === barcode);
+                    if (product && productIds.includes(product.id)) {
+                        // Check if this product exists in non-sellable shelves
+                        const nonSellableStock = nonSellableStocks.filter((s: any) => s.productId === product.id);
+                        if (nonSellableStock && nonSellableStock.length > 0) {
+                            const totalAvailable = nonSellableStock.reduce((sum: number, s: any) => sum + s.quantity, 0);
+                            productsNeedingTransfer.push({
+                                barcode,
+                                productName: item.productName,
+                                requiredQuantity: item.totalQuantity,
+                                availableInNonSellable: totalAvailable,
+                                sourceShelfIds: nonSellableStock.map((s: any) => s.shelfId),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         return {
             routeId,
             routeName: route.name,
@@ -289,6 +339,7 @@ export class PickingService {
             totalOrders: routeOrders.length,
             items,
             isComplete,
+            productsNeedingTransfer: productsNeedingTransfer.length > 0 ? productsNeedingTransfer : undefined,
         };
     }
 

@@ -267,16 +267,16 @@ export function RoutesClient() {
 
     const getTypeBadge = (type: string) => {
         const labels: Record<string, string> = {
-            single_product: 'Tekli Sipariş',
-            single_product_multi: 'Aynı Ürün Çoklu',
-            mixed: 'Karma Sipariş',
+            single_product: 'Tekli',
+            single_product_multi: 'Çoklu',
+            mixed: 'Karma',
         };
         return <Badge variant="outline">{labels[type] || type}</Badge>;
     };
 
     const getTypeDescription = (type: string) => {
         const descriptions: Record<string, string> = {
-            single_product: 'Tek ürün, tek adet',
+            single_product: 'Her siparişte 1 adet',
             single_product_multi: 'Aynı üründen çoklu adet',
             mixed: 'Farklı ürünler içeriyor',
         };
