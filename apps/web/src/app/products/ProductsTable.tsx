@@ -36,6 +36,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Check, ChevronsUpDown } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   Breadcrumb,
@@ -102,6 +108,93 @@ interface SetComponentData {
   quantity: number;
   priceShare: number;
   sortOrder: number;
+}
+
+function ProductCombobox({ products, value, onChange }: {
+  products: Product[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const filteredProducts = useMemo(() => {
+    if (!search) return products;
+    const searchLower = search.toLowerCase();
+    return products.filter((product) =>
+      product.name.toLowerCase().includes(searchLower) ||
+      (product.sku && product.sku.toLowerCase().includes(searchLower)) ||
+      (product.barcode && product.barcode.toLowerCase().includes(searchLower))
+    );
+  }, [products, search]);
+
+  const selectedProduct = products.find((p) => p.id === value);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between"
+        >
+          <span className="truncate">
+            {selectedProduct ? selectedProduct.name : "Ürün seçin..."}
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[400px] p-0" align="start">
+        <div className="flex flex-col max-h-[300px]">
+          <div className="p-3 border-b">
+            <Input
+              placeholder="Ürün ara..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-9"
+            />
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {filteredProducts.length === 0 ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                Ürün bulunamadı.
+              </div>
+            ) : (
+              filteredProducts.map((product) => (
+                <button
+                  key={product.id}
+                  type="button"
+                  onClick={() => {
+                    onChange(product.id);
+                    setOpen(false);
+                    setSearch('');
+                  }}
+                  className={`
+                    w-full px-3 py-2 text-left hover:bg-accent hover:text-accent-foreground
+                    flex items-center gap-2 transition-colors
+                    ${value === product.id ? 'bg-accent' : ''}
+                  `}
+                >
+                  <Check
+                    className={`h-4 w-4 shrink-0 ${
+                      value === product.id ? 'opacity-100' : 'opacity-0'
+                    }`}
+                  />
+                  <div className="flex flex-col min-w-0">
+                    <span className="font-medium truncate">{product.name}</span>
+                    <span className="text-xs text-muted-foreground truncate">
+                      SKU: {product.sku || '-'} | Barkod: {product.barcode || '-'}
+                    </span>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 export function ProductsTable() {
@@ -771,23 +864,15 @@ export function ProductsTable() {
                     <div key={index} className="flex items-center gap-3 p-3 bg-muted/30 rounded-lg">
                       <div className="flex-1 space-y-2">
                         <Label>Ürün</Label>
-                        <Select
+                        <ProductCombobox
+                          products={products.filter((p) => (p as any).productType !== 'SET')}
                           value={comp.componentProductId}
-                          onValueChange={(v) => {
+                          onChange={(value) => {
                             const newComps = [...setComponents];
-                            newComps[index].componentProductId = v;
+                            newComps[index].componentProductId = value;
                             setSetComponents(newComps);
                           }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Ürün seçin" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {products.filter(p => (p as any).productType !== 'SET').map(p => (
-                              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        />
                       </div>
                       <div className="w-24 space-y-2">
                         <Label>Adet</Label>
