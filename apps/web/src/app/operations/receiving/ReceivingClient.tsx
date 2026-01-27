@@ -16,7 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Loader2, Package, ArrowRight, Check, RotateCcw, Warehouse, ArrowLeft } from 'lucide-react';
 
-type ScreenState = 'loading' | 'select_product' | 'transfer' | 'success';
+type ScreenState = 'select_receiving_shelf' | 'select_product' | 'transfer' | 'success';
 type FeedbackType = 'success' | 'error' | null;
 
 interface TransferItem {
@@ -29,15 +29,17 @@ interface TransferItem {
 
 export function ReceivingClient() {
   const router = useRouter();
+  const receivingShelfInputRef = useRef<HTMLInputElement>(null);
   const productSearchRef = useRef<HTMLInputElement>(null);
   const targetInputRef = useRef<HTMLInputElement>(null);
   const quantityInputRef = useRef<HTMLInputElement>(null);
 
-  const [screenState, setScreenState] = useState<ScreenState>('loading');
+  const [screenState, setScreenState] = useState<ScreenState>('select_receiving_shelf');
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackType>(null);
   const [errorMessage, setErrorMessage] = useState('');
 
+  const [receivingShelfBarcode, setReceivingShelfBarcode] = useState('');
   const [receivingShelf, setReceivingShelf] = useState<Shelf | null>(null);
   const [receivingStock, setReceivingStock] = useState<ShelfStockItem[]>([]);
 
@@ -68,7 +70,9 @@ export function ReceivingClient() {
 
   const focusCurrentInput = useCallback(() => {
     setTimeout(() => {
-      if (screenState === 'select_product') {
+      if (screenState === 'select_receiving_shelf') {
+        receivingShelfInputRef.current?.focus();
+      } else if (screenState === 'select_product') {
         productSearchRef.current?.focus();
       } else if (screenState === 'transfer') {
         if (!targetShelf) {
@@ -84,42 +88,64 @@ export function ReceivingClient() {
     focusCurrentInput();
   }, [focusCurrentInput]);
 
-  useEffect(() => {
-    loadReceivingShelf();
-  }, []);
+  const handleReceivingShelfScan = async () => {
+    if (!receivingShelfBarcode.trim()) return;
+
+    setLoading(true);
+    try {
+      const shelfResult = await getShelfByBarcode(receivingShelfBarcode.trim());
+      if (shelfResult.success && shelfResult.data) {
+        const shelf = shelfResult.data;
+        
+        // Only accept RECEIVING type shelves
+        if (shelf.type !== 'RECEIVING') {
+          showError(`Bu raf mal kabul rafı değil (Tip: ${shelf.type}). Lütfen mal kabul rafı seçin.`);
+          setReceivingShelfBarcode('');
+          setLoading(false);
+          return;
+        }
+
+        setReceivingShelf(shelf);
+        addLog(`Mal kabul rafı: ${shelf.barcode}`);
+
+        const stockResult = await getShelfStock(shelf.id);
+        if (stockResult.success && stockResult.data) {
+          const stockWithQty = stockResult.data.filter(s => s.quantity > 0);
+          setReceivingStock(stockWithQty);
+          addLog(`${stockWithQty.length} ürün mevcut`);
+        }
+
+        setReceivingShelfBarcode('');
+        setScreenState('select_product');
+        showSuccess();
+      } else {
+        showError('Raf bulunamadı');
+        setReceivingShelfBarcode('');
+      }
+    } catch (err: unknown) {
+      const error = err as Error;
+      showError(error.message || 'Raf bulunamadı');
+      setReceivingShelfBarcode('');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadReceivingShelf = async () => {
-    setScreenState('loading');
+    if (!receivingShelf) return;
+    
+    setLoading(true);
     try {
-      const warehouses = await fetch('/api/warehouses', { credentials: 'include' }).then(r => r.json());
-      const warehouseId = warehouses?.data?.[0]?.id;
-
-      if (!warehouseId) {
-        showError('Depo bulunamadı');
-        return;
-      }
-
-      const shelves = await getReceivingShelves(warehouseId);
-      if (shelves.length === 0) {
-        showError('Mal kabul rafı bulunamadı');
-        return;
-      }
-
-      const shelf = shelves[0];
-      setReceivingShelf(shelf);
-      addLog(`Mal kabul rafı: ${shelf.barcode}`);
-
-      const stockResult = await getShelfStock(shelf.id);
+      const stockResult = await getShelfStock(receivingShelf.id);
       if (stockResult.success && stockResult.data) {
         const stockWithQty = stockResult.data.filter(s => s.quantity > 0);
         setReceivingStock(stockWithQty);
-        addLog(`${stockWithQty.length} ürün mevcut`);
       }
-
-      setScreenState('select_product');
     } catch (err: unknown) {
       const error = err as Error;
       showError(error.message || 'Yükleme hatası');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -252,58 +278,79 @@ export function ReceivingClient() {
     setScreenState('select_product');
   };
 
+  const handleResetReceivingShelf = () => {
+    setReceivingShelf(null);
+    setReceivingShelfBarcode('');
+    setReceivingStock([]);
+    setSelectedProduct(null);
+    setTargetShelf(null);
+    setTargetBarcode('');
+    setTransferQuantity(1);
+    setScreenState('select_receiving_shelf');
+  };
+
   const bgColor = feedback === 'success' ? 'bg-green-500' : feedback === 'error' ? 'bg-red-500' : 'bg-background';
 
   const remainingQty = selectedProduct?.availableQuantity || 0;
 
   return (
     <div className={`min-h-screen ${bgColor} transition-colors duration-300`}>
-      <div className="flex h-screen">
-        <div className={`w-1/3 p-3 border-r ${feedback ? 'border-white/20' : 'border-border'} flex flex-col`}>
-          <div className={`flex items-center gap-2 mb-3 ${feedback ? 'text-white' : ''}`}>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => router.push('/operations')}
-              className={`-ml-2 ${feedback ? 'text-white hover:bg-white/20' : ''}`}
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <Warehouse className="w-5 h-5" />
-            <h2 className="font-semibold">Mal Kabul</h2>
-          </div>
-
-          {receivingShelf && (
-            <div className={`rounded-lg p-2 mb-3 ${feedback ? 'bg-white/20 text-white' : 'bg-muted'}`}>
-              <p className={`text-xs ${feedback ? 'text-white/70' : 'text-muted-foreground'}`}>KAYNAK RAF</p>
-              <p className="font-mono font-semibold">{receivingShelf.barcode}</p>
-            </div>
-          )}
-
-          <ScrollArea className="flex-1">
-            <div className="space-y-1">
-              {logs.map((log, idx) => (
-                <p
-                  key={idx}
-                  className={`text-xs font-mono ${feedback ? 'text-white/70' : 'text-muted-foreground'}`}
-                >
-                  {log}
-                </p>
-              ))}
-            </div>
-          </ScrollArea>
-        </div>
-
-        <div className="flex-1 p-4 overflow-auto">
+      <div className="p-4 overflow-auto">
           {feedback === 'error' && (
             <div className="text-white text-center py-2 text-lg font-semibold mb-4">
               {errorMessage}
             </div>
           )}
 
-          {screenState === 'loading' && (
-            <div className="flex items-center justify-center h-full">
-              <Loader2 className={`w-10 h-10 animate-spin ${feedback ? 'text-white' : ''}`} />
+          <div className="flex items-center gap-2 mb-4">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => router.push('/operations')}
+              className={feedback ? 'text-white hover:bg-white/20' : ''}
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+            <Warehouse className="w-5 h-5" />
+            <h2 className={`font-semibold ${feedback ? 'text-white' : ''}`}>Mal Kabul</h2>
+            {receivingShelf && (
+              <div className={`ml-auto rounded-lg px-3 py-1.5 ${feedback ? 'bg-white/20 text-white' : 'bg-muted'}`}>
+                <p className={`text-xs ${feedback ? 'text-white/70' : 'text-muted-foreground'}`}>KAYNAK RAF</p>
+                <p className="font-mono font-semibold text-sm">{receivingShelf.barcode}</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleResetReceivingShelf}
+                  className={`mt-1 text-xs ${feedback ? 'text-white/70 hover:text-white hover:bg-white/20' : ''}`}
+                >
+                  Değiştir
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {screenState === 'select_receiving_shelf' && (
+            <div className="space-y-4 max-w-lg mx-auto">
+              <div className={`rounded-xl p-4 ${feedback ? 'bg-white/20' : 'bg-card border'}`}>
+                <p className={`text-sm font-medium mb-2 ${feedback ? 'text-white/70' : 'text-muted-foreground'}`}>
+                  MAL KABUL RAFI BARKODUNU GİRİN
+                </p>
+                <Input
+                  ref={receivingShelfInputRef}
+                  value={receivingShelfBarcode}
+                  onChange={(e) => setReceivingShelfBarcode(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleReceivingShelfScan()}
+                  placeholder="Mal kabul rafı barkodunu okutun..."
+                  className={`text-lg h-14 ${feedback ? 'bg-white/10 border-white/30 text-white placeholder:text-white/50' : ''}`}
+                  disabled={loading}
+                  autoFocus
+                />
+                {loading && (
+                  <div className="flex justify-center mt-4">
+                    <Loader2 className={`w-6 h-6 animate-spin ${feedback ? 'text-white' : ''}`} />
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -510,7 +557,6 @@ export function ReceivingClient() {
               </Button>
             </div>
           )}
-        </div>
       </div>
     </div>
   );
