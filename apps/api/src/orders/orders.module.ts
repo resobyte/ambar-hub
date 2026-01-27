@@ -23,6 +23,7 @@ import { InvoicesModule } from '../invoices/invoices.module';
 import { Store } from '../stores/entities/store.entity';
 import { ShelfStock } from '../shelves/entities/shelf-stock.entity';
 import { ShelvesModule } from '../shelves/shelves.module';
+import { StockSyncModule } from '../stock-sync/stock-sync.module';
 
 @Module({
     imports: [
@@ -31,6 +32,7 @@ import { ShelvesModule } from '../shelves/shelves.module';
         StoresModule,
         InvoicesModule,
         forwardRef(() => ShelvesModule),
+        forwardRef(() => StockSyncModule),
     ],
     controllers: [OrdersController],
     providers: [OrdersService, OrderHistoryService, OrderApiLogService, ZplTemplateService, OrderSyncService],

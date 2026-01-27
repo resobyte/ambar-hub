@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, TreeRepository, IsNull } from 'typeorm';
 import { Shelf } from './entities/shelf.entity';
@@ -11,6 +11,8 @@ import { ShelfType, SHELF_TYPE_RULES } from './enums/shelf-type.enum';
 import { ProductStore } from '../product-stores/entities/product-store.entity';
 import { Warehouse } from '../warehouses/entities/warehouse.entity';
 import * as XLSX from 'xlsx';
+import { StockSyncService } from '../stock-sync/stock-sync.service';
+import { StockUpdateReason } from '../stock-sync/enums/stock-sync.enum';
 
 @Injectable()
 export class ShelvesService {
@@ -27,6 +29,8 @@ export class ShelvesService {
         private readonly productStoreRepository: Repository<ProductStore>,
         @InjectRepository(ShelfStockMovement)
         private readonly movementRepository: Repository<ShelfStockMovement>,
+        @Inject(forwardRef(() => StockSyncService))
+        private readonly stockSyncService: StockSyncService,
     ) { }
 
     async create(dto: CreateShelfDto): Promise<Shelf> {
@@ -414,6 +418,10 @@ export class ShelvesService {
 
         const savedStock = await this.shelfStockRepository.save(stock);
         await this.syncProductStock(productId, shelfId);
+
+        // Stok senkronizasyonunu tetikle
+        await this.triggerStockSync(productId, shelfId, StockUpdateReason.STOCK_ADDED);
+
         return savedStock;
     }
 
@@ -1293,5 +1301,32 @@ export class ShelvesService {
             message: `${removed} ürün PAKETLEME rafından çıkarıldı`,
             removed,
         };
+    }
+
+    /**
+     * Stok senkronizasyonunu tetikler (warehouse'ın bağlı olduğu mağazalar için)
+     */
+    private async triggerStockSync(productId: string, shelfId: string, reason: StockUpdateReason): Promise<void> {
+        try {
+            const shelf = await this.shelfRepository.findOne({
+                where: { id: shelfId },
+                relations: ['warehouse', 'warehouse.stores'],
+            });
+
+            if (!shelf?.warehouse?.stores || shelf.warehouse.stores.length === 0) {
+                return;
+            }
+
+            // Her mağaza için stok güncellemesini kuyruğa ekle
+            for (const store of shelf.warehouse.stores) {
+                try {
+                    await this.stockSyncService.enqueueStockUpdate(productId, store.id, reason);
+                } catch (error) {
+                    this.logger.warn(`Failed to enqueue stock update for store ${store.id}: ${error.message}`);
+                }
+            }
+        } catch (error) {
+            this.logger.warn(`Failed to trigger stock sync: ${error.message}`);
+        }
     }
 }

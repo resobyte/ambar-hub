@@ -1,0 +1,15 @@
+export enum SyncStatus {
+    PENDING = 'PENDING',
+    PROCESSING = 'PROCESSING',
+    SUCCESS = 'SUCCESS',
+    FAILED = 'FAILED',
+    RATE_LIMITED = 'RATE_LIMITED',
+}
+
+export enum StockUpdateReason {
+    ORDER_CREATED = 'ORDER_CREATED',
+    ORDER_CANCELLED = 'ORDER_CANCELLED',
+    STOCK_ADDED = 'STOCK_ADDED',
+    STOCK_REMOVED = 'STOCK_REMOVED',
+    MANUAL = 'MANUAL',
+}

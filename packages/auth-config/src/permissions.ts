@@ -165,6 +165,15 @@ export const ROUTE_PERMISSIONS: RouteConfig[] = [
     showInSidebar: true,
     group: 'Ayarlar',
   },
+  // Sistem
+  {
+    path: '/stock-sync',
+    label: 'Stok Senkronizasyon',
+    icon: 'sync',
+    roles: [Role.PLATFORM_OWNER],
+    showInSidebar: true,
+    group: 'Sistem',
+  },
   // Ayarlar
   {
     path: '/definitions',

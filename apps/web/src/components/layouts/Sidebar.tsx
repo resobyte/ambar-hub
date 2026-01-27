@@ -37,6 +37,7 @@ import {
   Menu,
   ChevronDown,
   RotateCcw,
+  RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from '@/components/common/ThemeToggle';
@@ -71,6 +72,8 @@ const iconMap: Record<string, React.ReactNode> = {
   settings: <Settings className="w-4 h-4" />,
   customer: <Contact className="w-4 h-4" />,
   return: <RotateCcw className="w-4 h-4" />,
+  sync: <RefreshCw className="w-4 h-4" />,
+  scan: <ClipboardCheck className="w-4 h-4" />,
 };
 
 type GroupedRoutes = {

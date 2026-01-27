@@ -22,6 +22,7 @@ import { ConsumablesModule } from './consumables/consumables.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { WaybillsModule } from './waybills/waybills.module';
 import { ReturnsModule } from './returns/returns.module';
+import { StockSyncModule } from './stock-sync/stock-sync.module';
 
 @Module({
   imports: [
@@ -66,6 +67,7 @@ import { ReturnsModule } from './returns/returns.module';
     DashboardModule,
     WaybillsModule,
     ReturnsModule,
+    StockSyncModule,
   ],
 })
 export class AppModule { }

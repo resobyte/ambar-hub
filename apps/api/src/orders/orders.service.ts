@@ -28,6 +28,8 @@ import { ZplTemplateService } from './zpl-template.service';
 import { OrderApiLogService } from './order-api-log.service';
 import { ApiLogProvider, ApiLogType } from './entities/order-api-log.entity';
 import { ShelvesService } from '../shelves/shelves.service';
+import { StockSyncService } from '../stock-sync/stock-sync.service';
+import { StockUpdateReason } from '../stock-sync/enums/stock-sync.enum';
 
 export interface CancelOrderResult {
     success: boolean;
@@ -90,6 +92,8 @@ export class OrdersService {
         private readonly orderApiLogService: OrderApiLogService,
         @Inject(forwardRef(() => ShelvesService))
         private readonly shelvesService: ShelvesService,
+        @Inject(forwardRef(() => StockSyncService))
+        private readonly stockSyncService: StockSyncService,
     ) { }
 
     private mapStatus(status: string): OrderStatus {
@@ -1061,6 +1065,14 @@ export class OrdersService {
                 productStore.committedQuantity = Math.max(0, (productStore.committedQuantity || 0) + change);
                 productStore.sellableQuantity = Math.max(0, productStore.sellableQuantity - change);
                 await this.productStoreRepository.save(productStore);
+
+                // Stok senkronizasyonunu tetikle
+                const reason = action === 'reserve' ? StockUpdateReason.ORDER_CREATED : StockUpdateReason.ORDER_CANCELLED;
+                try {
+                    await this.stockSyncService.enqueueStockUpdate(productId, storeId, reason);
+                } catch (error) {
+                    this.logger.warn(`Failed to enqueue stock update for product ${productId}: ${error.message}`);
+                }
             }
         }
     }

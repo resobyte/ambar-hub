@@ -15,6 +15,7 @@ export enum ApiLogType {
     UPDATE_STATUS = 'UPDATE_STATUS',
     GET_ORDER = 'GET_ORDER',
     CREATE_INVOICE = 'CREATE_INVOICE',
+    SYNC_STOCK = 'SYNC_STOCK',
     OTHER = 'OTHER',
 }
 
