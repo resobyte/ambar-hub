@@ -118,18 +118,53 @@ function ProductCombobox({ products, value, onChange }: {
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedProductCache, setSelectedProductCache] = useState<Product | null>(null);
+  const isSearching = search.length >= 2;
 
-  const filteredProducts = useMemo(() => {
-    if (!search) return products;
-    const searchLower = search.toLowerCase();
-    return products.filter((product) =>
-      product.name.toLowerCase().includes(searchLower) ||
-      (product.sku && product.sku.toLowerCase().includes(searchLower)) ||
-      (product.barcode && product.barcode.toLowerCase().includes(searchLower))
-    );
-  }, [products, search]);
+  // Arama yapıldığında tüm ürünleri getir
+  useEffect(() => {
+    if (isSearching) {
+      const fetchProducts = async () => {
+        setLoading(true);
+        try {
+          const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/products?page=1&limit=100&name=${encodeURIComponent(search)}`, {
+            credentials: 'include',
+          });
+          const data = await res.json();
+          if (data.success && data.data) {
+            // Sadece SIMPLE ürünleri filtrele
+            setAllProducts(data.data.filter((p: Product) => (p as any).productType !== 'SET'));
+          }
+        } catch (error) {
+          console.error('Failed to fetch products:', error);
+        } finally {
+          setLoading(false);
+        }
+      };
+      fetchProducts();
+    } else {
+      setAllProducts([]);
+    }
+  }, [isSearching, search]);
 
-  const selectedProduct = products.find((p) => p.id === value);
+  // value değiştiğinde seçili ürünü bul ve cache'le
+  useEffect(() => {
+    if (value) {
+      const found = products.find((p) => p.id === value) || allProducts.find((p) => p.id === value);
+      if (found) {
+        setSelectedProductCache(found);
+      }
+    } else {
+      setSelectedProductCache(null);
+    }
+  }, [value, products, allProducts]);
+
+  // Arama yoksa mevcut products listesini kullan
+  const filteredProducts = isSearching ? allProducts : products;
+  // Seçili ürünü cache'ten bul (öncelikli), yoksa listelerden ara
+  const selectedProduct = selectedProductCache || [...products, ...allProducts].find((p) => p.id === value);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -170,9 +205,14 @@ function ProductCombobox({ products, value, onChange }: {
               e.currentTarget.scrollTop += e.deltaY;
             }}
           >
-            {filteredProducts.length === 0 ? (
+            {loading ? (
+              <div className="py-6 text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Yükleniyor...
+              </div>
+            ) : filteredProducts.length === 0 ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
-                Ürün bulunamadı.
+                {search.length >= 2 ? 'Ürün bulunamadı.' : 'Aramak için en az 2 karakter girin.'}
               </div>
             ) : (
               <div>
@@ -181,6 +221,7 @@ function ProductCombobox({ products, value, onChange }: {
                     key={product.id}
                     type="button"
                     onClick={() => {
+                      setSelectedProductCache(product);
                       onChange(product.id);
                       setOpen(false);
                       setSearch('');
