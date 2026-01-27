@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { OrdersService } from './orders.service';
 import { OrderHistoryService } from './order-history.service';
@@ -22,6 +22,7 @@ import { User } from '../users/entities/user.entity';
 import { InvoicesModule } from '../invoices/invoices.module';
 import { Store } from '../stores/entities/store.entity';
 import { ShelfStock } from '../shelves/entities/shelf-stock.entity';
+import { ShelvesModule } from '../shelves/shelves.module';
 
 @Module({
     imports: [
@@ -29,6 +30,7 @@ import { ShelfStock } from '../shelves/entities/shelf-stock.entity';
         CustomersModule,
         StoresModule,
         InvoicesModule,
+        forwardRef(() => ShelvesModule),
     ],
     controllers: [OrdersController],
     providers: [OrdersService, OrderHistoryService, OrderApiLogService, ZplTemplateService, OrderSyncService],

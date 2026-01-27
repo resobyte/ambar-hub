@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Order } from './entities/order.entity';
@@ -27,6 +27,7 @@ import { OrderHistoryAction } from './entities/order-history.entity';
 import { ZplTemplateService } from './zpl-template.service';
 import { OrderApiLogService } from './order-api-log.service';
 import { ApiLogProvider, ApiLogType } from './entities/order-api-log.entity';
+import { ShelvesService } from '../shelves/shelves.service';
 
 export interface CancelOrderResult {
     success: boolean;
@@ -87,6 +88,8 @@ export class OrdersService {
         private readonly orderHistoryService: OrderHistoryService,
         private readonly zplTemplateService: ZplTemplateService,
         private readonly orderApiLogService: OrderApiLogService,
+        @Inject(forwardRef(() => ShelvesService))
+        private readonly shelvesService: ShelvesService,
     ) { }
 
     private mapStatus(status: string): OrderStatus {
@@ -2310,5 +2313,98 @@ export class OrdersService {
 </body>
 </html>
         `.trim();
+    }
+
+    /**
+     * Merkezi statü güncelleme metodu
+     * PACKED veya INVOICED statüsünden SHIPPED'e geçerken paketleme rafından siler
+     */
+    async updateOrderStatus(
+        orderId: string,
+        newStatus: OrderStatus,
+        options?: {
+            userId?: string;
+            notes?: string;
+        }
+    ): Promise<Order> {
+        const order = await this.orderRepository.findOne({
+            where: { id: orderId },
+            relations: ['items'],
+        });
+
+        if (!order) {
+            throw new NotFoundException(`Order ${orderId} not found`);
+        }
+
+        const previousStatus = order.status;
+
+        // Statü değişikliği yoksa direkt return
+        if (previousStatus === newStatus) {
+            return order;
+        }
+
+        // PACKED veya INVOICED'den SHIPPED'e geçişte paketleme rafından sil
+        if (
+            (previousStatus === OrderStatus.PACKED || previousStatus === OrderStatus.INVOICED) &&
+            newStatus === OrderStatus.SHIPPED
+        ) {
+            try {
+                const result = await this.shelvesService.removeOrderFromPackingShelf(orderId, {
+                    userId: options?.userId,
+                });
+                if (result.success) {
+                    this.logger.log(`Removed ${result.removed} items from PACKING shelf for order ${order.orderNumber}`);
+                } else {
+                    this.logger.warn(`Failed to remove items from PACKING shelf: ${result.message}`);
+                }
+            } catch (error: any) {
+                this.logger.error(`Error removing from PACKING shelf for order ${order.orderNumber}: ${error.message}`);
+                // Statü güncellemesini engellememek için hata fırlatma
+            }
+        }
+
+        // Statüyü güncelle
+        await this.orderRepository.update(orderId, { status: newStatus });
+
+        // Order history log
+        await this.orderHistoryService.logEvent({
+            orderId,
+            action: this.getStatusAction(newStatus),
+            userId: options?.userId,
+            previousStatus,
+            newStatus,
+            description: options?.notes || `Statü değişti: ${previousStatus} → ${newStatus}`,
+        });
+
+        // Güncellenmiş order'ı döndür
+        const updatedOrder = await this.orderRepository.findOne({
+            where: { id: orderId },
+        });
+
+        return updatedOrder!;
+    }
+
+    /**
+     * Statüye karşılık gelen OrderHistoryAction'ı döndürür
+     */
+    private getStatusAction(status: OrderStatus): OrderHistoryAction {
+        switch (status) {
+            case OrderStatus.PACKING:
+                return OrderHistoryAction.PACKING_STARTED;
+            case OrderStatus.PACKED:
+                return OrderHistoryAction.PACKING_COMPLETED;
+            case OrderStatus.INVOICED:
+                return OrderHistoryAction.INVOICED;
+            case OrderStatus.SHIPPED:
+                return OrderHistoryAction.SHIPPED;
+            case OrderStatus.DELIVERED:
+                return OrderHistoryAction.DELIVERED;
+            case OrderStatus.CANCELLED:
+                return OrderHistoryAction.CANCELLED;
+            case OrderStatus.RETURNED:
+                return OrderHistoryAction.RETURNED;
+            default:
+                return OrderHistoryAction.NOTE_ADDED;
+        }
     }
 }

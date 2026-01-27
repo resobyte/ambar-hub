@@ -30,6 +30,7 @@ import { ArasKargoService } from '../stores/providers/aras-kargo.service';
 import { Store } from '../stores/entities/store.entity';
 import { OrderApiLogService } from '../orders/order-api-log.service';
 import { ApiLogProvider, ApiLogType } from '../orders/entities/order-api-log.entity';
+import { ShelvesService } from '../shelves/shelves.service';
 
 interface ProductInfo {
     barcode: string;
@@ -102,6 +103,8 @@ export class RoutesService {
         private readonly arasKargoService: ArasKargoService,
         @Inject(forwardRef(() => OrderApiLogService))
         private readonly orderApiLogService: OrderApiLogService,
+        @Inject(forwardRef(() => ShelvesService))
+        private readonly shelvesService: ShelvesService,
     ) { }
 
     async create(dto: CreateRouteDto, userId?: string): Promise<RouteResponseDto> {
@@ -821,6 +824,27 @@ export class RoutesService {
                 }
                 orderResult.labelFetched = true;
                 this.logger.log(`Label generated for order ${order.orderNumber}`);
+
+                // C. Transfer order items from PICKING to PACKING shelf for tracking
+                try {
+                    const transferResult = await this.shelvesService.transferOrderToPackingShelf(
+                        order.id,
+                        {
+                            routeId,
+                            cargoTrackingNumber: order.cargoTrackingNumber,
+                            userId,
+                        }
+                    );
+                    
+                    if (transferResult.success) {
+                        this.logger.log(`Transferred ${transferResult.transfers} items to PACKING shelf for order ${order.orderNumber}`);
+                    } else {
+                        this.logger.warn(`Failed to transfer items to PACKING shelf for order ${order.orderNumber}: ${transferResult.message}`);
+                    }
+                } catch (error: any) {
+                    this.logger.warn(`Error during shelf transfer for order ${order.orderNumber}: ${error.message}`);
+                    // Non-critical error - continue processing
+                }
 
                 processed++;
                 results.push(orderResult);

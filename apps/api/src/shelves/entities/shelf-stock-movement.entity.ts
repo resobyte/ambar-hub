@@ -92,6 +92,9 @@ export class ShelfStockMovement {
     @Column({ name: 'reference_number', type: 'varchar', length: 100, nullable: true })
     referenceNumber: string | null;
 
+    @Column({ name: 'cargo_tracking_number', type: 'varchar', length: 100, nullable: true })
+    cargoTrackingNumber: string | null;
+
     @Column({ type: 'text', nullable: true })
     notes: string | null;
 

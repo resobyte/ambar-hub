@@ -824,6 +824,14 @@ export class PackingService {
             this.logger.error(`Failed to get cargo label: ${error.message}`);
         }
 
+        // Remove items from PACKING shelf when order is shipped
+        try {
+            await this.shelvesService.removeOrderFromPackingShelf(order.id);
+            this.logger.log(`Removed items from PACKING shelf for order ${order.orderNumber}`);
+        } catch (error: any) {
+            this.logger.error(`Failed to remove items from PACKING shelf for order ${order.orderNumber}: ${error.message}`);
+        }
+
         await this.orderRepository.update(order.id, { status: OrderStatus.SHIPPED });
     }
 

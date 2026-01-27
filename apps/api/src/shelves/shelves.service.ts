@@ -196,22 +196,36 @@ export class ShelvesService {
         const trimmedBarcode = barcode?.trim();
         if (!trimmedBarcode) return null;
         
-        this.logger.log(`Looking for shelf with barcode: "${trimmedBarcode}"`);
+        this.logger.log(`Looking for shelf with barcode/name/rafId: "${trimmedBarcode}"`);
         
-        // Try exact match first
+        // First, try rafId match (if it's a number)
+        const rafIdNum = Number(trimmedBarcode);
+        if (!isNaN(rafIdNum) && isFinite(rafIdNum) && rafIdNum > 0) {
+            const shelfByRafId = await this.shelfRepository.findOne({
+                where: { rafId: rafIdNum },
+                relations: ['warehouse'],
+            });
+            
+            if (shelfByRafId) {
+                this.logger.log(`Found shelf by rafId: ${shelfByRafId.id} - ${shelfByRafId.name} (rafId: ${shelfByRafId.rafId})`);
+                return shelfByRafId;
+            }
+        }
+        
+        // Try exact match by name
         let shelf = await this.shelfRepository.findOne({
             where: { name: trimmedBarcode },
             relations: ['warehouse'],
         });
         
         if (shelf) {
-            this.logger.log(`Found shelf: ${shelf.id} - ${shelf.name}`);
+            this.logger.log(`Found shelf by name: ${shelf.id} - ${shelf.name}`);
             return shelf;
         }
         
-        this.logger.log(`Exact match not found, trying case-insensitive search`);
+        this.logger.log(`Exact match not found, trying case-insensitive barcode search`);
         
-        // If not found, try case-insensitive match
+        // If not found, try case-insensitive barcode match
         const result = await this.shelfRepository
             .createQueryBuilder('shelf')
             .leftJoinAndSelect('shelf.warehouse', 'warehouse')
@@ -219,9 +233,9 @@ export class ShelvesService {
             .getOne();
         
         if (result) {
-            this.logger.log(`Found shelf via case-insensitive: ${result.id} - ${result.barcode}`);
+            this.logger.log(`Found shelf via case-insensitive barcode: ${result.id} - ${result.barcode}`);
         } else {
-            this.logger.warn(`Shelf not found with barcode: "${trimmedBarcode}"`);
+            this.logger.warn(`Shelf not found with barcode/name/rafId: "${trimmedBarcode}"`);
         }
         
         return result;
@@ -880,6 +894,7 @@ export class ShelvesService {
         sourceShelfId?: string;
         targetShelfId?: string;
         referenceNumber?: string;
+        cargoTrackingNumber?: string;
         notes?: string;
         userId?: string;
     }): Promise<ShelfStockMovement> {
@@ -896,6 +911,7 @@ export class ShelvesService {
             sourceShelfId: params.sourceShelfId || null,
             targetShelfId: params.targetShelfId || null,
             referenceNumber: params.referenceNumber,
+            cargoTrackingNumber: params.cargoTrackingNumber || null,
             notes: params.notes,
             userId: params.userId || null,
         });
@@ -913,6 +929,7 @@ export class ShelvesService {
             orderId?: string;
             routeId?: string;
             referenceNumber?: string;
+            cargoTrackingNumber?: string;
             notes?: string;
             userId?: string;
         }
@@ -984,6 +1001,7 @@ export class ShelvesService {
             sourceShelfId: fromShelfId,
             targetShelfId: toShelfId,
             referenceNumber: options?.referenceNumber,
+            cargoTrackingNumber: options?.cargoTrackingNumber,
             notes: options?.notes,
             userId: options?.userId,
         });
@@ -1002,6 +1020,7 @@ export class ShelvesService {
             sourceShelfId: fromShelfId,
             targetShelfId: toShelfId,
             referenceNumber: options?.referenceNumber,
+            cargoTrackingNumber: options?.cargoTrackingNumber,
             notes: options?.notes,
             userId: options?.userId,
         });
@@ -1021,6 +1040,7 @@ export class ShelvesService {
             orderId?: string;
             routeId?: string;
             referenceNumber?: string;
+            cargoTrackingNumber?: string;
             notes?: string;
             userId?: string;
         }
@@ -1044,6 +1064,7 @@ export class ShelvesService {
             orderId: options?.orderId,
             routeId: options?.routeId,
             referenceNumber: options?.referenceNumber,
+            cargoTrackingNumber: options?.cargoTrackingNumber,
             notes: options?.notes,
             userId: options?.userId,
         });
@@ -1126,5 +1147,151 @@ export class ShelvesService {
         return this.shelfRepository.findOne({
             where: { type: ShelfType.PICKING },
         });
+    }
+
+    /**
+     * Transfer order items from PICKING shelf to PACKING shelf for bulk operations
+     * Used during bulk packaging/invoicing to track items on packing shelf
+     */
+    async transferOrderToPackingShelf(
+        orderId: string,
+        options?: {
+            routeId?: string;
+            cargoTrackingNumber?: string;
+            userId?: string;
+        }
+    ): Promise<{ success: boolean; message: string; transfers: number }> {
+        const order = await this.shelfRepository.manager.getRepository('Order').findOne({
+            where: { id: orderId },
+            relations: ['items'],
+        });
+
+        if (!order) {
+            return { success: false, message: 'Sipariş bulunamadı', transfers: 0 };
+        }
+
+        const pickingShelf = await this.getPickingShelf();
+        const packingShelf = await this.getPackingShelf();
+
+        if (!pickingShelf || !packingShelf) {
+            return { success: false, message: 'TOPLAMA veya PAKETLEME rafı bulunamadı', transfers: 0 };
+        }
+
+        let transfers = 0;
+        const productRepository = this.shelfRepository.manager.getRepository('Product');
+
+        for (const item of order['items'] || []) {
+            if (!item.barcode) continue;
+
+            const product = await productRepository.findOne({ where: { barcode: item.barcode } });
+            if (!product) {
+                this.logger.warn(`Product with barcode ${item.barcode} not found for order ${orderId}`);
+                continue;
+            }
+
+            // Check if product exists in picking shelf
+            const pickingStock = await this.shelfStockRepository.findOne({
+                where: { shelfId: pickingShelf.id, productId: product.id },
+            });
+
+            if (!pickingStock || pickingStock.quantity < (item.quantity || 1)) {
+                this.logger.warn(`Insufficient stock in picking shelf for ${item.barcode}. Available: ${pickingStock?.quantity || 0}, Required: ${item.quantity || 1}`);
+                continue;
+            }
+
+            // Transfer from PICKING to PACKING
+            try {
+                await this.transferWithHistory(
+                    pickingShelf.id,
+                    packingShelf.id,
+                    product.id,
+                    item.quantity || 1,
+                    {
+                        type: MovementType.PACKING_IN,
+                        orderId,
+                        routeId: options?.routeId,
+                        referenceNumber: order['orderNumber'],
+                        cargoTrackingNumber: options?.cargoTrackingNumber || order['cargoTrackingNumber'],
+                        notes: `Toplu paketleme - Sipariş: ${order['orderNumber']}`,
+                        userId: options?.userId,
+                    }
+                );
+                transfers++;
+            } catch (error) {
+                this.logger.error(`Failed to transfer ${item.barcode} for order ${orderId}: ${error.message}`);
+            }
+        }
+
+        return {
+            success: transfers > 0,
+            message: `${transfers} ürün PAKETLEME rafına aktarıldı`,
+            transfers,
+        };
+    }
+
+    /**
+     * Remove order items from PACKING shelf when shipped
+     * Used when order status changes to SHIPPED
+     */
+    async removeOrderFromPackingShelf(
+        orderId: string,
+        options?: {
+            routeId?: string;
+            userId?: string;
+        }
+    ): Promise<{ success: boolean; message: string; removed: number }> {
+        const order = await this.shelfRepository.manager.getRepository('Order').findOne({
+            where: { id: orderId },
+            relations: ['items'],
+        });
+
+        if (!order) {
+            return { success: false, message: 'Sipariş bulunamadı', removed: 0 };
+        }
+
+        const packingShelf = await this.getPackingShelf();
+
+        if (!packingShelf) {
+            return { success: false, message: 'PAKETLEME rafı bulunamadı', removed: 0 };
+        }
+
+        let removed = 0;
+        const productRepository = this.shelfRepository.manager.getRepository('Product');
+
+        for (const item of order['items'] || []) {
+            if (!item.barcode) continue;
+
+            const product = await productRepository.findOne({ where: { barcode: item.barcode } });
+            if (!product) {
+                this.logger.warn(`Product with barcode ${item.barcode} not found for order ${orderId}`);
+                continue;
+            }
+
+            try {
+                await this.removeStockWithHistory(
+                    packingShelf.id,
+                    product.id,
+                    item.quantity || 1,
+                    {
+                        type: MovementType.PACKING_OUT,
+                        orderId,
+                        routeId: options?.routeId,
+                        referenceNumber: order['orderNumber'],
+                        cargoTrackingNumber: order['cargoTrackingNumber'],
+                        notes: `Kargoya verildi - Sipariş: ${order['orderNumber']}`,
+                        userId: options?.userId,
+                    }
+                );
+                removed++;
+            } catch (error) {
+                this.logger.error(`Failed to remove ${item.barcode} from packing shelf for order ${orderId}: ${error.message}`);
+            }
+        }
+
+        return {
+            success: removed > 0,
+            message: `${removed} ürün PAKETLEME rafından çıkarıldı`,
+            removed,
+        };
     }
 }
