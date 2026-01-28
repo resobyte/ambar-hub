@@ -1105,7 +1105,7 @@ export class OrdersService {
         }
     }
 
-    private async checkStockAvailability(lines: any[], storeId: string): Promise<{
+    private async checkStockAvailability(lines: any[], _storeId: string): Promise<{
         allItemsHaveStock: boolean;
         insufficientProducts: string[];
     }> {
@@ -1120,15 +1120,12 @@ export class OrdersService {
 
             let product: Product | null = null;
 
-            // 1. Önce mağazaya özel barkod/SKU ile ara
-            product = await this.productStoresService.findProductByStoreCode(storeId, barcode, sku);
+            product = await this.productStoresService.findProductByStoreCode(_storeId, barcode, sku);
 
-            // 2. Global barkod ile ara
             if (!product && barcode) {
                 product = await this.productRepository.findOne({ where: { barcode } });
             }
 
-            // 3. Global SKU ile ara
             if (!product && sku) {
                 product = await this.productRepository.findOne({ where: { sku } });
             }
@@ -1138,16 +1135,15 @@ export class OrdersService {
                 continue;
             }
 
-            const productStore = await this.productStoreRepository.findOne({
-                where: { productId: product.id, storeId }
-            });
+            const sellableStock = await this.shelfStockRepository
+                .createQueryBuilder('ss')
+                .innerJoin('ss.shelf', 'shelf')
+                .where('ss.productId = :productId', { productId: product.id })
+                .andWhere('shelf.isSellable = :isSellable', { isSellable: true })
+                .select('SUM(ss.quantity)', 'totalQuantity')
+                .getRawOne();
 
-            if (!productStore) {
-                insufficientProducts.push(barcode || sku);
-                continue;
-            }
-
-            const availableStock = (productStore.sellableQuantity || 0) + (productStore.reservableQuantity || 0);
+            const availableStock = Number(sellableStock?.totalQuantity) || 0;
 
             if (availableStock < requiredQty) {
                 insufficientProducts.push(barcode || sku);
