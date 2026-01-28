@@ -667,7 +667,7 @@ export function ProductDetailClient({ productId }: Props) {
                     <DialogHeader>
                         <DialogTitle>Set Ürünlerini Yönet</DialogTitle>
                         <DialogDescription>
-                            Bu set'in içindeki ürünleri ekleyin, düzenleyin veya çıkarın
+                            Bu set&apos;in içindeki ürünleri ekleyin, düzenleyin veya çıkarın
                         </DialogDescription>
                     </DialogHeader>
 
