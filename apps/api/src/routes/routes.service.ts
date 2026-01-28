@@ -325,43 +325,48 @@ export class RoutesService {
     }
 
     private async orderHasSufficientStock(order: Order): Promise<boolean> {
-        const items = order.items || [];
-        if (items.length === 0) return false;
+        try {
+            const items = order.items || [];
+            if (items.length === 0) return false;
 
-        const storeId = order.storeId ?? undefined;
-        const byProduct = new Map<string, { required: number; sellable: number }>();
+            const storeId = order.storeId ?? undefined;
+            const byProduct = new Map<string, { required: number; sellable: number }>();
 
-        for (const item of items) {
-            const barcode = item.barcode;
-            const sku = item.sku;
-            const qty = item.quantity || 1;
-            if (!barcode && !sku) return false;
+            for (const item of items) {
+                const barcode = item.barcode;
+                const sku = item.sku;
+                const qty = item.quantity || 1;
+                if (!barcode && !sku) return false;
 
-            let product: Product | null = null;
-            if (storeId) {
-                product = await this.productStoresService.findProductByStoreCode(storeId, barcode, sku);
-            }
-            if (!product && barcode) {
-                product = await this.productRepository.findOne({ where: { barcode } });
-            }
-            if (!product && sku) {
-                product = await this.productRepository.findOne({ where: { sku } });
-            }
-            if (!product) return false;
+                let product: Product | null = null;
+                if (storeId) {
+                    product = await this.productStoresService.findProductByStoreCode(storeId, barcode, sku);
+                }
+                if (!product && barcode) {
+                    product = await this.productRepository.findOne({ where: { barcode } });
+                }
+                if (!product && sku) {
+                    product = await this.productRepository.findOne({ where: { sku } });
+                }
+                if (!product) return false;
 
-            const sellable = Number(product.sellableQuantity) || 0;
-            const cur = byProduct.get(product.id);
-            if (cur) {
-                byProduct.set(product.id, { required: cur.required + qty, sellable });
-            } else {
-                byProduct.set(product.id, { required: qty, sellable });
+                const sellable = Number(product.sellableQuantity) || 0;
+                const cur = byProduct.get(product.id);
+                if (cur) {
+                    byProduct.set(product.id, { required: cur.required + qty, sellable });
+                } else {
+                    byProduct.set(product.id, { required: qty, sellable });
+                }
             }
+
+            for (const [, { required, sellable }] of byProduct) {
+                if (sellable < required) return false;
+            }
+            return true;
+        } catch (err) {
+            this.logger.warn(`orderHasSufficientStock error for order ${order.id}: ${err instanceof Error ? err.message : String(err)}`);
+            return false;
         }
-
-        for (const [, { required, sellable }] of byProduct) {
-            if (sellable < required) return false;
-        }
-        return true;
     }
 
     async getFilteredOrders(filter: RouteFilterDto): Promise<any[]> {
@@ -385,7 +390,12 @@ export class RoutesService {
             .select('ro.orderId')
             .getRawMany();
 
-        const excludedOrderIds = activeRouteOrderIds.map(ro => ro.ro_order_id);
+        const excludedOrderIds = activeRouteOrderIds
+            .map(ro => {
+                const r = ro as Record<string, unknown>;
+                return (r['ro_orderId'] ?? r['ro_order_id']) as string | undefined;
+            })
+            .filter((id): id is string => !!id);
         if (excludedOrderIds.length > 0) {
             queryBuilder.andWhere('order.id NOT IN (:...excludedOrderIds)', { excludedOrderIds });
         }
