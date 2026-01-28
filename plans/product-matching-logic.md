@@ -14,28 +14,35 @@ Ambar Hub sisteminde ürün eşleştirme, pazaryerlerinden gelen siparişlerdeki
 Sipariş geldiğinde ürün eşleştirme şu sırayla yapılır:
 
 ```typescript
-// Kaynak: apps/api/src/orders/orders.service.ts (Satır 1046-1055)
+// Kaynak: apps/api/src/orders/orders.service.ts (Satır 1047-1063)
 
-// 1. ÖNCE BARCODE ile ara
-if (item.barcode) {
-    const product = await productRepository.findOne({ 
-        where: { barcode: item.barcode } 
+// 1. ÖNCE MAĞAZAYA ÖZEL barkod/SKU ile ara
+const storeProduct = await this.productStoresService.findProductByStoreCode(storeId, item.barcode, item.sku);
+if (storeProduct) {
+    productId = storeProduct.id;
+}
+
+// 2. Mağazaya özel bulunamazsa GLOBAL barkod ile ara
+if (!productId && item.barcode) {
+    const product = await this.productRepository.findOne({
+        where: { barcode: item.barcode }
     });
     if (product) productId = product.id;
 }
 
-// 2. Barcode ile bulunamazsa SKU ile ara
+// 3. Global SKU ile ara
 if (!productId && item.sku) {
-    const product = await productRepository.findOne({ 
-        where: { sku: item.sku } 
+    const product = await this.productRepository.findOne({
+        where: { sku: item.sku }
     });
     if (product) productId = product.id;
 }
 ```
 
 **Eşleştirme Önceliği:**
-1. **Barcode** (Barkod) - İlk tercih
-2. **SKU** (Stok Kodu) - Yedek seçenek
+1. **Mağazaya Özel Barkod/SKU** (`storeBarcode`, `storeSku`) - İlk tercih
+2. **Global Barkod** (`barcode`) - İkinci tercih
+3. **Global SKU** (`sku`) - Son yedek
 
 ### 2. Eşleştirme Alanları
 
@@ -85,17 +92,17 @@ graph TD
 
 ## Önemli Noktalar
 
-### ✅ Mevcut Durum
+### ✅ Güncel Durum (2026-01-27)
 
-1. **Global Barkod Eşleştirme**: Sistem, pazaryerinden gelen barkod ile `Products` tablosundaki global barkod alanını karşılaştırır
-2. **SKU Yedek Eşleştirme**: Barkod bulunamazsa, SKU ile eşleştirme yapılır
+1. **Mağazaya Özel Eşleştirme**: Öncelikle `ProductStores` tablosundaki `storeBarcode` ve `storeSku` alanları ile eşleştirme yapılır
+2. **Global Barkod/SKU Yedekleme**: Mağazaya özel eşleşme bulunamazsa, `Products` tablosundaki global `barcode` ve `sku` ile eşleştirme yapılır
 3. **Mağaza Bazlı Stok Yönetimi**: Her ürün-mağaza kombinasyonu için ayrı stok takibi yapılır
 
 ### ⚠️ Mevcut Sınırlamalar
 
-1. **Mağazaya Özel Barkod/SKU Kullanılmıyor**: `ProductStores` tablosunda `storeBarcode` ve `storeSku` alanları olmasına rağmen, eşleştirme yapılırken bu alanlar kullanılmıyor
+1. ~~**Mağazaya Özel Barkod/SKU Kullanılmıyor**: `ProductStores` tablosunda `storeBarcode` ve `storeSku` alanları olmasına rağmen, eşleştirme yapılırken bu alanlar kullanılmıyor~~ ✅ **ÇÖZÜLDÜ**
 
-2. **Tek Yönlü Eşleştirme**: Sadece `Products` tablosundaki global barcode/SKU ile eşleştirme yapılıyor
+2. ~~**Tek Yönlü Eşleştirme**: Sadece `Products` tablosundaki global barcode/SKU ile eşleştirme yapılıyor~~ ✅ **ÇÖZÜLDÜ**
 
 ### 📍 Kod Lokasyonları
 
@@ -108,67 +115,47 @@ graph TD
 #### Mağazaya Özel Barkod Arama
 - **Dosya**: `apps/api/src/product-stores/product-stores.service.ts`
 - **Satırlar**: 146-151 (`findByStoreBarcode` metodu)
-- **Not**: Bu metod var ama kullanılmıyor
+- **Satırlar**: 153-158 (`findByStoreSku` metodu)
+- **Satırlar**: 160-180 (`findProductByStoreCode` metodu) - ✅ **AKTİF KULLANIMDA**
 
 #### Sipariş Senkronizasyonu
 - **Dosya**: `apps/api/src/orders/order-sync.service.ts`
 - **Satırlar**: 46-77 (`syncNewOrdersJob` - Her 10 dakikada bir çalışır)
 
-## Öneriler
+## Uygulanan Çözüm
 
-### 🎯 Geliştirme Önerileri
+### 🎯 Geliştirme Tamamlandı (2026-01-27)
 
-Eğer mağazaya özel barkod/SKU eşleştirme eklenmek istenirse:
+Mağazaya özel barkod/SKU eşleştirme aktif olarak çalışıyor:
 
-1. **Öncelik Sırasını Genişlet**:
+**Eşleştirme Öncelik Sırası:**
+1. **Mağazaya Özel Barkod/SKU** (`storeBarcode`, `storeSku`)
+2. **Global Barkod** (`barcode`)
+3. **Global SKU** (`sku`)
+
+**Uygulanan Fonksiyon** (ProductStoresService):
 ```typescript
-// Önerilen Eşleştirme Sırası:
-1. Mağazaya özel barkod (storeBarcode)
-2. Global barkod (barcode)
-3. Mağazaya özel SKU (storeSku)
-4. Global SKU (sku)
-```
+async findProductByStoreCode(storeId: string, barcode?: string, sku?: string): Promise<Product | null> {
+  // 1. Önce mağazaya özel barkod ile ara
+  if (barcode) {
+    const ps = await this.findByStoreBarcode(storeId, barcode);
+    if (ps?.product) return ps.product;
+  }
 
-2. **Eşleştirme Fonksiyonunu Güncelle**:
-```typescript
-async findProductByStoreAndCode(storeId: string, barcode?: string, sku?: string) {
-  // 1. Önce ProductStore'da mağazaya özel ara
-  if (barcode) {
-    const ps = await productStoreRepository.findOne({
-      where: { storeId, storeBarcode: barcode },
-      relations: ['product']
-    });
-    if (ps) return ps.product;
-  }
-  
-  // 2. Global barkod ile ara
-  if (barcode) {
-    const product = await productRepository.findOne({ 
-      where: { barcode } 
-    });
-    if (product) return product;
-  }
-  
-  // 3. Mağazaya özel SKU ile ara
+  // 2. Mağazaya özel SKU ile ara
   if (sku) {
-    const ps = await productStoreRepository.findOne({
-      where: { storeId, storeSku: sku },
-      relations: ['product']
-    });
-    if (ps) return ps.product;
+    const ps = await this.findByStoreSku(storeId, sku);
+    if (ps?.product) return ps.product;
   }
-  
-  // 4. Global SKU ile ara
-  if (sku) {
-    const product = await productRepository.findOne({ 
-      where: { sku } 
-    });
-    if (product) return product;
-  }
-  
+
   return null;
 }
 ```
+
+**Güncellenen Metodlar:**
+- [`updateStockReservations()`](apps/api/src/orders/orders.service.ts:1047) - Stok rezervasyonları
+- [`checkStockAvailability()`](apps/api/src/orders/orders.service.ts:1092) - Stok kontrolü
+- [`checkProductsExist()`](apps/api/src/orders/orders.service.ts:167) - Ürün varlık kontrolü
 
 ### 📊 Veri Modeli
 
@@ -209,21 +196,25 @@ erDiagram
 
 ## Özet
 
-**Mevcut Eşleştirme Yöntemi:**
-- Pazaryerinden gelen `barcode` → `Products.barcode` ile eşleştir
-- Bulunamazsa `sku` → `Products.sku` ile eşleştir
-- Mağazaya özel alanlar (`storeBarcode`, `storeSku`) şu an **kullanılmıyor**
+**Güncel Eşleştirme Yöntemi:**
+1. Pazaryerinden gelen `barcode`/`sku` → `ProductStores.storeBarcode`/`storeSku` ile eşleştir (ÖNCELİK)
+2. Bulunamazsa `barcode` → `Products.barcode` ile eşleştir
+3. Bulunamazsa `sku` → `Products.sku` ile eşleştir
+- Mağazaya özel alanlar (`storeBarcode`, `storeSku`) aktif olarak **kullanılıyor**
 
 **Kullanım Senaryosu:**
-- Trendyol'dan sipariş gelir, ürünün barkodu: "8699123456789"
-- Sistem `Products` tablosunda `barcode = "8699123456789"` olan ürünü arar
+- Trendyol'dan sipariş gelir, ürünün mağazaya özel barkodu: "TY123456"
+- Sistem önce `ProductStores` tablosunda `storeId = Trendyol` ve `storeBarcode = "TY123456"` olan kaydı arar
+- Bulunursa ilgili ürünü kullanır, bulunamazsa global barkod ile arama yapar
 - Bulunca `ProductStores` tablosunda bu ürünün Trendyol mağazasındaki stok bilgilerini kontrol eder
 - Stok rezervasyonu yapar: `committedQuantity` artırır, `sellableQuantity` azaltır
 
 **Avantajları:**
-- Basit ve hızlı eşleştirme
-- Tüm mağazalarda aynı barkodlar kullanılıyorsa sorunsuz çalışır
+- Mağazaya özel farklı barkodlar kullanılabiliyor
+- Her mağaza kendi barkod sistemini kullanabilir
+- Global barkodlar ile geriye uyumlu çalışır
+- Esnek ve kapsamlı eşleştirme
 
 **Dezavantajları:**
-- Mağazaya özel farklı barkodlar kullanılıyorsa eşleştirme yapılamaz
-- ProductStores'daki `storeBarcode` ve `storeSku` alanları atıl durumda
+- ~~Mağazaya özel farklı barkodlar kullanılıyorsa eşleştirme yapılamaz~~ ✅ ÇÖZÜLDÜ
+- ~~ProductStores'daki `storeBarcode` ve `storeSku` alanları atıl durumda~~ ✅ ÇÖZÜLDÜ

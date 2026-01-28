@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { RefreshCw, Search, ArrowUpRight, ArrowDownLeft, Filter, X } from 'lucide-react';
+import { RefreshCw, Search, ArrowUpRight, ArrowDownLeft, Filter, X, Database } from 'lucide-react';
 import {
     Breadcrumb,
     BreadcrumbItem,
@@ -110,6 +110,7 @@ const MOVEMENT_TYPE_COLORS: Record<string, string> = {
 export function StockMovementsClient() {
     const [movements, setMovements] = useState<StockMovement[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [isSyncing, setIsSyncing] = useState(false);
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
     const [totalPages, setTotalPages] = useState(1);
@@ -161,6 +162,34 @@ export function StockMovementsClient() {
         setPage(1);
     };
 
+    const handleSyncAllStocks = async () => {
+        if (!confirm('Tüm ürün stoklarını senkronize etmek istediğinize emin misiniz? Bu işlem biraz zaman alabilir.')) {
+            return;
+        }
+
+        setIsSyncing(true);
+        try {
+            const res = await fetch('/api/shelves/sync-all-stocks', {
+                method: 'POST',
+                credentials: 'include',
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                alert(`✅ ${data.message}`);
+                // Refresh movements after sync
+                fetchMovements();
+            } else {
+                alert('❌ Senkronizasyon başarısız: ' + (data.message || 'Bilinmeyen hata'));
+            }
+        } catch (error) {
+            console.error('Failed to sync stocks', error);
+            alert('❌ Senkronizasyon sırasında bir hata oluştu');
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
     const filteredMovements = movements.filter(m => {
         if (!searchQuery) return true;
         const query = searchQuery.toLowerCase();
@@ -207,6 +236,16 @@ export function StockMovementsClient() {
                     >
                         <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
                         Yenile
+                    </Button>
+                    <Button
+                        variant="default"
+                        size="sm"
+                        onClick={handleSyncAllStocks}
+                        disabled={isSyncing}
+                        className="bg-blue-600 hover:bg-blue-700"
+                    >
+                        <Database className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-pulse' : ''}`} />
+                        {isSyncing ? 'Senkronize Ediliyor...' : 'Tüm Stokları Senkronize Et'}
                     </Button>
                 </div>
             </div>

@@ -189,4 +189,9 @@ export class ShelvesController {
             },
         };
     }
+
+    @Post('sync-all-stocks')
+    async syncAllStocks(@Query('warehouseId') warehouseId?: string) {
+        return this.shelvesService.syncAllProductStocks(warehouseId);
+    }
 }

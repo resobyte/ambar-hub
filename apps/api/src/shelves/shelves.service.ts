@@ -988,7 +988,8 @@ export class ShelvesService {
         }
         const savedToStock = await this.shelfStockRepository.save(toStock);
 
-        // Sync product stock once after both operations (only once, not twice)
+        // Sync product stock for both shelves (they might be in different warehouses)
+        await this.syncProductStock(productId, fromShelfId);
         await this.syncProductStock(productId, toShelfId);
 
         const from = fromStock.quantity === 0 ? null : fromStock;
@@ -1095,6 +1096,7 @@ export class ShelvesService {
             .leftJoinAndSelect('movement.shelf', 'shelf')
             .leftJoinAndSelect('movement.product', 'product')
             .leftJoinAndSelect('movement.order', 'order')
+            .leftJoinAndSelect('movement.route', 'route')
             .leftJoinAndSelect('movement.user', 'user')
             .leftJoinAndSelect('movement.sourceShelf', 'sourceShelf')
             .leftJoinAndSelect('movement.targetShelf', 'targetShelf')
@@ -1131,6 +1133,66 @@ export class ShelvesService {
             .getManyAndCount();
 
         return { data, total };
+    }
+
+    /**
+     * Sync all product stocks across all warehouses
+     * Useful for fixing stock sync issues after manual operations
+     */
+    async syncAllProductStocks(warehouseId?: string): Promise<{
+        success: boolean;
+        syncedProducts: number;
+        syncedStores: number;
+        message: string;
+    }> {
+        try {
+            // Get all distinct products that have stocks in shelves
+            const query = this.shelfStockRepository.createQueryBuilder('ss')
+                .select('DISTINCT ss.productId', 'productId')
+                .innerJoin('ss.shelf', 'shelf');
+
+            if (warehouseId) {
+                query.where('shelf.warehouseId = :warehouseId', { warehouseId });
+            }
+
+            const productsWithStock = await query.getRawMany();
+            
+            let syncedStores = 0;
+            const syncedProducts = productsWithStock.length;
+
+            // For each product, find a shelf it's in and sync
+            for (const { productId } of productsWithStock) {
+                const shelfStock = await this.shelfStockRepository.findOne({
+                    where: { productId },
+                    relations: ['shelf']
+                });
+
+                if (shelfStock && shelfStock.shelf) {
+                    // Sync for this product in this shelf's warehouse
+                    await this.syncProductStock(productId, shelfStock.shelf.id);
+                    
+                    // Count how many stores were synced (rough estimate)
+                    const warehouse = await this.shelfRepository.manager.findOne(Warehouse, {
+                        where: { id: shelfStock.shelf.warehouseId },
+                        relations: ['stores']
+                    });
+                    
+                    if (warehouse && warehouse.stores) {
+                        syncedStores += warehouse.stores.length;
+                    }
+                }
+            }
+
+            return {
+                success: true,
+                syncedProducts,
+                syncedStores,
+                message: `${syncedProducts} ürün ve ${syncedStores} mağaza için stok senkronize edildi`
+            };
+        } catch (error) {
+            this.logger.error('Failed to sync all product stocks', error);
+            throw error;
+        }
     }
 
     async getPackingShelf(warehouseId?: string): Promise<Shelf | null> {
