@@ -11,6 +11,7 @@ import { ShelfType, SHELF_TYPE_RULES } from './enums/shelf-type.enum';
 import { ProductStore } from '../product-stores/entities/product-store.entity';
 import { Warehouse } from '../warehouses/entities/warehouse.entity';
 import { Store } from '../stores/entities/store.entity';
+import { Product } from '../products/entities/product.entity';
 import * as XLSX from 'xlsx';
 import { StockSyncService } from '../stock-sync/stock-sync.service';
 import { StockUpdateReason } from '../stock-sync/enums/stock-sync.enum';
@@ -539,14 +540,26 @@ export class ShelvesService {
     private async syncProductStock(productId: string, shelfId: string) {
         // GLOBAL STOCK - Stored directly on Product entity only
         // ProductStore is NOT synced - stores read from Product directly
-        
-        // 1. Aggregate ALL shelf stocks for this product (across ALL warehouses)
+
+        const product = await this.shelfRepository.manager.findOne(Product, {
+            where: { id: productId },
+            relations: ['setItems', 'setItems.componentProduct', 'componentOfSets', 'componentOfSets.setProduct'],
+        });
+
+        if (!product) return;
+
+        // SET: stock = min(component stocks / quantity) across all components
+        if (product.productType === 'SET' && product.setItems && product.setItems.length > 0) {
+            await this.syncSetProductStock(productId);
+            return;
+        }
+
+        // SIMPLE: aggregate all shelf stocks, then sync parent SETs
         const stocks = await this.shelfStockRepository.createQueryBuilder('ss')
             .innerJoinAndSelect('ss.shelf', 'shelf')
             .where('ss.productId = :productId', { productId })
             .getMany();
 
-        // 2. Calculate totals based on shelf rules
         let sellable = 0;
         let total = 0;
 
@@ -557,13 +570,78 @@ export class ShelvesService {
             }
         }
 
-        // 3. Update Product entity with global stock ONLY
-        await this.shelfRepository.manager.query(
-            'UPDATE products SET stock_quantity = ?, sellable_quantity = ? WHERE id = ?',
-            [total, sellable, productId]
-        );
+        await this.shelfRepository.manager
+            .createQueryBuilder()
+            .update(Product)
+            .set({ stockQuantity: total, sellableQuantity: sellable })
+            .where('id = :productId', { productId })
+            .execute();
 
-        this.logger.log(`Synced GLOBAL stock for Product ${productId}: total=${total}, sellable=${sellable}`);
+        this.logger.log(`Synced SIMPLE product ${productId}: total=${total}, sellable=${sellable}`);
+
+        // If this product is a component of any SET, sync those SETs (min of components)
+        if (product.componentOfSets && product.componentOfSets.length > 0) {
+            for (const c of product.componentOfSets) {
+                const setProductId = c.setProductId ?? c.setProduct?.id;
+                if (setProductId) {
+                    await this.syncSetProductStock(setProductId);
+                }
+            }
+        }
+    }
+
+    /**
+     * Sync SET product stock from component min.
+     * SET stock = min over components of (component total / setItem.quantity) and same for sellable.
+     */
+    private async syncSetProductStock(setProductId: string): Promise<void> {
+        const setProduct = await this.shelfRepository.manager.findOne(Product, {
+            where: { id: setProductId },
+            relations: ['setItems', 'setItems.componentProduct'],
+        });
+
+        if (!setProduct || setProduct.productType !== 'SET' || !setProduct.setItems?.length) {
+            return;
+        }
+
+        let minSellable = Infinity;
+        let minTotal = Infinity;
+
+        for (const setItem of setProduct.setItems) {
+            const componentStock = await this.shelfStockRepository
+                .createQueryBuilder('ss')
+                .innerJoinAndSelect('ss.shelf', 'shelf')
+                .where('ss.productId = :productId', { productId: setItem.componentProductId })
+                .getMany();
+
+            let componentTotal = 0;
+            let componentSellable = 0;
+
+            for (const stock of componentStock) {
+                componentTotal += stock.quantity;
+                if (stock.shelf.isSellable) {
+                    componentSellable += stock.quantity;
+                }
+            }
+
+            const setsFromTotal = Math.floor(componentTotal / setItem.quantity);
+            const setsFromSellable = Math.floor(componentSellable / setItem.quantity);
+
+            minTotal = Math.min(minTotal, setsFromTotal);
+            minSellable = Math.min(minSellable, setsFromSellable);
+        }
+
+        const total = minTotal === Infinity ? 0 : minTotal;
+        const sellable = minSellable === Infinity ? 0 : minSellable;
+
+        await this.shelfRepository.manager
+            .createQueryBuilder()
+            .update(Product)
+            .set({ stockQuantity: total, sellableQuantity: sellable })
+            .where('id = :setProductId', { setProductId })
+            .execute();
+
+        this.logger.log(`Synced SET product ${setProductId}: total=${total}, sellable=${sellable} (min of components)`);
     }
 
     async transferStock(
