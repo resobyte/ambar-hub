@@ -198,11 +198,12 @@ export class ArasKargoService {
             return { zpl: null };
         }
 
-        const { username, password } = credentials || this.getDefaultCredentials();
+        const { username, password, customerCode } = credentials || this.getDefaultCredentials();
 
         // Log which credentials are being used (for debugging)
         const usingDefault = !credentials;
         this.logger.log(`Aras GetBarcode using ${usingDefault ? 'default' : 'store'} credentials for integrationCode: ${integrationCode}`);
+        this.logger.log(`Credentials: username=${username}, customerCode=${customerCode}`);
 
         if (!username || !password) {
             this.logger.error('Aras Kargo credentials missing');
