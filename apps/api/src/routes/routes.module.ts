@@ -17,6 +17,7 @@ import { OrdersModule } from '../orders/orders.module';
 import { InvoicesModule } from '../invoices/invoices.module';
 import { StoresModule } from '../stores/stores.module';
 import { ShelvesModule } from '../shelves/shelves.module';
+import { ProductStoresModule } from '../product-stores/product-stores.module';
 
 @Module({
     imports: [
@@ -37,6 +38,7 @@ import { ShelvesModule } from '../shelves/shelves.module';
         forwardRef(() => InvoicesModule),
         forwardRef(() => StoresModule),
         forwardRef(() => ShelvesModule),
+        ProductStoresModule,
     ],
     controllers: [RoutesController],
     providers: [RoutesService],

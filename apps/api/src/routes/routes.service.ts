@@ -31,6 +31,7 @@ import { Store } from '../stores/entities/store.entity';
 import { OrderApiLogService } from '../orders/order-api-log.service';
 import { ApiLogProvider, ApiLogType } from '../orders/entities/order-api-log.entity';
 import { ShelvesService } from '../shelves/shelves.service';
+import { ProductStoresService } from '../product-stores/product-stores.service';
 
 interface ProductInfo {
     barcode: string;
@@ -105,6 +106,7 @@ export class RoutesService {
         private readonly orderApiLogService: OrderApiLogService,
         @Inject(forwardRef(() => ShelvesService))
         private readonly shelvesService: ShelvesService,
+        private readonly productStoresService: ProductStoresService,
     ) { }
 
     async create(dto: CreateRouteDto, userId?: string): Promise<RouteResponseDto> {
@@ -322,6 +324,46 @@ export class RoutesService {
         return RouteResponseDto.fromEntity(route);
     }
 
+    private async orderHasSufficientStock(order: Order): Promise<boolean> {
+        const items = order.items || [];
+        if (items.length === 0) return false;
+
+        const storeId = order.storeId ?? undefined;
+        const byProduct = new Map<string, { required: number; sellable: number }>();
+
+        for (const item of items) {
+            const barcode = item.barcode;
+            const sku = item.sku;
+            const qty = item.quantity || 1;
+            if (!barcode && !sku) return false;
+
+            let product: Product | null = null;
+            if (storeId) {
+                product = await this.productStoresService.findProductByStoreCode(storeId, barcode, sku);
+            }
+            if (!product && barcode) {
+                product = await this.productRepository.findOne({ where: { barcode } });
+            }
+            if (!product && sku) {
+                product = await this.productRepository.findOne({ where: { sku } });
+            }
+            if (!product) return false;
+
+            const sellable = Number(product.sellableQuantity) || 0;
+            const cur = byProduct.get(product.id);
+            if (cur) {
+                byProduct.set(product.id, { required: cur.required + qty, sellable });
+            } else {
+                byProduct.set(product.id, { required: qty, sellable });
+            }
+        }
+
+        for (const [, { required, sellable }] of byProduct) {
+            if (sellable < required) return false;
+        }
+        return true;
+    }
+
     async getFilteredOrders(filter: RouteFilterDto): Promise<any[]> {
         // Get orders that are ready for picking (WAITING_PICKING status, not in active route)
         const queryBuilder = this.orderRepository
@@ -455,7 +497,14 @@ export class RoutesService {
             });
         }
 
-        return filteredOrders.map(order => ({
+        const withStock: Order[] = [];
+        for (const order of filteredOrders) {
+            if (await this.orderHasSufficientStock(order)) {
+                withStock.push(order);
+            }
+        }
+
+        return withStock.map(order => ({
             id: order.id,
             orderNumber: order.orderNumber,
             packageId: order.packageId,

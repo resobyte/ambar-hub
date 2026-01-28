@@ -15,7 +15,6 @@ import { ProductSetItem } from '../products/entities/product-set-item.entity';
 import { ProductType } from '../products/enums/product-type.enum';
 import { ProductStore } from '../product-stores/entities/product-store.entity';
 import { RouteOrder } from '../routes/entities/route-order.entity';
-import { ShelfStock } from '../shelves/entities/shelf-stock.entity';
 import { ArasKargoService } from '../stores/providers/aras-kargo.service';
 import axios from 'axios';
 
@@ -82,8 +81,6 @@ export class OrdersService {
         private readonly routeOrderRepository: Repository<RouteOrder>,
         @InjectRepository(Store)
         private readonly storeRepository: Repository<Store>,
-        @InjectRepository(ShelfStock)
-        private readonly shelfStockRepository: Repository<ShelfStock>,
         private readonly customersService: CustomersService,
         private readonly storesService: StoresService,
         private readonly productStoresService: ProductStoresService,
@@ -1135,15 +1132,7 @@ export class OrdersService {
                 continue;
             }
 
-            const sellableStock = await this.shelfStockRepository
-                .createQueryBuilder('ss')
-                .innerJoin('ss.shelf', 'shelf')
-                .where('ss.productId = :productId', { productId: product.id })
-                .andWhere('shelf.isSellable = :isSellable', { isSellable: true })
-                .select('SUM(ss.quantity)', 'totalQuantity')
-                .getRawOne();
-
-            const availableStock = Number(sellableStock?.totalQuantity) || 0;
+            const availableStock = Number(product.sellableQuantity) || 0;
 
             if (availableStock < requiredQty) {
                 insufficientProducts.push(barcode || sku);
@@ -1167,15 +1156,7 @@ export class OrdersService {
                 return OrderStatus.WAITING_STOCK;
             }
 
-            const sellableStock = await this.shelfStockRepository
-                .createQueryBuilder('ss')
-                .innerJoin('ss.shelf', 'shelf')
-                .where('ss.productId = :productId', { productId: item.productId })
-                .andWhere('shelf.isSellable = :isSellable', { isSellable: true })
-                .select('SUM(ss.quantity)', 'totalQuantity')
-                .getRawOne();
-
-            const totalSellableQuantity = Number(sellableStock?.totalQuantity) || 0;
+            const totalSellableQuantity = Number(product.sellableQuantity) || 0;
 
             this.logger.log(`Manual order: Product ${product.name} (${item.productId}) - need ${item.quantity}, sellable stock: ${totalSellableQuantity}`);
 
@@ -1880,16 +1861,7 @@ export class OrdersService {
                     break;
                 }
 
-                // ShelfStock'tan satılabilir raflardaki toplam stoğu hesapla
-                const sellableStock = await this.shelfStockRepository
-                    .createQueryBuilder('ss')
-                    .innerJoin('ss.shelf', 'shelf')
-                    .where('ss.productId = :productId', { productId: product.id })
-                    .andWhere('shelf.isSellable = :isSellable', { isSellable: true })
-                    .select('SUM(ss.quantity)', 'totalQuantity')
-                    .getRawOne();
-
-                const totalSellableQuantity = Number(sellableStock?.totalQuantity) || 0;
+                const totalSellableQuantity = Number(product.sellableQuantity) || 0;
 
                 if (totalSellableQuantity < (item.quantity || 1)) {
                     allItemsHaveStock = false;

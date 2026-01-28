@@ -249,17 +249,9 @@ export class StockSyncService implements OnModuleInit {
             let quantity = 0;
 
             if (product.productType === ProductType.SET) {
-                // Set ürün: bileşen bazlı hesaplama
-                quantity = await this.calculateSetStock(
-                    queueItem.productId,
-                    storeId
-                );
+                quantity = await this.calculateSetStock(queueItem.productId);
             } else {
-                // Basit ürün: direkt sellable quantity
-                const productStore = await this.productStoreRepository.findOne({
-                    where: { productId: queueItem.productId, storeId }
-                });
-                quantity = productStore?.sellableQuantity ?? 0;
+                quantity = Number(product.sellableQuantity) ?? 0;
             }
 
             items.push({
@@ -272,12 +264,9 @@ export class StockSyncService implements OnModuleInit {
     }
 
     /**
-     * Set ürün için kullanılabilir set miktarını hesaplar
+     * Set ürün için kullanılabilir set miktarını hesaplar (genel stok – Product)
      */
-    async calculateSetStock(
-        setProductId: string,
-        storeId: string
-    ): Promise<number> {
+    async calculateSetStock(setProductId: string): Promise<number> {
         const setItems = await this.productSetItemRepository.find({
             where: { setProductId },
             relations: ['componentProduct']
@@ -288,16 +277,10 @@ export class StockSyncService implements OnModuleInit {
         let minQuantity = Infinity;
 
         for (const setItem of setItems) {
-            const productStore = await this.productStoreRepository.findOne({
-                where: {
-                    productId: setItem.componentProductId,
-                    storeId
-                }
-            });
-
-            const availableQuantity = productStore?.sellableQuantity ?? 0;
+            const comp = setItem.componentProduct;
+            if (!comp) continue;
+            const availableQuantity = Number(comp.sellableQuantity) || 0;
             const setsFromComponent = Math.floor(availableQuantity / setItem.quantity);
-
             minQuantity = Math.min(minQuantity, setsFromComponent);
         }
 
@@ -455,14 +438,10 @@ export class StockSyncService implements OnModuleInit {
 
             if (!product) continue;
 
-            const productStore = await this.productStoreRepository.findOne({
-                where: { productId: product.id, storeId }
-            });
-
             details.push({
                 barcode: item.barcode,
                 productName: product.name,
-                oldQuantity: productStore?.sellableQuantity || 0,
+                oldQuantity: Number(product.sellableQuantity) || 0,
                 newQuantity: item.quantity,
                 isSetProduct: product.productType === ProductType.SET,
             });

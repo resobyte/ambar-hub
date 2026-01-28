@@ -22,13 +22,12 @@ import { Route } from '../routes/entities/route.entity';
 import { User } from '../users/entities/user.entity';
 import { InvoicesModule } from '../invoices/invoices.module';
 import { Store } from '../stores/entities/store.entity';
-import { ShelfStock } from '../shelves/entities/shelf-stock.entity';
 import { ShelvesModule } from '../shelves/shelves.module';
 import { StockSyncModule } from '../stock-sync/stock-sync.module';
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([Order, OrderItem, OrderHistory, OrderApiLog, FaultyOrder, Product, ProductSetItem, ProductStore, RouteOrder, Route, User, Store, ShelfStock]),
+        TypeOrmModule.forFeature([Order, OrderItem, OrderHistory, OrderApiLog, FaultyOrder, Product, ProductSetItem, ProductStore, RouteOrder, Route, User, Store]),
         CustomersModule,
         StoresModule,
         ProductStoresModule,

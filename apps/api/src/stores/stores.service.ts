@@ -226,7 +226,7 @@ export class StoresService {
 
       const salePrice = ps.storeSalePrice ?? product.salePrice;
       const listPrice = salePrice;
-      const quantity = ps.sellableQuantity ?? 0;
+      const quantity = Number(product.sellableQuantity) || 0;
 
       const item: {
         barcode: string;
@@ -452,7 +452,7 @@ export class StoresService {
       }
 
       const salePrice = ps.storeSalePrice ?? product.salePrice;
-      const quantity = ps.sellableQuantity ?? 0;
+      const quantity = Number(product.sellableQuantity) || 0;
 
       if (store.sendPrice && salePrice !== null && salePrice !== undefined) {
         priceItems.push({ merchantSku, price: Number(salePrice) });
