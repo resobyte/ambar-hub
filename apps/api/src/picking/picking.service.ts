@@ -624,10 +624,7 @@ export class PickingService {
             throw new BadRequestException('Route is not in collecting status');
         }
 
-        // Find the shelf by barcode
-        const shelf = await this.shelfRepository.findOne({
-            where: { barcode: shelfBarcode },
-        });
+        const shelf = await this.shelvesService.findByBarcode(shelfBarcode);
 
         if (!shelf) {
             return {

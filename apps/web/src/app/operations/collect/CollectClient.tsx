@@ -25,6 +25,7 @@ export function CollectClient() {
   const searchParams = useSearchParams();
   const routeInputRef = useRef<HTMLInputElement>(null);
   const shelfInputRef = useRef<HTMLInputElement>(null);
+  const quantityInputRef = useRef<HTMLInputElement>(null);
   const productInputRef = useRef<HTMLInputElement>(null);
 
   // Route input state
@@ -87,7 +88,7 @@ export function CollectClient() {
         if (!shelfValidated) {
           shelfInputRef.current?.focus();
         } else {
-          productInputRef.current?.focus();
+          quantityInputRef.current?.focus();
         }
       }
     }, 100);
@@ -511,13 +512,38 @@ export function CollectClient() {
                       className={`text-center text-2xl h-16 font-mono ${
                         feedback === 'error' ? 'border-white bg-white/20 text-white' : ''
                       }`}
-                      placeholder="Raf barkodu"
+                      placeholder="Raf barkodu / rafId / ad"
                       autoFocus
                       disabled={loading || hasProductsNeedingTransfer}
                     />
                   </div>
                 ) : (
                   <div className="space-y-3">
+                    {/* Quantity Input - Free text */}
+                    <div className="space-y-2">
+                      <label className={`text-sm font-medium ${feedback ? 'text-white' : ''}`}>
+                        Adet
+                      </label>
+                      <Input
+                        ref={quantityInputRef}
+                        type="number"
+                        value={quantity}
+                        onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            productInputRef.current?.focus();
+                          }
+                        }}
+                        className={`text-center text-2xl h-14 font-mono ${
+                          feedback === 'error' ? 'border-white bg-white/20 text-white' : ''
+                        }`}
+                        placeholder="1"
+                        min={1}
+                        disabled={loading || hasProductsNeedingTransfer}
+                      />
+                    </div>
+
                     {/* Product Barcode Input */}
                     <div className="space-y-2">
                       <label className={`text-sm font-medium ${feedback ? 'text-white' : ''}`}>
@@ -535,25 +561,6 @@ export function CollectClient() {
                           feedback === 'error' ? 'border-white bg-white/20 text-white' : ''
                         }`}
                         placeholder="Ürün barkodu"
-                        autoFocus
-                        disabled={loading || hasProductsNeedingTransfer}
-                      />
-                    </div>
-
-                    {/* Quantity Input - Free text */}
-                    <div className="space-y-2">
-                      <label className={`text-sm font-medium ${feedback ? 'text-white' : ''}`}>
-                        Adet
-                      </label>
-                      <Input
-                        type="number"
-                        value={quantity}
-                        onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                        className={`text-center text-2xl h-14 font-mono ${
-                          feedback === 'error' ? 'border-white bg-white/20 text-white' : ''
-                        }`}
-                        placeholder="1"
-                        min={1}
                         disabled={loading || hasProductsNeedingTransfer}
                       />
                     </div>

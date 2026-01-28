@@ -21,7 +21,12 @@ import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Loader2, Package, CheckCircle2, Printer, Box, Truck, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { printZpl } from '@/lib/zebra-print';
+
+function openLabelForPrint(html: string): void {
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+}
 
 type ScreenState = 
   | 'route_input'
@@ -339,14 +344,12 @@ export function PackClient() {
         showSuccess();
 
         const labelResult = await getCargoLabel(orderId);
-        
-        if (labelResult.success && labelResult.data?.zpl) {
-          const printed = await printZpl(labelResult.data.zpl);
-          if (!printed) {
-            addLog('ZPL yazdırma başarısız, panoya kopyalandı');
-          } else {
-            addLog('Etiket yazdırıldı');
-          }
+
+        if (labelResult.success && labelResult.data?.html) {
+          openLabelForPrint(labelResult.data.html);
+          addLog('Etiket sekmede açıldı, yazdırma iletişim kutusu açılacak');
+        } else {
+          addLog('Etiket bulunamadı');
         }
 
         setTimeout(async () => {
@@ -424,14 +427,12 @@ export function PackClient() {
         showSuccess();
 
         const labelResult = await getCargoLabel(currentOrder.order.id);
-        
-        if (labelResult.success && labelResult.data?.zpl) {
-          const printed = await printZpl(labelResult.data.zpl);
-          if (!printed) {
-            addLog('ZPL yazdırma başarısız, panoya kopyalandı');
-          } else {
-            addLog('Etiket yazdırıldı');
-          }
+
+        if (labelResult.success && labelResult.data?.html) {
+          openLabelForPrint(labelResult.data.html);
+          addLog('Etiket sekmede açıldı, yazdırma iletişim kutusu açılacak');
+        } else {
+          addLog('Etiket bulunamadı');
         }
 
         setTimeout(async () => {
