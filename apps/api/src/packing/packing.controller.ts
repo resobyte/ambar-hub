@@ -121,7 +121,7 @@ export class PackingController {
     async getCargoLabel(@Param('orderId', ParseUUIDPipe) orderId: string) {
         const order = await this.packingService['orderRepository'].findOne({
             where: { id: orderId },
-            relations: ['customer'],
+            relations: ['customer', 'store', 'items'],
         });
 
         if (!order) {

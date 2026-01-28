@@ -962,30 +962,113 @@ export class PackingService {
         return { zpl, html, labelType };
     }
 
+    private escapeHtml(text: string): string {
+        if (!text) return '';
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
     private generateFallbackLabelHtml(order: Order): string {
-        const shippingAddress = order.shippingAddress as any || {};
-        const customerName = order.customer
-            ? `${order.customer.firstName || ''} ${order.customer.lastName || ''}`.trim()
-            : shippingAddress.firstName
-                ? `${shippingAddress.firstName} ${shippingAddress.lastName || ''}`.trim()
-                : 'Müşteri';
+        const shippingAddress = (order.shippingAddress as any) || {};
+        const store = order.store || ({} as any);
+        const receiverName = [
+            shippingAddress.firstName || order.customer?.firstName || '',
+            shippingAddress.lastName || order.customer?.lastName || ''
+        ].filter(Boolean).join(' ') || 'Alıcı';
+        const receiverAddress = [
+            shippingAddress.fullAddress || shippingAddress.addressDetail || shippingAddress.address || '',
+            shippingAddress.neighborhood || '',
+            shippingAddress.district || '',
+            shippingAddress.city || '',
+            'Türkiye'
+        ].filter(Boolean).join(' / ');
+        const senderName = store.senderCompanyName || store.brandName || 'Farmakozmetika Sağlık Ürünleri ve Kozmetik Tic. Ltd. Şti.';
+        const senderAddress = store.senderAddress || 'Cihangir Mahallesi Güvercin Sokak No:4 193 Numara Avcılar İstanbul';
+        const senderTaxOffice = store.senderTaxOffice || 'Avcılar';
+        const senderTaxNumber = store.senderTaxNumber || store.companyCode || '3851513350';
+        const senderVat = `VD: ${senderTaxOffice} VKN/TC: ${senderTaxNumber}`;
+        const invoiceNumber = (order as any).invoiceNumber || order.orderNumber || 'N/A';
+        const invoiceDate = order.orderDate ? new Date(order.orderDate).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+        const packageId = (order as any).packageId || order.orderNumber;
+        const barcode = (order as any).cargoTrackingNumber || packageId || order.orderNumber;
+        const sourceMap: Record<string, string> = { TRENDYOL: 'Trendyol', HEPSIBURADA: 'Hepsiburada', IKAS: 'IKAS', MANUAL: 'Manuel' };
+        const source = sourceMap[store.type] || store.name || 'Mağaza';
+        const carrier = (order as any).cargoProviderName || 'Aras Kargo';
+        const items = (order.items || []).map((item: any, i: number) => ({
+            lineNo: i + 1,
+            sku: item.sku || 'N/A',
+            name: item.productName || 'Ürün',
+            quantity: item.quantity || 1
+        }));
 
-        const address = shippingAddress.fullAddress
-            || `${shippingAddress.address1 || ''} ${shippingAddress.district || ''} ${shippingAddress.city || ''}`.trim()
-            || 'Adres bilgisi yok';
+        const barcodeSafe = String(barcode).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
-        const phone = shippingAddress.phone || order.customer?.phone || '';
-        const senderNumber = order.cargoSenderNumber || order.packageId || order.orderNumber;
-
-        // Store info for sender
-        const store = order.store;
-        const senderName = store?.senderCompanyName || store?.brandName || 'Gönderen';
-        const senderAddress = store?.senderAddress || '';
-
-        // Items list (max 5)
-        const itemsList = (order.items || []).slice(0, 5).map(item =>
-            `${item.sku || item.barcode || 'N/A'} x${item.quantity || 1} - ${item.productName || 'Ürün'}`
-        ).join('<br>');
+        const labelBody = `
+<div class="label-container">
+    <div class="label" style="width: 100mm; height: 100mm; border: 1px solid #000; padding: 2mm; box-sizing: border-box; font-family: Arial, sans-serif; font-size: 10px;">
+        <div style="text-align: center; margin-bottom: 3mm;">
+            <svg class="barcode-0" style="width: 60mm; height: 18mm;"></svg>
+        </div>
+        <div style="display: flex; border: 1px solid #000; height: 25mm; margin-bottom: 2mm;">
+            <div style="flex: 0 0 55%; border-right: 1px solid #000; padding: 2mm; font-size: 10px;">
+                <b>ALICI:</b><br>
+                ${this.escapeHtml(receiverName)}<br>
+                ${this.escapeHtml(receiverAddress)}
+            </div>
+            <div style="flex: 1; padding: 2mm; font-size: 9px;">
+                <b>GÖNDEREN:</b><br>
+                ${this.escapeHtml(senderName)}<br>
+                ${this.escapeHtml(senderAddress)}<br>
+                ${this.escapeHtml(senderVat)}
+            </div>
+        </div>
+        <div style="border: 1px solid #000; height: 12mm; margin-bottom: 2mm;">
+            <div style="display: flex; height: 100%;">
+                <div style="flex: 1; border-right: 1px solid #000; padding: 1mm; font-size: 9px;">
+                    <b>FATURA NO:</b><br>${this.escapeHtml(invoiceNumber)}
+                </div>
+                <div style="flex: 1; border-right: 1px solid #000; padding: 1mm; font-size: 9px;">
+                    <b>FATURA TARİHİ:</b><br>${invoiceDate}
+                </div>
+                <div style="flex: 1; border-right: 1px solid #000; padding: 1mm; font-size: 9px;">
+                    <b>SİPARİŞ NO:</b><br>${this.escapeHtml(packageId)}
+                </div>
+                <div style="flex: 1; border-right: 1px solid #000; padding: 1mm; font-size: 9px;">
+                    <b>KAYNAK</b><br>${this.escapeHtml(source)}
+                </div>
+                <div style="flex: 1; padding: 1mm; font-size: 9px;">
+                    <b>TAŞIYICI</b><br>${this.escapeHtml(carrier)}
+                </div>
+            </div>
+        </div>
+        <div style="border: 1px solid #000; padding: 1mm; font-size: 7px; margin-bottom: 2mm; height: 4mm;">
+            Bilgilendirme: Firmamız E-fatura Mükellefidir. Faturanız kayıtlı e-posta adresinize gönderilmiştir.
+        </div>
+        <div style="border: 1px solid #000; padding: 1mm;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 8px;">
+                <tr style="border-bottom: 1px solid #000;">
+                    <th style="border-right: 1px solid #000; padding: 1mm; text-align: left;">Malzeme/Hizmet Kodu (SKU)</th>
+                    <th style="border-right: 1px solid #000; padding: 1mm; text-align: left;">Malzeme/Hizmet Açıklaması</th>
+                    <th style="padding: 1mm; text-align: right;">Miktar</th>
+                </tr>
+                ${items.slice(0, 5).map((item: any) => `
+                <tr style="border-bottom: 1px solid #000;">
+                    <td style="border-right: 1px solid #000; padding: 1mm;">${this.escapeHtml(item.sku)}</td>
+                    <td style="border-right: 1px solid #000; padding: 1mm;">${this.escapeHtml(item.name)}</td>
+                    <td style="padding: 1mm; text-align: right;">${item.quantity}</td>
+                </tr>
+                `).join('')}
+            </table>
+        </div>
+    </div>
+</div>
+<script>
+(function(){ JsBarcode(".barcode-0", "${barcodeSafe}", {width: 2, height: 50, fontSize: 16, marginTop: 3, margin: 1, fontOptions: "bold"}); })();
+</script>`;
 
         return `
 <!DOCTYPE html>
@@ -993,49 +1076,17 @@ export class PackingService {
 <head>
   <meta charset="UTF-8">
   <title>Kargo Etiketi - ${order.orderNumber}</title>
-  <style type="text/css">
-    body { font-family: "Arial", sans-serif; margin: 0; padding: 0; }
-    .label { width: 100mm; height: 100mm; padding: 5mm; box-sizing: border-box; border: 1px solid #000; }
-    .header { text-align: center; font-size: 14pt; font-weight: bold; margin-bottom: 5mm; border-bottom: 2px solid #000; padding-bottom: 3mm; }
-    .barcode-container { text-align: center; margin: 5mm 0; }
-    .sender-number { font-size: 16pt; font-weight: bold; text-align: center; margin: 3mm 0; letter-spacing: 2px; }
-    .recipient { margin-top: 5mm; font-size: 11pt; line-height: 1.4; }
-    .recipient strong { font-size: 12pt; }
-    .sender { margin-top: 3mm; font-size: 9pt; color: #333; }
-    .items { margin-top: 3mm; font-size: 8pt; color: #555; border-top: 1px dashed #999; padding-top: 2mm; }
-    .order-info { margin-top: 3mm; font-size: 9pt; color: #333; border-top: 1px dashed #999; padding-top: 2mm; }
-    @media print { @page { size: 100mm 100mm; margin: 0; } body { margin: 0; } }
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+  <style>
+    @media print { @page { size: 100mm 100mm; margin: 0; } body { margin: 0; padding: 0; } .label-container { page-break-after: auto; } }
+    @media screen { body { padding: 20px; background: #f0f0f0; } .label-container { margin-bottom: 20px; background: white; } }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
 </head>
 <body>
-  <div class="label">
-    <div class="header">KARGO ETİKETİ</div>
-    <div class="barcode-container"><svg id="barcode"></svg></div>
-    <div class="sender-number">${senderNumber}</div>
-    <div class="recipient">
-      <strong>ALICI:</strong><br>
-      ${customerName}<br>
-      ${address}<br>
-      ${phone ? `Tel: ${phone}` : ''}
-    </div>
-    <div class="sender">
-      <strong>GÖNDERİCİ:</strong> ${senderName}<br>
-      ${senderAddress}
-    </div>
-    ${itemsList ? `<div class="items"><strong>Ürünler:</strong><br>${itemsList}</div>` : ''}
-    <div class="order-info">
-      Sipariş No: ${order.orderNumber}<br>
-      Tarih: ${new Date().toLocaleDateString('tr-TR')}
-    </div>
-  </div>
-  <script>
-    JsBarcode("#barcode", "${senderNumber}", { format: "CODE128", width: 2, height: 50, displayValue: false });
-    window.onload = function() { setTimeout(function() { window.print(); }, 500); };
-  </script>
+  ${labelBody}
+  <script>window.onload = function() { setTimeout(function() { window.print(); }, 500); };</script>
 </body>
-</html>
-        `.trim();
+</html>`.trim();
     }
 
     private async transferToPackingShelf(
