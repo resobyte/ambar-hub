@@ -537,10 +537,10 @@ export class ShelvesService {
     }
 
     private async syncProductStock(productId: string, shelfId: string) {
-        // GLOBAL STOCK - Aggregate ALL shelf stocks for this product (regardless of warehouse)
-        // All stores share the same global stock
+        // GLOBAL STOCK - Stored directly on Product entity only
+        // ProductStore is NOT synced - stores read from Product directly
         
-        // 1. Aggregate stocks by type for this product across ALL warehouses
+        // 1. Aggregate ALL shelf stocks for this product (across ALL warehouses)
         const stocks = await this.shelfStockRepository.createQueryBuilder('ss')
             .innerJoinAndSelect('ss.shelf', 'shelf')
             .where('ss.productId = :productId', { productId })
@@ -557,49 +557,13 @@ export class ShelvesService {
             }
         }
 
-        // 3. Update ALL ProductStores for this product (global stock shared across all stores)
-        let productStores = await this.productStoreRepository.find({
-            where: { productId }
-        });
+        // 3. Update Product entity with global stock ONLY
+        await this.shelfRepository.manager.query(
+            'UPDATE products SET stock_quantity = $1, sellable_quantity = $2 WHERE id = $3',
+            [total, sellable, productId]
+        );
 
-        // If no ProductStores exist, create them for all active stores
-        if (productStores.length === 0) {
-            this.logger.warn(`No ProductStores found for product ${productId}, creating for all active stores`);
-            
-            const stores = await this.shelfRepository.manager.find(Store, {
-                where: { isActive: true }
-            });
-
-            for (const store of stores) {
-                const newProductStore = this.productStoreRepository.create({
-                    productId,
-                    storeId: store.id,
-                    stockQuantity: total,
-                    sellableQuantity: Math.max(0, sellable),
-                    reservableQuantity: sellable,
-                    committedQuantity: 0,
-                    isActive: true
-                });
-                productStores.push(await this.productStoreRepository.save(newProductStore));
-            }
-        }
-
-        this.logger.log(`Syncing GLOBAL stock for Product ${productId}: total=${total}, sellable=${sellable}, stores=${productStores.length}`);
-
-        // 4. Update all ProductStores with the same global stock values
-        // Committed quantity is calculated per-store based on orders
-        let totalCommitted = 0;
-        for (const ps of productStores) {
-            totalCommitted += ps.committedQuantity || 0;
-        }
-
-        for (const productStore of productStores) {
-            productStore.stockQuantity = total;
-            // For global stock: Sellable = Total Sellable - Total Committed (across all stores)
-            productStore.sellableQuantity = Math.max(0, sellable - totalCommitted);
-            productStore.reservableQuantity = sellable;
-            await this.productStoreRepository.save(productStore);
-        }
+        this.logger.log(`Synced GLOBAL stock for Product ${productId}: total=${total}, sellable=${sellable}`);
     }
 
     async transferStock(

@@ -72,6 +72,16 @@ export class Product extends BaseEntity {
   @Column({ type: 'decimal', precision: 10, scale: 2, name: 'last_sale_price', nullable: true })
   lastSalePrice: number;
 
+  // Global Stock Fields
+  @Column({ type: 'int', name: 'stock_quantity', default: 0 })
+  stockQuantity: number;
+
+  @Column({ type: 'int', name: 'sellable_quantity', default: 0 })
+  sellableQuantity: number;
+
+  @Column({ type: 'int', name: 'reserved_quantity', default: 0 })
+  reservedQuantity: number;
+
   @Column({ name: 'is_active', default: true })
   isActive: boolean;
 
