@@ -559,7 +559,7 @@ export class ShelvesService {
 
         // 3. Update Product entity with global stock ONLY
         await this.shelfRepository.manager.query(
-            'UPDATE products SET stock_quantity = $1, sellable_quantity = $2 WHERE id = $3',
+            'UPDATE products SET stock_quantity = ?, sellable_quantity = ? WHERE id = ?',
             [total, sellable, productId]
         );
 
