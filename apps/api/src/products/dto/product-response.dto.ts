@@ -36,9 +36,11 @@ export class ProductResponseDto {
 
   static fromEntity(entity: any, storeCount: number = 0): ProductResponseDto {
     const productStores = entity.productStores || [];
-    const totalStockQuantity = productStores.reduce((sum: number, ps: any) => sum + (Number(ps.stockQuantity) || 0), 0);
-    const totalSellableQuantity = productStores.reduce((sum: number, ps: any) => sum + (Number(ps.sellableQuantity) || 0), 0);
-    const totalReservableQuantity = productStores.reduce((sum: number, ps: any) => sum + (Number(ps.reservableQuantity) || 0), 0);
+    
+    // Use global stock from Product entity directly
+    const totalStockQuantity = Number(entity.stockQuantity) || 0;
+    const totalSellableQuantity = Number(entity.sellableQuantity) || 0;
+    const totalReservableQuantity = Number(entity.reservedQuantity) || 0;
 
     return {
       id: entity.id,
