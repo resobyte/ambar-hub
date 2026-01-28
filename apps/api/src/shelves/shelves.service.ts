@@ -10,6 +10,7 @@ import { UpdateShelfDto } from './dto/update-shelf.dto';
 import { ShelfType, SHELF_TYPE_RULES } from './enums/shelf-type.enum';
 import { ProductStore } from '../product-stores/entities/product-store.entity';
 import { Warehouse } from '../warehouses/entities/warehouse.entity';
+import { Store } from '../stores/entities/store.entity';
 import * as XLSX from 'xlsx';
 import { StockSyncService } from '../stock-sync/stock-sync.service';
 import { StockUpdateReason } from '../stock-sync/enums/stock-sync.enum';
@@ -536,19 +537,16 @@ export class ShelvesService {
     }
 
     private async syncProductStock(productId: string, shelfId: string) {
-        // 1. Get warehouse for context
-        const shelf = await this.shelfRepository.findOne({ where: { id: shelfId } });
-        if (!shelf || !shelf.warehouseId) return;
-        const warehouseId = shelf.warehouseId;
-
-        // 2. Aggregate stocks by type for this product in this warehouse
+        // GLOBAL STOCK - Aggregate ALL shelf stocks for this product (regardless of warehouse)
+        // All stores share the same global stock
+        
+        // 1. Aggregate stocks by type for this product across ALL warehouses
         const stocks = await this.shelfStockRepository.createQueryBuilder('ss')
             .innerJoinAndSelect('ss.shelf', 'shelf')
             .where('ss.productId = :productId', { productId })
-            .andWhere('shelf.warehouseId = :warehouseId', { warehouseId })
             .getMany();
 
-        // 3. Calculate totals based on rules
+        // 2. Calculate totals based on shelf rules
         let sellable = 0;
         let total = 0;
 
@@ -559,47 +557,48 @@ export class ShelvesService {
             }
         }
 
-        // 4. Update ProductStores linked to this warehouse
-        // Get warehouse for context to find associated stores
-        const warehouse = await this.shelfRepository.manager.findOne(Warehouse, {
-            where: { id: warehouseId },
-            relations: ['stores'] // Assuming relation exists
+        // 3. Update ALL ProductStores for this product (global stock shared across all stores)
+        let productStores = await this.productStoreRepository.find({
+            where: { productId }
         });
 
-        console.log(`Syncing stock for Product ${productId} in Warehouse ${warehouseId}`);
-        if (!warehouse) {
-            console.error('Warehouse not found during stock sync');
-            return;
-        }
-        console.log(`Found Warehouse: ${warehouse.name}, Stores count: ${warehouse.stores?.length}`);
+        // If no ProductStores exist, create them for all active stores
+        if (productStores.length === 0) {
+            this.logger.warn(`No ProductStores found for product ${productId}, creating for all active stores`);
+            
+            const stores = await this.shelfRepository.manager.find(Store, {
+                where: { isActive: true }
+            });
 
-        if (warehouse && warehouse.stores) {
-            for (const store of warehouse.stores) {
-                let productStore = await this.productStoreRepository.findOne({
-                    where: { productId, storeId: store.id }
+            for (const store of stores) {
+                const newProductStore = this.productStoreRepository.create({
+                    productId,
+                    storeId: store.id,
+                    stockQuantity: total,
+                    sellableQuantity: Math.max(0, sellable),
+                    reservableQuantity: sellable,
+                    committedQuantity: 0,
+                    isActive: true
                 });
-
-                if (productStore) {
-                    productStore.stockQuantity = total;
-                    // Formula: Sellable = Physical Sellable - Committed
-                    // Ensure we don't go below 0 for display, though conceptually it means backorder
-                    productStore.sellableQuantity = Math.max(0, sellable - (productStore.committedQuantity || 0));
-                    productStore.reservableQuantity = sellable; // Same as sellable now
-                    await this.productStoreRepository.save(productStore);
-                } else {
-                    // If productStore doesn't exist, create it (or handle as per business logic)
-                    // For now, let's assume it should exist or be created with default values
-                    productStore = this.productStoreRepository.create({
-                        productId,
-                        storeId: store.id,
-                        stockQuantity: total,
-                        sellableQuantity: Math.max(0, sellable), // No committed yet if new
-                        reservableQuantity: sellable, // Same as sellable now
-                        committedQuantity: 0, // Default to 0
-                    });
-                    await this.productStoreRepository.save(productStore);
-                }
+                productStores.push(await this.productStoreRepository.save(newProductStore));
             }
+        }
+
+        this.logger.log(`Syncing GLOBAL stock for Product ${productId}: total=${total}, sellable=${sellable}, stores=${productStores.length}`);
+
+        // 4. Update all ProductStores with the same global stock values
+        // Committed quantity is calculated per-store based on orders
+        let totalCommitted = 0;
+        for (const ps of productStores) {
+            totalCommitted += ps.committedQuantity || 0;
+        }
+
+        for (const productStore of productStores) {
+            productStore.stockQuantity = total;
+            // For global stock: Sellable = Total Sellable - Total Committed (across all stores)
+            productStore.sellableQuantity = Math.max(0, sellable - totalCommitted);
+            productStore.reservableQuantity = sellable;
+            await this.productStoreRepository.save(productStore);
         }
     }
 
